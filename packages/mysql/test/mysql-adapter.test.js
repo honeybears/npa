@@ -5,7 +5,7 @@ const {
   Column,
   Entity,
   Id,
-} = require("../dist");
+} = require("../../../dist");
 const {
   compileMysqlCount,
   compileMysqlDeleteAll,
@@ -18,8 +18,8 @@ const {
   compileMysqlFindById,
   createMysqlDerivedQueryRepository,
   MysqlConnection,
-} = require("../packages/mysql/dist");
-const { parseQueryMethod } = require("../dist");
+} = require("../dist");
+const { parseQueryMethod } = require("../../../dist");
 
 class Product {}
 

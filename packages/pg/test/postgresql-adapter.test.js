@@ -13,8 +13,8 @@ const {
   compilePostgresqlUpdate,
   createPostgresqlDerivedQueryRepository,
   PostgresqlConnection,
-} = require("../packages/pg/dist");
-const { parseQueryMethod } = require("../dist");
+} = require("../dist");
+const { parseQueryMethod } = require("../../../dist");
 
 test("compiles a derived query method into parameterized PostgreSQL SQL", () => {
   const compiled = compilePostgresqlQuery(
