@@ -21,12 +21,11 @@ export abstract class AbstractTransactionManager<TResource>
     work: () => Promise<T> | T,
     options: NPATransactionOptions = {},
   ): Promise<T> {
-    const propagation = options.propagation ?? "required";
-    this.assertSupportedPropagation(propagation);
+    const propagation = this.normalizePropagation(options.propagation);
 
     const currentContext = this.storage.getStore();
 
-    if (propagation === "required" && currentContext) {
+    if (propagation === NPATransactionPropagation.REQUIRED && currentContext) {
       try {
         return await Promise.resolve(work());
       } catch (error) {
@@ -112,11 +111,17 @@ export abstract class AbstractTransactionManager<TResource>
     return undefined;
   }
 
-  private assertSupportedPropagation(
-    propagation: NPATransactionPropagation,
-  ): void {
-    if (propagation !== "required" && propagation !== "requires_new") {
-      throw new Error(`Unsupported transaction propagation: ${propagation}`);
+  private normalizePropagation(propagation: unknown): NPATransactionPropagation {
+    switch (propagation) {
+      case undefined:
+      case NPATransactionPropagation.REQUIRED:
+      case "required":
+        return NPATransactionPropagation.REQUIRED;
+      case NPATransactionPropagation.REQUIRES_NEW:
+      case "requires_new":
+        return NPATransactionPropagation.REQUIRES_NEW;
+      default:
+        throw new Error(`Unsupported transaction propagation: ${String(propagation)}`);
     }
   }
 }

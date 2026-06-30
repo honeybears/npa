@@ -7,6 +7,7 @@ const {
   Entity,
   getCurrentPersistenceContext,
   Id,
+  NPATransactionPropagation,
   RollbackOnlyError,
   Transaction,
 } = require("../dist");
@@ -148,7 +149,7 @@ test("joins an existing required transaction and starts requires_new separately"
       async () => {
         assert.equal(manager.currentId(), 2);
       },
-      { propagation: "requires_new" },
+      { propagation: NPATransactionPropagation.REQUIRES_NEW },
     );
 
     assert.equal(manager.currentId(), 1);
@@ -203,7 +204,7 @@ test("keeps outer transactions committable when a requires_new transaction fails
           async () => {
             throw new Error("inner failure");
           },
-          { propagation: "requires_new" },
+          { propagation: NPATransactionPropagation.REQUIRES_NEW },
         ),
       /inner failure/,
     );

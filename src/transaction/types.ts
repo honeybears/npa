@@ -1,4 +1,7 @@
-export type NPATransactionPropagation = "required" | "requires_new";
+export enum NPATransactionPropagation {
+  REQUIRED = "REQUIRED",
+  REQUIRES_NEW = "REQUIRES_NEW",
+}
 
 export type NPATransactionIsolation =
   | "read_uncommitted"

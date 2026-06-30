@@ -267,12 +267,13 @@ await users.findTop10ByNameContainingOrderByCreatedAtDesc('ki');
 Use a database transaction manager when multiple repository calls must commit or
 roll back as one unit. Pass the manager's context-aware `queryable` to the
 generated client, then decorate service methods with `@Transaction()`. The
-default propagation is `required`, so nested transactional calls reuse the active
-transaction. Use `{ propagation: 'requires_new' }` to force a separate
+default propagation is `NPATransactionPropagation.REQUIRED`, so nested
+transactional calls reuse the active transaction. Use
+`{ propagation: NPATransactionPropagation.REQUIRES_NEW }` to force a separate
 transaction.
 
 ```ts
-import { Transaction } from '@honeybeaers/npa';
+import { NPATransactionPropagation, Transaction } from '@honeybeaers/npa';
 import { PostgresqlTransactionManager } from '@honeybeaers/npa-pg';
 import { Pool } from 'pg';
 import { createNPAClient } from './generated/npa';
@@ -301,7 +302,8 @@ const service = new UserService();
 
 MySQL uses the same core decorator with `MysqlTransactionManager` from
 `@honeybeaers/npa-mysql`. Transaction options currently support `isolation`,
-`readOnly`, `required`, and `requires_new`.
+`readOnly`, `NPATransactionPropagation.REQUIRED`, and
+`NPATransactionPropagation.REQUIRES_NEW`.
 
 ## Dirty Checking and Versioning
 
