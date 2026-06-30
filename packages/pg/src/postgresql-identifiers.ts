@@ -36,6 +36,12 @@ export function primaryKeyProperty(
   return options.primaryKey ?? getMetadata(options)?.primaryColumn?.propertyName ?? "id";
 }
 
+export function versionProperty(
+  options: PostgresqlQueryCompilerOptions,
+): string | undefined {
+  return getMetadata(options)?.versionColumn?.propertyName;
+}
+
 export function entityColumnProperties(
   options: PostgresqlQueryCompilerOptions,
 ): string[] | undefined {

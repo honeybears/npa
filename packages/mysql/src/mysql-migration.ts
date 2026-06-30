@@ -433,6 +433,7 @@ function relationColumn(
     dbType: source.dbType ?? defaultType(source, { identity: false }),
     nullable: false,
     primary: false,
+    version: false,
   };
 }
 

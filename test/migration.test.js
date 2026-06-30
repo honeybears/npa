@@ -59,6 +59,7 @@ test("parses entity source files into migration schemas", () => {
       dbType: column.dbType,
       nullable: column.nullable,
       primary: column.primary,
+      version: column.version,
     })),
     [
       {
@@ -68,6 +69,7 @@ test("parses entity source files into migration schemas", () => {
         dbType: undefined,
         nullable: false,
         primary: true,
+        version: false,
       },
       {
         propertyName: "name",
@@ -76,6 +78,7 @@ test("parses entity source files into migration schemas", () => {
         dbType: "VARCHAR(80)",
         nullable: false,
         primary: false,
+        version: false,
       },
       {
         propertyName: "description",
@@ -84,6 +87,7 @@ test("parses entity source files into migration schemas", () => {
         dbType: undefined,
         nullable: true,
         primary: false,
+        version: false,
       },
       {
         propertyName: "active",
@@ -92,6 +96,7 @@ test("parses entity source files into migration schemas", () => {
         dbType: undefined,
         nullable: false,
         primary: false,
+        version: false,
       },
       {
         propertyName: "createdAt",
@@ -100,6 +105,16 @@ test("parses entity source files into migration schemas", () => {
         dbType: undefined,
         nullable: false,
         primary: false,
+        version: false,
+      },
+      {
+        propertyName: "version",
+        columnName: "lock_version",
+        tsType: "number",
+        dbType: undefined,
+        nullable: false,
+        primary: false,
+        version: true,
       },
     ],
   );
@@ -161,7 +176,8 @@ test("compiles PostgreSQL and MySQL schema migration SQL", () => {
       '  "product_name" VARCHAR(80) NOT NULL,',
       '  "description" TEXT,',
       '  "active" BOOLEAN NOT NULL,',
-      '  "created_at" TIMESTAMPTZ NOT NULL',
+      '  "created_at" TIMESTAMPTZ NOT NULL,',
+      '  "lock_version" INTEGER NOT NULL',
       ")",
     ].join("\n"),
     'CREATE INDEX IF NOT EXISTS "idx_products_active" ON "shop"."products" ("active")',
@@ -199,7 +215,8 @@ test("compiles PostgreSQL and MySQL schema migration SQL", () => {
       "  `product_name` VARCHAR(80) NOT NULL,",
       "  `description` VARCHAR(255),",
       "  `active` BOOLEAN NOT NULL,",
-      "  `created_at` DATETIME(3) NOT NULL",
+      "  `created_at` DATETIME(3) NOT NULL,",
+      "  `lock_version` INT NOT NULL",
       ")",
     ].join("\n"),
     "CREATE INDEX `idx_products_active` ON `shop`.`products` (`active`)",
@@ -270,7 +287,7 @@ function makeMigrationFixture() {
   fs.writeFileSync(
     path.join(src, "product.entity.ts"),
     `
-import { Column, Entity, Id, Index, ManyToMany, Unique } from "@npa/test";
+import { Column, Entity, Id, Index, ManyToMany, Unique, Version } from "@npa/test";
 
 @Index({ name: "idx_products_active_created_at", columns: ["active", "createdAt"] })
 @Entity({ name: "products", schema: "shop" })
@@ -290,6 +307,9 @@ export class Product {
 
   @Column({ name: "created_at" })
   createdAt!: Date;
+
+  @Version({ name: "lock_version" })
+  version!: number;
 
   @ManyToMany(() => Category, { joinTable: "product_categories" })
   categories?: Category[];

@@ -2,6 +2,7 @@ import {
   mysqlEntityColumnProperties,
   mysqlPrimaryKeyProperty,
   mysqlPropertyToColumn,
+  mysqlVersionProperty,
   quoteMysqlTable,
 } from "./mysql-identifiers";
 import { MysqlCompiledQuery, MysqlQueryCompilerOptions } from "./types";
@@ -10,10 +11,13 @@ export function compileMysqlInsert<TEntity extends object>(
   entity: TEntity,
   options: MysqlQueryCompilerOptions,
 ): MysqlCompiledQuery {
-  const entries = definedEntries(entity, options).filter(
-    ([property, value]) =>
-      property !== mysqlPrimaryKeyProperty(options) ||
-      (value !== null && value !== undefined),
+  const entries = withDefaultVersionEntry(
+    definedEntries(entity, options).filter(
+      ([property, value]) =>
+        property !== mysqlPrimaryKeyProperty(options) ||
+        (value !== null && value !== undefined),
+    ),
+    options,
   );
 
   if (entries.length === 0) {
@@ -40,8 +44,9 @@ export function compileMysqlUpdate<TEntity extends object>(
   assertId(id);
 
   const primaryKey = mysqlPrimaryKeyProperty(options);
+  const version = mysqlVersionProperty(options);
   const entries = definedEntries(patch, options).filter(
-    ([property]) => property !== primaryKey,
+    ([property]) => property !== primaryKey && property !== version,
   );
 
   if (entries.length === 0) {
@@ -58,6 +63,41 @@ export function compileMysqlUpdate<TEntity extends object>(
     text: `UPDATE ${quoteMysqlTable(options)} SET ${assignments.join(
       ", ",
     )} WHERE ${mysqlPropertyToColumn(primaryKey, options)} = ?`,
+    values,
+  };
+}
+
+export function compileMysqlVersionedUpdate<TEntity extends object>(
+  id: unknown,
+  patch: TEntity,
+  expectedVersion: unknown,
+  options: MysqlQueryCompilerOptions,
+): MysqlCompiledQuery {
+  assertId(id);
+  assertVersion(expectedVersion);
+
+  const primaryKey = mysqlPrimaryKeyProperty(options);
+  const version = requireMysqlVersionProperty(options);
+  const entries = definedEntries(patch, options).filter(
+    ([property]) => property !== primaryKey && property !== version,
+  );
+
+  if (entries.length === 0) {
+    throw new Error("Cannot update an entity without changed values.");
+  }
+
+  const values = entries.map(([, value]) => value);
+  const assignments = entries.map(
+    ([property]) => `${mysqlPropertyToColumn(property, options)} = ?`,
+  );
+  const versionColumn = mysqlPropertyToColumn(version, options);
+  assignments.push(`${versionColumn} = ${versionColumn} + 1`);
+  values.push(id, expectedVersion);
+
+  return {
+    text: `UPDATE ${quoteMysqlTable(options)} SET ${assignments.join(
+      ", ",
+    )} WHERE ${mysqlPropertyToColumn(primaryKey, options)} = ? AND ${versionColumn} = ?`,
     values,
   };
 }
@@ -141,6 +181,49 @@ export function getMysqlPrimaryKeyValue<TEntity extends object>(
   options: MysqlQueryCompilerOptions,
 ): unknown {
   return (entity as Record<string, unknown>)[mysqlPrimaryKeyProperty(options)];
+}
+
+function withDefaultVersionEntry(
+  entries: Array<[string, unknown]>,
+  options: MysqlQueryCompilerOptions,
+): Array<[string, unknown]> {
+  const version = mysqlVersionProperty(options);
+
+  if (!version) {
+    return entries;
+  }
+
+  const versionIndex = entries.findIndex(([property]) => property === version);
+
+  if (versionIndex < 0) {
+    return [...entries, [version, 0]];
+  }
+
+  if (entries[versionIndex][1] === null || entries[versionIndex][1] === undefined) {
+    const nextEntries = [...entries];
+    nextEntries[versionIndex] = [version, 0];
+    return nextEntries;
+  }
+
+  return entries;
+}
+
+function requireMysqlVersionProperty(
+  options: MysqlQueryCompilerOptions,
+): string {
+  const version = mysqlVersionProperty(options);
+
+  if (!version) {
+    throw new Error("A @Version column is required for versioned updates.");
+  }
+
+  return version;
+}
+
+function assertVersion(version: unknown): void {
+  if (version === null || version === undefined) {
+    throw new Error("Version value is required.");
+  }
 }
 
 function definedEntries<TEntity extends object>(

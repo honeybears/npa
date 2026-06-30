@@ -143,7 +143,7 @@ function writeProductEntity(root, options) {
   fs.writeFileSync(
     path.join(root, "src", "product.entity.ts"),
     `
-import { Column, Entity, Id${options.withRelations ? ", Index, ManyToMany, Unique" : ""} } from "@honeybeaers/npa";
+import { Column, Entity, Id, Version${options.withRelations ? ", Index, ManyToMany, Unique" : ""} } from "@honeybeaers/npa";
 
 @Entity({ name: ${JSON.stringify(options.tableName)} })
 export class Product {
@@ -164,6 +164,9 @@ export class Product {
 
   @Column({ name: "created_at" })
   createdAt!: Date;
+
+  @Version()
+  version!: number;
 ${options.withRelations ? "\n  @Unique({ name: " + JSON.stringify(options.skuUniqueIndexName) + " })\n  @Column({ nullable: true })\n  sku?: string | null;\n\n  @ManyToMany(() => Category, { joinTable: " + JSON.stringify(options.joinTableName) + " })\n  categories?: Category[];\n" : "\n  @Column({ name: \"legacy_code\", nullable: true })\n  legacyCode?: string | null;\n"}}
 ${options.withRelations ? `
 @Entity({ name: ${JSON.stringify(options.categoryTableName)} })

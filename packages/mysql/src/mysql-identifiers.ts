@@ -36,6 +36,12 @@ export function mysqlPrimaryKeyProperty(
   return options.primaryKey ?? getMetadata(options)?.primaryColumn?.propertyName ?? "id";
 }
 
+export function mysqlVersionProperty(
+  options: MysqlQueryCompilerOptions,
+): string | undefined {
+  return getMetadata(options)?.versionColumn?.propertyName;
+}
+
 export function mysqlEntityColumnProperties(
   options: MysqlQueryCompilerOptions,
 ): string[] | undefined {

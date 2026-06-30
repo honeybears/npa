@@ -44,7 +44,7 @@ export function parseEntityFile(filePath: string): ParsedEntitySource[] {
 function parseColumns(classBody: string) {
   const columns = [];
   const fieldPattern =
-    /((?:\s*@(Id|Column)(?:\([^)]*\))?\s*)+)\s*(?:public\s+|protected\s+|private\s+|readonly\s+)*([A-Za-z_]\w*)(?:[?!])?\s*:\s*([^=;]+)[=;]?/g;
+    /((?:\s*@(Id|Column|Version)(?:\([^)]*\))?\s*)+)\s*(?:public\s+|protected\s+|private\s+|readonly\s+)*([A-Za-z_]\w*)(?:[?!])?\s*:\s*([^=;]+)[=;]?/g;
   let match: RegExpExecArray | null;
 
   while ((match = fieldPattern.exec(classBody)) !== null) {

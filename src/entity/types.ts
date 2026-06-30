@@ -35,6 +35,7 @@ export interface ColumnMetadata {
   nullable: boolean;
   type?: string;
   primary: boolean;
+  version: boolean;
 }
 
 export interface IndexMetadata {
@@ -61,4 +62,5 @@ export interface EntityMetadata {
   indexes: IndexMetadata[];
   relations: RelationMetadata[];
   primaryColumn?: ColumnMetadata;
+  versionColumn?: ColumnMetadata;
 }

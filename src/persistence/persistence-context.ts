@@ -3,6 +3,7 @@ import {
   EntityMetadata,
   getEntityMetadata,
 } from "../entity";
+import { OptimisticLockError } from "./optimistic-lock-error";
 import { NPADirtyCheckAdapter, NPAManageEntityOptions } from "./types";
 
 type EntitySnapshot = Map<string, unknown>;
@@ -120,7 +121,38 @@ export class PersistenceContext {
         );
       }
 
-      await managed.adapter.updateDirty(managed.entity, id, patch);
+      const versionColumn = managed.metadata.versionColumn;
+      const expectedVersion = versionColumn
+        ? managed.snapshot.get(versionColumn.propertyName)
+        : undefined;
+
+      if (versionColumn && (expectedVersion === null || expectedVersion === undefined)) {
+        throw new Error(
+          `Cannot flush versioned entity "${managed.metadata.target.name}" without a version value.`,
+        );
+      }
+
+      const updated = await managed.adapter.updateDirty(managed.entity, id, patch, {
+        expectedVersion,
+        versionColumn,
+      });
+
+      if (!updated && versionColumn) {
+        throw new OptimisticLockError(
+          managed.metadata.target.name,
+          id,
+          expectedVersion,
+        );
+      }
+
+      if (updated && versionColumn) {
+        writeColumnValue(
+          managed.entity,
+          versionColumn,
+          readColumnValue(updated, versionColumn),
+        );
+      }
+
       managed.snapshot = snapshotEntity(managed.entity, managed.metadata);
     }
   }
@@ -135,7 +167,7 @@ function diffEntity<TEntity extends object>(
   const patchRecord = patch as Record<string, unknown>;
 
   for (const column of metadata.columns) {
-    if (column.primary) {
+    if (column.primary || column.version) {
       continue;
     }
 
@@ -173,6 +205,21 @@ function readColumnValue(entity: object, column: ColumnMetadata): unknown {
   }
 
   return record[column.columnName];
+}
+
+function writeColumnValue(
+  entity: object,
+  column: ColumnMetadata,
+  value: unknown,
+): void {
+  const record = entity as Record<string, unknown>;
+
+  if (column.propertyName in record) {
+    record[column.propertyName] = value;
+    return;
+  }
+
+  record[column.columnName] = value;
 }
 
 function installColumnAliases(

@@ -35,6 +35,7 @@ import {
   NPARepository,
   OneToMany,
   Unique,
+  Version,
 } from '@honeybeaers/npa';
 
 @Index({ name: 'idx_users_name_created_at', columns: ['name', 'createdAt'] })
@@ -50,6 +51,9 @@ class User {
   @Column({ name: 'created_at', index: 'idx_users_created_at' })
   createdAt!: Date;
 
+  @Version()
+  version!: number;
+
   @ManyToOne(() => Team, { joinColumn: 'team_id' })
   team?: Team;
 
@@ -59,7 +63,9 @@ class User {
 ```
 
 `@Entity`, `@Id`, and `@Column` drive table, primary key, and column mapping.
-Use `@Index` for normal indexes and `@Unique` for unique indexes. Property-level
+Use `@Version` for an optimistic lock column. Inserts default it to `0`; managed
+entity dirty flushes check the previous value and increment it. Use `@Index` for
+normal indexes and `@Unique` for unique indexes. Property-level
 index decorators target that column; class-level decorators use property names in
 `columns` for composite indexes. `@Column({ index: true })` and
 `@Column({ unique: true })` are shorthand for single-column indexes. Relation
@@ -296,6 +302,14 @@ const service = new UserService();
 MySQL uses the same core decorator with `MysqlTransactionManager` from
 `@honeybeaers/npa-mysql`. Transaction options currently support `isolation`,
 `readOnly`, `required`, and `requires_new`.
+
+## Dirty Checking and Versioning
+
+Repository results loaded inside a transaction are managed by the active
+`PersistenceContext`. Mutating a managed entity and returning from the
+transaction flushes changed columns before commit. If the entity has `@Version`,
+NPA updates with `WHERE id = ? AND version = ?`, increments the version column,
+and throws `OptimisticLockError` when no row matches the expected version.
 
 ## Runtime Flow
 

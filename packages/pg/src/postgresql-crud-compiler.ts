@@ -7,16 +7,20 @@ import {
   primaryKeyProperty as resolvePrimaryKeyProperty,
   propertyToColumn,
   quoteTable,
+  versionProperty as resolveVersionProperty,
 } from "./postgresql-identifiers";
 
 export function compilePostgresqlInsert<TEntity extends object>(
   entity: TEntity,
   options: PostgresqlQueryCompilerOptions,
 ): PostgresqlCompiledQuery {
-  const entries = definedEntries(entity, options).filter(
-    ([property, value]) =>
-      property !== resolvePrimaryKeyProperty(options) ||
-      (value !== null && value !== undefined),
+  const entries = withDefaultVersionEntry(
+    definedEntries(entity, options).filter(
+      ([property, value]) =>
+        property !== resolvePrimaryKeyProperty(options) ||
+        (value !== null && value !== undefined),
+    ),
+    options,
   );
 
   if (entries.length === 0) {
@@ -43,8 +47,9 @@ export function compilePostgresqlUpdate<TEntity extends object>(
   assertId(id);
 
   const primaryKey = resolvePrimaryKeyProperty(options);
+  const version = resolveVersionProperty(options);
   const entries = definedEntries(patch, options).filter(
-    ([property]) => property !== primaryKey,
+    ([property]) => property !== primaryKey && property !== version,
   );
 
   if (entries.length === 0) {
@@ -63,6 +68,43 @@ export function compilePostgresqlUpdate<TEntity extends object>(
     )} WHERE ${propertyToColumn(primaryKey, options)} = $${
       values.length
     } RETURNING *`,
+    values,
+  };
+}
+
+export function compilePostgresqlVersionedUpdate<TEntity extends object>(
+  id: unknown,
+  patch: TEntity,
+  expectedVersion: unknown,
+  options: PostgresqlQueryCompilerOptions,
+): PostgresqlCompiledQuery {
+  assertId(id);
+  assertVersion(expectedVersion);
+
+  const primaryKey = resolvePrimaryKeyProperty(options);
+  const version = requireVersionProperty(options);
+  const entries = definedEntries(patch, options).filter(
+    ([property]) => property !== primaryKey && property !== version,
+  );
+
+  if (entries.length === 0) {
+    throw new Error("Cannot update an entity without changed values.");
+  }
+
+  const values = entries.map(([, value]) => value);
+  const assignments = entries.map(
+    ([property], index) => `${propertyToColumn(property, options)} = $${index + 1}`,
+  );
+  const versionColumn = propertyToColumn(version, options);
+  assignments.push(`${versionColumn} = ${versionColumn} + 1`);
+  values.push(id, expectedVersion);
+
+  return {
+    text: `UPDATE ${quoteTable(options)} SET ${assignments.join(
+      ", ",
+    )} WHERE ${propertyToColumn(primaryKey, options)} = $${
+      values.length - 1
+    } AND ${versionColumn} = $${values.length} RETURNING *`,
     values,
   };
 }
@@ -152,6 +194,49 @@ export function getPrimaryKeyValue<TEntity extends object>(
   options: PostgresqlQueryCompilerOptions,
 ): unknown {
   return (entity as Record<string, unknown>)[resolvePrimaryKeyProperty(options)];
+}
+
+function withDefaultVersionEntry(
+  entries: Array<[string, unknown]>,
+  options: PostgresqlQueryCompilerOptions,
+): Array<[string, unknown]> {
+  const version = resolveVersionProperty(options);
+
+  if (!version) {
+    return entries;
+  }
+
+  const versionIndex = entries.findIndex(([property]) => property === version);
+
+  if (versionIndex < 0) {
+    return [...entries, [version, 0]];
+  }
+
+  if (entries[versionIndex][1] === null || entries[versionIndex][1] === undefined) {
+    const nextEntries = [...entries];
+    nextEntries[versionIndex] = [version, 0];
+    return nextEntries;
+  }
+
+  return entries;
+}
+
+function requireVersionProperty(
+  options: PostgresqlQueryCompilerOptions,
+): string {
+  const version = resolveVersionProperty(options);
+
+  if (!version) {
+    throw new Error("A @Version column is required for versioned updates.");
+  }
+
+  return version;
+}
+
+function assertVersion(version: unknown): void {
+  if (version === null || version === undefined) {
+    throw new Error("Version value is required.");
+  }
 }
 
 function definedEntries<TEntity extends object>(

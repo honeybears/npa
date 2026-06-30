@@ -116,7 +116,7 @@ function makeCliE2EProject(tableName) {
   fs.writeFileSync(
     path.join(src, "product.entity.ts"),
     `
-import { Column, Entity, Id } from ${JSON.stringify(coreLibraryImport())};
+import { Column, Entity, Id, Version } from ${JSON.stringify(coreLibraryImport())};
 
 @Entity({ name: ${JSON.stringify(tableName)} })
 export class Product {
@@ -137,6 +137,9 @@ export class Product {
 
   @Column({ name: "created_at" })
   createdAt!: Date;
+
+  @Version()
+  version!: number;
 }
 `,
     "utf8",

@@ -24,6 +24,7 @@ test("parses entity source files for CLI generation", () => {
         { propertyName: "age", type: "number", primary: false },
         { propertyName: "active", type: "boolean", primary: false },
         { propertyName: "createdAt", type: "Date", primary: false },
+        { propertyName: "version", type: "number", primary: false },
       ],
     },
   ]);
@@ -52,6 +53,10 @@ test("generates autocomplete repository interfaces and an NPA client factory", (
   assert.match(result.content, /findByAgeGreaterThan\(value: NonNullable<User\["age"\]>\): Promise<User\[]>;/);
   assert.match(result.content, /countByAgeBetween\(min: NonNullable<User\["age"\]>, max: NonNullable<User\["age"\]>\): Promise<number>;/);
   assert.match(result.content, /findByActiveTrue\(\): Promise<User\[]>;/);
+  assert.match(
+    result.content,
+    /findByVersion\(value: NonNullable<User\["version"\]>\): Promise<User\[]>;/,
+  );
   assert.doesNotMatch(result.content, /findById\(value: NonNullable<User\["id"\]>\): Promise<User\[]>;/);
   assert.match(result.content, /user: UserRepository;/);
   assert.match(result.content, /createPostgresqlDerivedQueryRepository<UserRepository, User, number>\(\{\} as UserRepository,/);
@@ -143,7 +148,7 @@ function makeFixtureProject() {
   fs.writeFileSync(
     path.join(src, "user.entity.ts"),
     `
-import { Column, Entity, Id, ManyToOne } from "@npa/test";
+import { Column, Entity, Id, ManyToOne, Version } from "@npa/test";
 import { Team } from "./team.entity";
 
 @Entity({ name: "users" })
@@ -162,6 +167,9 @@ export class User {
 
   @Column({ name: "created_at" })
   createdAt!: Date;
+
+  @Version()
+  version!: number;
 
   @ManyToOne(() => Team)
   team?: Team;

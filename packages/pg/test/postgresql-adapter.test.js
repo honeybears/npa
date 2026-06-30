@@ -19,6 +19,7 @@ const {
   Column,
   Entity,
   Id,
+  Version,
   parseQueryMethod,
 } = require("../../../dist");
 
@@ -27,6 +28,7 @@ class PgProduct {}
 Id({ name: "product_id" })(PgProduct.prototype, "id");
 Column({ name: "product_name" })(PgProduct.prototype, "name");
 Column()(PgProduct.prototype, "price");
+Version({ name: "lock_version" })(PgProduct.prototype, "version");
 Entity({ name: "products" })(PgProduct);
 
 class TestTransactionManager extends AbstractTransactionManager {
@@ -359,13 +361,13 @@ test("flushes dirty managed entities through a PostgreSQL repository", async () 
 
       if (text.startsWith("UPDATE")) {
         return {
-          rows: [{ product_id: 1, product_name: values[0], price: values[1] }],
+          rows: [{ product_id: 1, product_name: values[0], price: values[1], lock_version: 1 }],
           rowCount: 1,
         };
       }
 
       return {
-        rows: [{ product_id: 1, product_name: "desk", price: 10 }],
+        rows: [{ product_id: 1, product_name: "desk", price: 10, lock_version: 0 }],
         rowCount: 1,
       };
     },
@@ -390,8 +392,8 @@ test("flushes dirty managed entities through a PostgreSQL repository", async () 
     },
     {
       text:
-        'UPDATE "products" SET "product_name" = $1, "price" = $2 WHERE "product_id" = $3 RETURNING *',
-      values: ["chair", 12, 1],
+        'UPDATE "products" SET "product_name" = $1, "price" = $2, "lock_version" = "lock_version" + 1 WHERE "product_id" = $3 AND "lock_version" = $4 RETURNING *',
+      values: ["chair", 12, 1, 0],
     },
   ]);
 });

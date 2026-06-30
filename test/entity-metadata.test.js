@@ -10,6 +10,7 @@ const {
   ManyToOne,
   OneToMany,
   Unique,
+  Version,
   getEntityMetadata,
   parseQueryMethod,
 } = require("../dist");
@@ -37,6 +38,7 @@ Id({ name: "user_id" })(User.prototype, "id");
 Column({ name: "full_name" })(User.prototype, "name");
 Unique({ name: "uidx_users_full_name" })(User.prototype, "name");
 Column({ name: "created_at", index: "idx_users_created_at" })(User.prototype, "createdAt");
+Version({ name: "lock_version" })(User.prototype, "version");
 Index({ name: "idx_users_name_created_at", columns: ["name", "createdAt"] })(User);
 ManyToOne(() => Team, { joinColumn: "team_id" })(User.prototype, "team");
 ManyToMany(() => Role, { joinTable: "user_roles" })(User.prototype, "roles");
@@ -52,13 +54,17 @@ test("registers JPA-style entity metadata including relations", () => {
       propertyName: column.propertyName,
       columnName: column.columnName,
       primary: column.primary,
+      version: column.version,
     })),
     [
-      { propertyName: "id", columnName: "user_id", primary: true },
-      { propertyName: "name", columnName: "full_name", primary: false },
-      { propertyName: "createdAt", columnName: "created_at", primary: false },
+      { propertyName: "id", columnName: "user_id", primary: true, version: false },
+      { propertyName: "name", columnName: "full_name", primary: false, version: false },
+      { propertyName: "createdAt", columnName: "created_at", primary: false, version: false },
+      { propertyName: "version", columnName: "lock_version", primary: false, version: true },
     ],
   );
+  assert.equal(metadata.versionColumn?.propertyName, "version");
+  assert.equal(metadata.versionColumn?.columnName, "lock_version");
   assert.deepEqual(
     metadata.indexes.map((index) => ({
       name: index.name,
@@ -121,8 +127,8 @@ test("uses entity metadata for PostgreSQL insert and derived query mapping", () 
     ),
     {
       text:
-        'INSERT INTO "app"."npa_users" ("full_name", "created_at") VALUES ($1, $2) RETURNING *',
-      values: ["kim", 10],
+        'INSERT INTO "app"."npa_users" ("full_name", "created_at", "lock_version") VALUES ($1, $2, $3) RETURNING *',
+      values: ["kim", 10, 0],
     },
   );
 
@@ -169,8 +175,8 @@ test("creates a database-agnostic NPA repository backed by the PostgreSQL adapte
   assert.deepEqual(calls, [
     {
       text:
-        'INSERT INTO "app"."npa_users" ("full_name", "created_at") VALUES ($1, $2) RETURNING *',
-      values: ["kim", 10],
+        'INSERT INTO "app"."npa_users" ("full_name", "created_at", "lock_version") VALUES ($1, $2, $3) RETURNING *',
+      values: ["kim", 10, 0],
     },
     {
       text: 'SELECT * FROM "app"."npa_users" WHERE ("full_name" = $1)',

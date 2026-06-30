@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NPAMigrationAdapterName, NPAMigrationEntitySchema } from "./types";
 
-export const NPA_MIGRATION_FORMAT_VERSION = "npa-migration-v2";
+export const NPA_MIGRATION_FORMAT_VERSION = "npa-migration-v3";
 
 export function createMigrationChecksum(
   adapter: NPAMigrationAdapterName,
@@ -32,6 +32,7 @@ export function createMigrationSnapshot(
             dbType: column.dbType,
             nullable: column.nullable,
             primary: column.primary,
+            version: column.version,
           }))
           .sort((left, right) => left.columnName.localeCompare(right.columnName)),
         indexes: (entity.indexes ?? [])

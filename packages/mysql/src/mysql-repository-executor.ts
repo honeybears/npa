@@ -14,6 +14,7 @@ import {
   compileMysqlFindById,
   compileMysqlInsert,
   compileMysqlUpdate,
+  compileMysqlVersionedUpdate,
   getMysqlPrimaryKeyValue,
 } from "./mysql-crud-compiler";
 import { compileMysqlQuery } from "./mysql-query-compiler";
@@ -24,8 +25,15 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
   implements NPARepositoryAdapter<TEntity, TId>
 {
   private readonly dirtyCheckAdapter: NPADirtyCheckAdapter<TEntity> = {
-    updateDirty: async (_entity, id, patch) => {
-      const query = compileMysqlUpdate(id, patch, this.options);
+    updateDirty: async (_entity, id, patch, updateOptions) => {
+      const query = updateOptions?.versionColumn
+        ? compileMysqlVersionedUpdate(
+          id,
+          patch,
+          updateOptions.expectedVersion,
+          this.options,
+        )
+        : compileMysqlUpdate(id, patch, this.options);
       const result = await executeMysqlQuery<TEntity>(
         this.options,
         query.text,

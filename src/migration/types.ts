@@ -7,6 +7,7 @@ export interface NPAMigrationColumnSchema {
   dbType?: string;
   nullable: boolean;
   primary: boolean;
+  version: boolean;
 }
 
 export interface NPAMigrationIndexSchema {

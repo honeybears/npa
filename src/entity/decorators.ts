@@ -4,6 +4,7 @@ import {
   registerId,
   registerIndex,
   registerRelation,
+  registerVersion,
 } from "./metadata-storage";
 import {
   ColumnOptions,
@@ -34,6 +35,14 @@ export function Column(options: ColumnOptions | string = {}): PropertyDecorator 
 
   return (target, propertyKey) => {
     registerColumn(target, propertyKey, resolvedOptions);
+  };
+}
+
+export function Version(options: ColumnOptions | string = {}): PropertyDecorator {
+  const resolvedOptions = normalizeColumnOptions(options);
+
+  return (target, propertyKey) => {
+    registerVersion(target, propertyKey, resolvedOptions);
   };
 }
 

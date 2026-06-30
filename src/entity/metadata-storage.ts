@@ -19,6 +19,7 @@ interface MutableEntityMetadata {
   indexes: Map<string, IndexMetadata>;
   relations: Map<string, RelationMetadata>;
   primaryColumn?: ColumnMetadata;
+  versionColumn?: ColumnMetadata;
 }
 
 const metadataByTarget = new WeakMap<EntityTarget, MutableEntityMetadata>();
@@ -46,6 +47,7 @@ export function registerColumn(
     nullable: options.nullable ?? false,
     type: options.type,
     primary: false,
+    version: false,
   });
 
   registerColumnIndexOptions(metadata, propertyName, options);
@@ -64,10 +66,32 @@ export function registerId(
     nullable: false,
     type: options.type,
     primary: true,
+    version: false,
   };
 
   metadata.columns.set(propertyName, column);
   metadata.primaryColumn = column;
+  registerColumnIndexOptions(metadata, propertyName, options);
+}
+
+export function registerVersion(
+  target: object,
+  propertyKey: string | symbol,
+  options: ColumnOptions = {},
+): void {
+  const metadata = getOrCreateMutableMetadata(target.constructor as EntityTarget);
+  const propertyName = toPropertyName(propertyKey);
+  const column: ColumnMetadata = {
+    propertyName,
+    columnName: options.name ?? toSnakeCase(propertyName),
+    nullable: false,
+    type: options.type,
+    primary: false,
+    version: true,
+  };
+
+  metadata.columns.set(propertyName, column);
+  metadata.versionColumn = column;
   registerColumnIndexOptions(metadata, propertyName, options);
 }
 
@@ -138,6 +162,7 @@ export function getEntityMetadata<TEntity extends object>(
     indexes: [...metadata.indexes.values()],
     relations: [...metadata.relations.values()],
     primaryColumn: metadata.primaryColumn,
+    versionColumn: metadata.versionColumn,
   };
 }
 
@@ -196,6 +221,7 @@ function getOrCreateMutableMetadata(
     indexes: new Map(),
     relations: new Map(),
     primaryColumn: undefined,
+    versionColumn: undefined,
   };
   metadataByTarget.set(target, metadata);
 

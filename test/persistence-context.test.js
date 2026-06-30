@@ -5,16 +5,24 @@ const {
   Column,
   Entity,
   Id,
+  OptimisticLockError,
   PersistenceContext,
+  Version,
 } = require("../dist");
 
 class User {}
+class VersionedUser {}
 
 Id({ name: "user_id" })(User.prototype, "id");
 Column({ name: "full_name" })(User.prototype, "name");
 Column()(User.prototype, "active");
 Column({ name: "created_at" })(User.prototype, "createdAt");
 Entity({ name: "users" })(User);
+
+Id({ name: "user_id" })(VersionedUser.prototype, "id");
+Column({ name: "full_name" })(VersionedUser.prototype, "name");
+Version({ name: "lock_version" })(VersionedUser.prototype, "version");
+Entity({ name: "versioned_users" })(VersionedUser);
 
 test("tracks managed entity changes and flushes property-name patches", async () => {
   const updates = [];
@@ -101,4 +109,62 @@ test("detaches managed entities before flush", async () => {
   await context.flush();
 
   assert.deepEqual(updates, []);
+});
+
+
+test("uses @Version metadata for optimistic dirty updates", async () => {
+  const updates = [];
+  const context = new PersistenceContext();
+  const row = { user_id: 4, full_name: "kim", lock_version: 2 };
+
+  const managed = context.manage(row, {
+    entity: VersionedUser,
+    adapter: {
+      async updateDirty(_entity, id, patch, options) {
+        updates.push({
+          id,
+          patch,
+          expectedVersion: options.expectedVersion,
+          versionColumn: {
+            propertyName: options.versionColumn.propertyName,
+            columnName: options.versionColumn.columnName,
+          },
+        });
+        return { user_id: id, full_name: patch.name, lock_version: 3 };
+      },
+    },
+  });
+
+  managed.name = "lee";
+
+  await context.flush();
+
+  assert.equal(row.lock_version, 3);
+  assert.equal(managed.version, 3);
+  assert.deepEqual(updates, [
+    {
+      id: 4,
+      patch: { name: "lee" },
+      expectedVersion: 2,
+      versionColumn: { propertyName: "version", columnName: "lock_version" },
+    },
+  ]);
+});
+
+test("throws OptimisticLockError when a versioned dirty update affects no rows", async () => {
+  const context = new PersistenceContext();
+  const row = { user_id: 5, full_name: "kim", lock_version: 7 };
+
+  const managed = context.manage(row, {
+    entity: VersionedUser,
+    adapter: {
+      async updateDirty() {
+        return null;
+      },
+    },
+  });
+
+  managed.name = "lee";
+
+  await assert.rejects(() => context.flush(), OptimisticLockError);
 });

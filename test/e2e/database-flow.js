@@ -8,6 +8,7 @@ const {
   Column,
   Entity,
   Id,
+  Version,
 } = require("../../dist");
 const {
   PostgresqlConnection,
@@ -54,7 +55,8 @@ const databaseAdapters = [
         price INTEGER NOT NULL,
         active BOOLEAN NOT NULL,
         status TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL
+        created_at TIMESTAMPTZ NOT NULL,
+        version INTEGER NOT NULL
       )
     `,
     createRepository: ({ entity, queryable }) =>
@@ -85,7 +87,8 @@ const databaseAdapters = [
         price INT NOT NULL,
         active BOOLEAN NOT NULL,
         status VARCHAR(64) NOT NULL,
-        created_at DATETIME(3) NOT NULL
+        created_at DATETIME(3) NOT NULL,
+        version INT NOT NULL
       )
     `,
     createRepository: ({ entity, queryable }) =>
@@ -144,6 +147,7 @@ async function assertRepositoryContract(repository) {
   assert.equal(typeof firstId, "number");
   assert.equal(first.product_name, "desk alpha");
   assert.equal(first.price, 120);
+  assert.equal(first.version, 0);
   assert.equal(await repository.existsById(firstId), true);
   assert.equal(await repository.existsById(firstId + 1000), false);
   assert.deepEqual(await repository.findById(firstId), first);
@@ -219,6 +223,7 @@ function createProductEntity(tableName) {
   Column()(Product.prototype, "active");
   Column()(Product.prototype, "status");
   Column({ name: "created_at" })(Product.prototype, "createdAt");
+  Version()(Product.prototype, "version");
   Entity({ name: tableName })(Product);
 
   return Product;

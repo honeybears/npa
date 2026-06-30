@@ -1,10 +1,16 @@
-import { EntityTarget } from "../entity";
+import { ColumnMetadata, EntityTarget } from "../entity";
+
+export interface NPADirtyCheckUpdateOptions {
+  expectedVersion?: unknown;
+  versionColumn?: ColumnMetadata;
+}
 
 export interface NPADirtyCheckAdapter<TEntity extends object = object> {
   updateDirty(
     entity: TEntity,
     id: unknown,
     patch: Partial<TEntity>,
+    options?: NPADirtyCheckUpdateOptions,
   ): Promise<TEntity | null> | TEntity | null;
 }
 

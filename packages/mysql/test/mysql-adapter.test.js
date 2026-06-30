@@ -6,6 +6,7 @@ const {
   Column,
   Entity,
   Id,
+  Version,
   parseQueryMethod,
 } = require("../../../dist");
 const {
@@ -31,6 +32,13 @@ Column()(Product.prototype, "status");
 Column({ name: "created_at" })(Product.prototype, "createdAt");
 Entity({ name: "products", schema: "shop" })(Product);
 
+class VersionedProduct {}
+
+Id({ name: "product_id" })(VersionedProduct.prototype, "id");
+Column({ name: "product_name" })(VersionedProduct.prototype, "name");
+Column()(VersionedProduct.prototype, "price");
+Version({ name: "lock_version" })(VersionedProduct.prototype, "version");
+Entity({ name: "products", schema: "shop" })(VersionedProduct);
 
 class TestTransactionManager extends AbstractTransactionManager {
   acquireTransactionResource() {
@@ -262,24 +270,27 @@ test("runs derived queries and CRUD through a mysql2-style queryable", async () 
 
 test("flushes dirty managed entities through a MySQL repository", async () => {
   const calls = [];
+  let lockVersion = 0;
   const queryable = {
     async query(text, values) {
       calls.push({ text, values });
 
       if (text.startsWith("UPDATE")) {
+        lockVersion = 1;
         return [{ affectedRows: 1 }, []];
       }
 
       return [[{
         product_id: values[0],
-        product_name: "desk",
-        price: 10,
+        product_name: lockVersion === 0 ? "desk" : "chair",
+        price: lockVersion === 0 ? 10 : 15,
+        lock_version: lockVersion,
       }], []];
     },
   };
   const repository = createMysqlDerivedQueryRepository(
     {},
-    { entity: Product, queryable },
+    { entity: VersionedProduct, queryable },
   );
   const manager = new TestTransactionManager();
 
@@ -297,8 +308,8 @@ test("flushes dirty managed entities through a MySQL repository", async () => {
     },
     {
       text:
-        "UPDATE `shop`.`products` SET `product_name` = ?, `price` = ? WHERE `product_id` = ?",
-      values: ["chair", 15, 10],
+        "UPDATE `shop`.`products` SET `product_name` = ?, `price` = ?, `lock_version` = `lock_version` + 1 WHERE `product_id` = ? AND `lock_version` = ?",
+      values: ["chair", 15, 10, 0],
     },
     {
       text:

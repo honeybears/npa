@@ -50,6 +50,7 @@ for (const adapter of databaseAdapters) {
           await service.renameManagedProduct(created.product_id, "dirty commit");
           const renamed = await repository.findById(created.product_id);
           assert.equal(renamed.product_name, "dirty commit");
+          assert.equal(renamed.version, 1);
         } finally {
           await runtime.close();
         }

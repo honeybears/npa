@@ -14,6 +14,7 @@ import {
   compilePostgresqlFindById,
   compilePostgresqlInsert,
   compilePostgresqlUpdate,
+  compilePostgresqlVersionedUpdate,
   getPrimaryKeyValue,
 } from "./postgresql-crud-compiler";
 import { compilePostgresqlQuery } from "./postgresql-query-compiler";
@@ -23,8 +24,15 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
   implements NPARepositoryAdapter<TEntity, TId>
 {
   private readonly dirtyCheckAdapter: NPADirtyCheckAdapter<TEntity> = {
-    updateDirty: async (_entity, id, patch) => {
-      const query = compilePostgresqlUpdate(id, patch, this.options);
+    updateDirty: async (_entity, id, patch, updateOptions) => {
+      const query = updateOptions?.versionColumn
+        ? compilePostgresqlVersionedUpdate(
+          id,
+          patch,
+          updateOptions.expectedVersion,
+          this.options,
+        )
+        : compilePostgresqlUpdate(id, patch, this.options);
       const result = await this.options.queryable.query<TEntity>(
         query.text,
         query.values,

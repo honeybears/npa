@@ -18,7 +18,7 @@ interface DecoratorOptions {
   joinTable?: string;
 }
 
-type FieldDecoratorName = "Id" | "Column" | "Index" | "Unique";
+type FieldDecoratorName = "Id" | "Column" | "Version" | "Index" | "Unique";
 
 export function discoverEntitySchemas(
   cwd: string,
@@ -83,14 +83,15 @@ function parseColumns(
   while ((match = fieldPattern.exec(classBody)) !== null) {
     const decorators = match[1];
 
-    if (!/@(?:Id|Column)(?:\(|\s|$)/.test(decorators)) {
+    if (!/@(?:Id|Column|Version)(?:\(|\s|$)/.test(decorators)) {
       continue;
     }
 
     const propertyName = match[2];
     const tsType = match[3].trim();
     const primary = /@Id(?:\(|\s|$)/.test(decorators);
-    const decoratorName = primary ? "Id" : "Column";
+    const version = /@Version(?:\(|\s|$)/.test(decorators);
+    const decoratorName = primary ? "Id" : version ? "Version" : "Column";
     const rawOptions = readDecoratorArguments(decorators, decoratorName);
     const options = parseDecoratorOptions(
       rawOptions,
@@ -103,8 +104,9 @@ function parseColumns(
       columnName: options.name ?? toSnakeCase(propertyName),
       tsType,
       dbType: options.type,
-      nullable: primary ? false : options.nullable ?? false,
+      nullable: primary || version ? false : options.nullable ?? false,
       primary,
+      version,
     });
   }
 
@@ -168,9 +170,13 @@ function parsePropertyIndexes(
       continue;
     }
 
-    const columnDecorator = /@Id(?:\(|\s|$)/.test(decorators) ? "Id" : "Column";
+    const columnDecorator = /@Id(?:\(|\s|$)/.test(decorators)
+      ? "Id"
+      : /@Version(?:\(|\s|$)/.test(decorators)
+        ? "Version"
+        : "Column";
 
-    if (/@(?:Id|Column)(?:\(|\s|$)/.test(decorators)) {
+    if (/@(?:Id|Column|Version)(?:\(|\s|$)/.test(decorators)) {
       const columnOptions = parseDecoratorOptions(
         readDecoratorArguments(decorators, columnDecorator),
         `@${columnDecorator} for ${className}.${propertyName}`,
@@ -524,7 +530,7 @@ function readLeadingClassDecorators(source: string, entityDecoratorIndex: number
 }
 
 function createFieldPattern(): RegExp {
-  return /((?:\s*@(?:Id|Column|Index|Unique)(?:\((?:[^()"'`]|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\]*(?:\\.[^`\\]*)*`)*\))?\s*)+)\s*(?:public\s+|protected\s+|private\s+|readonly\s+)*([A-Za-z_]\w*)(?:[?!])?\s*:\s*([^=;]+)[=;]?/g;
+  return /((?:\s*@(?:Id|Column|Version|Index|Unique)(?:\((?:[^()"'`]|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\]*(?:\\.[^`\\]*)*`)*\))?\s*)+)\s*(?:public\s+|protected\s+|private\s+|readonly\s+)*([A-Za-z_]\w*)(?:[?!])?\s*:\s*([^=;]+)[=;]?/g;
 }
 
 function splitTopLevel(value: string): string[] {
