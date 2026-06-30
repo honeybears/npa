@@ -4,6 +4,8 @@ import {
   EntityMetadata,
   EntityOptions,
   EntityTarget,
+  IndexMetadata,
+  IndexOptions,
   RelationKind,
   RelationMetadata,
   RelationOptions,
@@ -14,6 +16,7 @@ interface MutableEntityMetadata {
   tableName?: string;
   schema?: string;
   columns: Map<string, ColumnMetadata>;
+  indexes: Map<string, IndexMetadata>;
   relations: Map<string, RelationMetadata>;
   primaryColumn?: ColumnMetadata;
 }
@@ -44,6 +47,8 @@ export function registerColumn(
     type: options.type,
     primary: false,
   });
+
+  registerColumnIndexOptions(metadata, propertyName, options);
 }
 
 export function registerId(
@@ -63,6 +68,36 @@ export function registerId(
 
   metadata.columns.set(propertyName, column);
   metadata.primaryColumn = column;
+  registerColumnIndexOptions(metadata, propertyName, options);
+}
+
+export function registerIndex(
+  target: object | EntityTarget,
+  propertyKey: string | symbol | undefined,
+  options: IndexOptions = {},
+  unique = false,
+): void {
+  const isPropertyDecorator = propertyKey !== undefined;
+  const metadata = getOrCreateMutableMetadata(
+    isPropertyDecorator
+      ? (target as object).constructor as EntityTarget
+      : target as EntityTarget,
+  );
+  const propertyNames = isPropertyDecorator
+    ? [toPropertyName(propertyKey)]
+    : options.columns ?? [];
+
+  if (propertyNames.length === 0) {
+    throw new Error("Class-level indexes require at least one column.");
+  }
+
+  const index: IndexMetadata = {
+    name: options.name,
+    propertyNames,
+    unique,
+  };
+
+  metadata.indexes.set(indexKey(index), index);
 }
 
 export function registerRelation(
@@ -100,6 +135,7 @@ export function getEntityMetadata<TEntity extends object>(
     tableName: metadata.tableName,
     schema: metadata.schema,
     columns: [...metadata.columns.values()],
+    indexes: [...metadata.indexes.values()],
     relations: [...metadata.relations.values()],
     primaryColumn: metadata.primaryColumn,
   };
@@ -109,6 +145,38 @@ export function getOptionalEntityMetadata<TEntity extends object>(
   target: EntityTarget<TEntity> | undefined,
 ): EntityMetadata | undefined {
   return target ? getEntityMetadata(target) : undefined;
+}
+
+function registerColumnIndexOptions(
+  metadata: MutableEntityMetadata,
+  propertyName: string,
+  options: ColumnOptions,
+): void {
+  if (options.index) {
+    const index = columnIndex(propertyName, options.index, false);
+    metadata.indexes.set(indexKey(index), index);
+  }
+
+  if (options.unique) {
+    const index = columnIndex(propertyName, options.unique, true);
+    metadata.indexes.set(indexKey(index), index);
+  }
+}
+
+function columnIndex(
+  propertyName: string,
+  value: boolean | string,
+  unique: boolean,
+): IndexMetadata {
+  return {
+    name: typeof value === "string" ? value : undefined,
+    propertyNames: [propertyName],
+    unique,
+  };
+}
+
+function indexKey(index: IndexMetadata): string {
+  return `${index.unique ? "unique" : "index"}:${index.name ?? index.propertyNames.join(",")}`;
 }
 
 function getOrCreateMutableMetadata(
@@ -125,6 +193,7 @@ function getOrCreateMutableMetadata(
     tableName: undefined,
     schema: undefined,
     columns: new Map(),
+    indexes: new Map(),
     relations: new Map(),
     primaryColumn: undefined,
   };

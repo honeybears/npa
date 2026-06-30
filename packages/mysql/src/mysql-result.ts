@@ -34,7 +34,7 @@ function callQueryable<TRow>(
   throw new Error("MySQL queryable requires query() or execute().");
 }
 
-function normalizeMysqlResult<TRow>(
+export function normalizeMysqlResult<TRow>(
   raw: MysqlRawQueryResult<TRow>,
 ): MysqlQueryResult<TRow> {
   if (Array.isArray(raw)) {

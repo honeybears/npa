@@ -11,6 +11,7 @@ test("prints CLI help when no command is provided", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage:/);
   assert.match(result.stdout, /npa generate/);
+  assert.match(result.stdout, /npa migrate/);
 });
 
 test("rejects unsupported CLI adapter names", () => {
@@ -55,6 +56,81 @@ test("generates a client from CLI inline flags", () => {
   assert.match(generated, /import \{ MysqlQueryable, createMysqlDerivedQueryRepository \} from "@npa\/mysql";/);
   assert.match(generated, /export interface NPAClient/);
   assert.match(generated, /product: ProductRepository;/);
+});
+
+test("prints migrate dry-run SQL", () => {
+  const root = makeCliFixtureProject();
+  const result = runCli(
+    [
+      "migrate",
+      "--dry-run",
+      "--adapter",
+      "postgresql",
+      "--entities",
+      "src/**/*.entity.ts",
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Adapter: postgresql/);
+  assert.match(result.stdout, /Checksum: [a-f0-9]{64}/);
+  assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS "_npa_migrations"/);
+  assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS "products"/);
+  assert.match(result.stdout, /"product_id" SERIAL PRIMARY KEY/);
+});
+
+test("runs migrate dry-run from npa.config.mjs", () => {
+  const root = makeCliFixtureProject();
+  fs.writeFileSync(
+    path.join(root, "npa.config.mjs"),
+    `export default {
+      adapter: "mysql",
+      entities: ["src/**/*.entity.ts"]
+    };`,
+    "utf8",
+  );
+  const result = runCli(["migrate", "--dry-run"], root);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Adapter: mysql/);
+  assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS `_npa_migrations`/);
+  assert.match(result.stdout, /`product_id` INT AUTO_INCREMENT PRIMARY KEY/);
+});
+
+test("rejects migrate without url unless dry-run is used", () => {
+  const root = makeCliFixtureProject();
+  const result = runCli(
+    [
+      "migrate",
+      "--adapter",
+      "postgresql",
+      "--entities",
+      "src/**/*.entity.ts",
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /requires database url unless --dry-run/);
+});
+
+test("rejects unsupported migrate adapter names", () => {
+  const root = makeCliFixtureProject();
+  const result = runCli(
+    [
+      "migrate",
+      "--dry-run",
+      "--adapter",
+      "sqlite",
+      "--entities",
+      "src/**/*.entity.ts",
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Migration adapter must be postgresql or mysql/);
 });
 
 test("generates TypeScript clients that compile for each adapter", () => {
@@ -118,7 +194,7 @@ function makeCliFixtureProject(options = {}) {
           rootDir: "src",
           baseUrl: ".",
           paths: {
-            "@honeybeaers/node-persistence-api-core": [library],
+            "@honeybeaers/npa": [library],
           },
           skipLibCheck: true,
           strict: true,

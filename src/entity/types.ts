@@ -11,6 +11,13 @@ export interface ColumnOptions {
   name?: string;
   nullable?: boolean;
   type?: string;
+  index?: boolean | string;
+  unique?: boolean | string;
+}
+
+export interface IndexOptions {
+  name?: string;
+  columns?: string[];
 }
 
 export interface RelationOptions {
@@ -30,6 +37,12 @@ export interface ColumnMetadata {
   primary: boolean;
 }
 
+export interface IndexMetadata {
+  name?: string;
+  propertyNames: string[];
+  unique: boolean;
+}
+
 export interface RelationMetadata {
   propertyName: string;
   kind: RelationKind;
@@ -45,6 +58,7 @@ export interface EntityMetadata {
   tableName: string;
   schema?: string;
   columns: ColumnMetadata[];
+  indexes: IndexMetadata[];
   relations: RelationMetadata[];
   primaryColumn?: ColumnMetadata;
 }

@@ -1,7 +1,8 @@
+import { runMigrateCommand } from "../migration/cli";
 import { generateNPAClient } from "./generate-client";
 import { GenerateNPAClientOptions, NPAAdapterName } from "./types";
 
-export function runNPACli(argv: string[], cwd = process.cwd()): number {
+export async function runNPACli(argv: string[], cwd = process.cwd()): Promise<number> {
   const [command, ...args] = argv;
 
   try {
@@ -9,6 +10,11 @@ export function runNPACli(argv: string[], cwd = process.cwd()): number {
       const options = parseGenerateOptions(args, cwd);
       const result = generateNPAClient(options);
       process.stdout.write(`Generated ${result.path}\n`);
+      return 0;
+    }
+
+    if (command === "migrate") {
+      await runMigrateCommand(args, cwd);
       return 0;
     }
 
@@ -83,6 +89,7 @@ function toCamelCase(value: string): string {
 function printHelp(): void {
   process.stdout.write(`Usage:
   npa generate [--entities "src/**/*.entity.ts"] [--out src/generated/npa.ts]
+  npa migrate [--config npa.config.mjs] [--dry-run]
 
 Options:
   --adapter <name>       Adapter used by the generated client: postgresql or mysql.
@@ -91,5 +98,12 @@ Options:
   --core-library <spec>  Import specifier for the NPA core package.
   --adapter-library <s>  Import specifier for the selected connector package.
   --library <specifier>  Legacy import specifier used for both core and adapter.
+
+Migrate options:
+  --config <file>       Config file path. Defaults to npa.config.mjs when present.
+  --adapter <name>      Migration adapter: postgresql or mysql.
+  --url <url>           Database URL. Required unless --dry-run is used.
+  --entities <patterns> Comma-separated entity source globs.
+  --dry-run             Print SQL without changing the database.
 `);
 }

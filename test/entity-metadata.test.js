@@ -5,9 +5,11 @@ const {
   Column,
   Entity,
   Id,
+  Index,
   ManyToMany,
   ManyToOne,
   OneToMany,
+  Unique,
   getEntityMetadata,
   parseQueryMethod,
 } = require("../dist");
@@ -33,7 +35,9 @@ Entity({ name: "roles" })(Role);
 
 Id({ name: "user_id" })(User.prototype, "id");
 Column({ name: "full_name" })(User.prototype, "name");
-Column({ name: "created_at" })(User.prototype, "createdAt");
+Unique({ name: "uidx_users_full_name" })(User.prototype, "name");
+Column({ name: "created_at", index: "idx_users_created_at" })(User.prototype, "createdAt");
+Index({ name: "idx_users_name_created_at", columns: ["name", "createdAt"] })(User);
 ManyToOne(() => Team, { joinColumn: "team_id" })(User.prototype, "team");
 ManyToMany(() => Role, { joinTable: "user_roles" })(User.prototype, "roles");
 Entity({ name: "npa_users", schema: "app" })(User);
@@ -53,6 +57,30 @@ test("registers JPA-style entity metadata including relations", () => {
       { propertyName: "id", columnName: "user_id", primary: true },
       { propertyName: "name", columnName: "full_name", primary: false },
       { propertyName: "createdAt", columnName: "created_at", primary: false },
+    ],
+  );
+  assert.deepEqual(
+    metadata.indexes.map((index) => ({
+      name: index.name,
+      propertyNames: index.propertyNames,
+      unique: index.unique,
+    })),
+    [
+      {
+        name: "uidx_users_full_name",
+        propertyNames: ["name"],
+        unique: true,
+      },
+      {
+        name: "idx_users_created_at",
+        propertyNames: ["createdAt"],
+        unique: false,
+      },
+      {
+        name: "idx_users_name_created_at",
+        propertyNames: ["name", "createdAt"],
+        unique: false,
+      },
     ],
   );
   assert.deepEqual(

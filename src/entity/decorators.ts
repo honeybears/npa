@@ -2,12 +2,14 @@ import {
   registerColumn,
   registerEntity,
   registerId,
+  registerIndex,
   registerRelation,
 } from "./metadata-storage";
 import {
   ColumnOptions,
   EntityOptions,
   EntityTarget,
+  IndexOptions,
   RelationOptions,
 } from "./types";
 
@@ -33,6 +35,14 @@ export function Column(options: ColumnOptions | string = {}): PropertyDecorator 
   return (target, propertyKey) => {
     registerColumn(target, propertyKey, resolvedOptions);
   };
+}
+
+export function Index(options: IndexOptions | string = {}): ClassDecorator & PropertyDecorator {
+  return createIndexDecorator(normalizeIndexOptions(options), false);
+}
+
+export function Unique(options: IndexOptions | string = {}): ClassDecorator & PropertyDecorator {
+  return createIndexDecorator(normalizeIndexOptions(options), true);
 }
 
 export function OneToMany(
@@ -66,4 +76,17 @@ function normalizeColumnOptions(
   options: ColumnOptions | string,
 ): ColumnOptions {
   return typeof options === "string" ? { name: options } : options;
+}
+
+function normalizeIndexOptions(options: IndexOptions | string): IndexOptions {
+  return typeof options === "string" ? { name: options } : options;
+}
+
+function createIndexDecorator(
+  options: IndexOptions,
+  unique: boolean,
+): ClassDecorator & PropertyDecorator {
+  return ((target: object | EntityTarget, propertyKey?: string | symbol) => {
+    registerIndex(target as object | EntityTarget, propertyKey, options, unique);
+  }) as ClassDecorator & PropertyDecorator;
 }
