@@ -112,27 +112,70 @@ const teams = await teamRepository.findAll({ relations: ['members'] });
 
 ## CLI Generate
 
-Run `npa generate` when you want NPA to create a typed client file and
-single-column method variants for you. Hand-written abstract repositories remain
-the recommended path for JPA-style repository declarations.
+Run `npa generate repositories` when you want Spring Data JPA-style method-name
+autocomplete without writing every derived-query declaration by hand. The CLI
+scans exported `@Entity` classes and writes abstract repository token classes.
 
 ```bash
-npa generate \
+npa generate repositories \
+  --entities "src/**/*.entity.ts" \
+  --out src/generated/repositories.ts
+```
+
+Generated output includes:
+
+```ts
+import { NPARepository, Repository } from '@honeybeaers/npa';
+
+@Repository(User)
+export abstract class UserRepository extends NPARepository<User, number> {
+  abstract findByName(value: NonNullable<User['name']>): Promise<User[]>;
+  abstract findByNameContaining(value: NonNullable<User['name']>): Promise<User[]>;
+  abstract deleteByNameContaining(value: NonNullable<User['name']>): Promise<number>;
+}
+
+export const npaRepositories = [UserRepository] as const;
+```
+
+Register the generated tokens once and ask NPA for the concrete Proxy-backed
+implementation at runtime:
+
+```ts
+import { createNPA } from '@honeybeaers/npa';
+import { postgresql } from '@honeybeaers/npa-pg';
+import { UserRepository, npaRepositories } from './generated/repositories';
+
+const npa = createNPA({
+  adapter: postgresql({ queryable: connection }),
+  repositories: npaRepositories,
+});
+
+const users = npa.get(UserRepository);
+await users.findByNameContaining('kim');
+```
+
+The generator creates single-field method variants for `find`, `findOne`,
+`exists`, `count`, and `delete`. Complex multi-field methods can still be
+declared manually on your repository class. Base methods such as `findById`,
+`findAll`, and `deleteAll` come from `NPARepository`, so generated declarations
+do not need to repeat them.
+
+The legacy typed-client generator is still available as `npa generate client`
+or the backward-compatible `npa generate` alias. Use `--adapter mysql` to emit a
+MySQL-backed client factory.
+
+```bash
+npa generate client \
   --entities "src/**/*.entity.ts" \
   --out src/generated/npa.ts \
   --adapter postgresql
 ```
 
-Use `--adapter mysql` to generate a MySQL-backed client factory.
-
-Generated output includes:
+Client output includes:
 
 ```ts
 import { NPARepository } from '@honeybeaers/npa';
-import {
-  PostgresqlQueryable,
-  createPostgresqlDerivedQueryRepository,
-} from '@honeybeaers/npa-pg';
+import { createPostgresqlDerivedQueryRepository } from '@honeybeaers/npa-pg';
 
 export interface UserRepository extends NPARepository<User, number> {
   findByName(value: NonNullable<User['name']>): Promise<User[]>;
@@ -148,12 +191,6 @@ export interface NPAClient {
   user: UserRepository;
 }
 ```
-
-The generator creates single-field method variants for `find`, `findOne`,
-`exists`, `count`, and `delete`. Complex multi-field methods can still be
-declared manually on your repository interface. Base methods such as
-`findById`, `findAll`, and `deleteAll` come from `NPARepository`, so generated
-interfaces do not need to repeat them.
 
 
 ## Schema Push and Migrations

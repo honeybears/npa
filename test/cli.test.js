@@ -11,6 +11,7 @@ test("prints CLI help when no command is provided", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage:/);
   assert.match(result.stdout, /npa generate/);
+  assert.match(result.stdout, /npa generate repositories/);
   assert.match(result.stdout, /npa db push/);
   assert.match(result.stdout, /npa migrate dev/);
   assert.match(result.stdout, /npa migrate deploy/);
@@ -58,6 +59,32 @@ test("generates a client from CLI inline flags", () => {
   assert.match(generated, /import \{ MysqlQueryable, createMysqlDerivedQueryRepository \} from "@npa\/mysql";/);
   assert.match(generated, /export interface NPAClient/);
   assert.match(generated, /product: ProductRepository;/);
+});
+
+test("generates repository declarations from CLI inline flags", () => {
+  const root = makeCliFixtureProject();
+  const outPath = path.join(root, "src", "generated", "repositories.ts");
+  const result = runCli(
+    [
+      "generate",
+      "repositories",
+      "--entities=src/**/*.entity.ts",
+      "--out=src/generated/repositories.ts",
+      "--library=@npa/core",
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Generated /);
+
+  const generated = fs.readFileSync(outPath, "utf8");
+  assert.match(generated, /import \{ NPARepository, Repository \} from "@npa\/core";/);
+  assert.match(generated, /@Repository\(Product\)/);
+  assert.match(generated, /abstract class ProductRepository/);
+  assert.match(generated, /export const npaRepositories = \[/);
+  assert.doesNotMatch(generated, /createMysqlDerivedQueryRepository/);
+  assert.doesNotMatch(generated, /createPostgresqlDerivedQueryRepository/);
 });
 
 test("prints migrate dry-run SQL", () => {
@@ -227,6 +254,53 @@ test("generates TypeScript clients that compile for each adapter", () => {
       true,
     );
   }
+});
+
+test("generates repository declarations that compile with createNPA", () => {
+  const root = makeCliFixtureProject({
+    libraryImport: coreLibraryImport(),
+  });
+  const result = runCli(
+    [
+      "generate",
+      "repositories",
+      "--entities",
+      "src/**/*.entity.ts",
+      "--out",
+      "src/generated/repositories.ts",
+      "--library",
+      coreLibraryImport(),
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  fs.writeFileSync(
+    path.join(root, "src", "app.ts"),
+    `import { createNPA, type NPARuntimeAdapter } from ${JSON.stringify(coreLibraryImport())};
+import { ProductRepository, npaRepositories } from "./generated/repositories";
+
+const adapter: NPARuntimeAdapter = {
+  createRepository() {
+    throw new Error("not implemented");
+  },
+};
+
+const npa = createNPA({ adapter, repositories: npaRepositories });
+const products = npa.get(ProductRepository);
+
+products.findByNameContaining("desk");
+products.findByPriceGreaterThan(10);
+products.existsById(1);
+`,
+    "utf8",
+  );
+
+  compileProject(root);
+  assert.equal(
+    fs.existsSync(path.join(root, "dist", "generated", "repositories.js")),
+    true,
+  );
 });
 
 function runCli(args, cwd = process.cwd()) {

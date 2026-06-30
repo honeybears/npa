@@ -27,7 +27,7 @@ export interface NPARuntimeAdapter {
 
 export interface CreateNPAOptions {
   adapter: NPARuntimeAdapter;
-  repositories: NPARepositoryTarget[];
+  repositories: ReadonlyArray<NPARepositoryTarget>;
 }
 
 export interface NPAApplication {

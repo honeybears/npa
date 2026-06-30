@@ -10,6 +10,14 @@ export interface GenerateNPAClientOptions {
   libraryImport?: string;
 }
 
+export interface GenerateNPARepositoriesOptions {
+  cwd: string;
+  entities: string[];
+  out: string;
+  coreLibraryImport?: string;
+  libraryImport?: string;
+}
+
 export interface ParsedEntitySource {
   className: string;
   filePath: string;

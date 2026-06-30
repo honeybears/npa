@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const {
   generateNPAClient,
+  generateNPARepositories,
   parseEntityFile,
 } = require("../dist");
 
@@ -86,6 +87,43 @@ test("generates a MySQL-backed NPA client factory", () => {
   assert.match(result.content, /queryable: MysqlQueryable;/);
   assert.match(result.content, /createMysqlDerivedQueryRepository<UserRepository, User, number>\(\{\} as UserRepository,/);
   assert.doesNotMatch(result.content, /createPostgresqlDerivedQueryRepository/);
+});
+
+test("generates abstract repository declarations for Proxy runtime autocomplete", () => {
+  const root = makeFixtureProject();
+  const result = generateNPARepositories({
+    cwd: root,
+    entities: ["src/**/*.entity.ts"],
+    out: "src/generated/repositories.ts",
+    coreLibraryImport: "@npa/core",
+  });
+
+  assert.equal(
+    result.path,
+    path.join(root, "src", "generated", "repositories.ts"),
+  );
+  assert.match(
+    result.content,
+    /import \{ NPARepository, Repository \} from "@npa\/core";/,
+  );
+  assert.match(result.content, /@Repository\(User\)/);
+  assert.match(
+    result.content,
+    /export abstract class UserRepository extends NPARepository<User, number>/,
+  );
+  assert.match(
+    result.content,
+    /abstract findByNameContaining\(value: NonNullable<User\["name"\]>\): Promise<User\[]>;/,
+  );
+  assert.match(
+    result.content,
+    /abstract existsByAgeGreaterThan\(value: NonNullable<User\["age"\]>\): Promise<boolean>;/,
+  );
+  assert.match(result.content, /export const npaRepositories = \[/);
+  assert.match(result.content, /UserRepository,/);
+  assert.match(result.content, /TeamRepository,/);
+  assert.doesNotMatch(result.content, /createPostgresqlDerivedQueryRepository/);
+  assert.equal(fs.readFileSync(result.path, "utf8"), result.content);
 });
 
 test("runs npa generate from the compiled CLI", () => {
