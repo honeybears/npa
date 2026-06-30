@@ -18,6 +18,7 @@ import {
   getPrimaryKeyValue,
 } from "./postgresql-crud-compiler";
 import { compilePostgresqlQuery } from "./postgresql-query-compiler";
+import { loadPostgresqlRelations } from "./postgresql-relation-loader";
 import { PostgresqlRepositoryOptions } from "./types";
 
 export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
@@ -73,24 +74,25 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
 
   execute = this.executeDerivedQuery;
 
-  findById = async (id: TId): Promise<TEntity | null> => {
+  findById = async (id: TId, load?: { relations?: true | string[] }): Promise<TEntity | null> => {
     const query = compilePostgresqlFindById(id, this.options);
     const result = await this.options.queryable.query<TEntity>(
       query.text,
       query.values,
     );
 
-    return this.manage(result.rows[0] ?? null);
+    const loaded = await this.loadRelations(result.rows, load);
+    return this.manage(loaded[0] ?? null);
   };
 
-  findAll = async (): Promise<TEntity[]> => {
+  findAll = async (load?: { relations?: true | string[] }): Promise<TEntity[]> => {
     const query = compilePostgresqlFindAll(this.options);
     const result = await this.options.queryable.query<TEntity>(
       query.text,
       query.values,
     );
 
-    return this.manageMany(result.rows);
+    return this.manageMany(await this.loadRelations(result.rows, load));
   };
 
   existsById = async (id: TId): Promise<boolean> => {
@@ -213,6 +215,17 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return context.manageMany(entities, {
       adapter: this.dirtyCheckAdapter,
       entity: entityTarget,
+    });
+  }
+
+  private async loadRelations(
+    entities: TEntity[],
+    load: { relations?: true | string[] } | undefined,
+  ): Promise<TEntity[]> {
+    return loadPostgresqlRelations(entities, {
+      entity: this.getEntityTarget(),
+      load,
+      queryable: this.options.queryable,
     });
   }
 

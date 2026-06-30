@@ -54,7 +54,11 @@ class User {
   @Version()
   version!: number;
 
-  @ManyToOne(() => Team, { joinColumn: 'team_id' })
+  @ManyToOne(() => Team, {
+    joinColumn: 'team_id',
+    foreignKeyName: 'fk_users_team',
+    onDelete: 'SET NULL',
+  })
   team?: Team;
 
   @ManyToMany(() => Role, { joinTable: 'user_roles' })
@@ -68,9 +72,12 @@ entity dirty flushes check the previous value and increment it. Use `@Index` for
 normal indexes and `@Unique` for unique indexes. Property-level
 index decorators target that column; class-level decorators use property names in
 `columns` for composite indexes. `@Column({ index: true })` and
-`@Column({ unique: true })` are shorthand for single-column indexes. Relation
-decorators are recorded as metadata for association support. Entity classes must
-be exported so the generated client can import them.
+`@Column({ unique: true })` are shorthand for single-column indexes.
+`@ManyToOne` creates a nullable foreign-key column using `joinColumn` or the
+default `<property>_<targetIdColumn>` name. Use `foreignKeyName`, `onDelete`,
+and `onUpdate` to control generated constraints. `@OneToMany` requires
+`mappedBy`; `@ManyToMany` creates a join table. Entity classes must be exported
+so the generated client can import them.
 
 ## Repository Usage
 
@@ -87,6 +94,13 @@ interface UserRepository extends NPARepository<User, number> {
   existsByName(name: string): Promise<boolean>;
   deleteByNameContaining(name: string): Promise<number>;
 }
+```
+
+Load relations explicitly on base reads:
+
+```ts
+const user = await users.findById(1, { relations: ['team', 'roles'] });
+const teams = await teamRepository.findAll({ relations: ['members'] });
 ```
 
 ## CLI Generate
@@ -142,9 +156,10 @@ Use `npa db push` for Prisma `db push`-style local synchronization: NPA reads
 exported `@Entity` classes and applies the current schema directly to the
 database. It creates missing tables, adds missing columns, changes supported
 column types/nullability, drops columns removed from the entity, creates normal
-and unique indexes, and creates `@ManyToMany({ joinTable })` tables. Rename
-detection is not inferred; a rename is treated as a drop plus add, so review
-dry-run SQL before applying it.
+and unique indexes, creates `@ManyToOne` foreign keys, and creates
+`@ManyToMany({ joinTable })` tables with foreign keys. Rename detection is not
+inferred; a rename is treated as a drop plus add, so review dry-run SQL before
+applying it.
 
 Create `npa.config.mjs`:
 
@@ -197,9 +212,9 @@ Default TypeScript-to-DB mapping is intentionally small: `string`, `number`,
 `boolean`, and `Date`, with numeric `@Id` mapped to auto-increment primary keys.
 Use `@Column({ type: 'VARCHAR(80)' })` when you need an explicit database type.
 For many-to-many relations, NPA creates a join table with both primary-key
-columns and a composite primary key, for example `@ManyToMany(() => Role,
-{ joinTable: 'user_roles' })`. Dynamic decorator expressions are rejected by
-migration parsing.
+columns, a composite primary key, and foreign keys back to each side, for
+example `@ManyToMany(() => Role, { joinTable: 'user_roles' })`. Dynamic
+decorator expressions are rejected by migration parsing.
 
 ## Adapter Wiring
 
@@ -226,8 +241,8 @@ const users = npa.user;
 
 await users.insert({ name: 'kim', createdAt: new Date() });
 await users.save({ id: 1, name: 'lee', createdAt: new Date() });
-await users.findById(1);
-await users.findAll();
+await users.findById(1, { relations: ['team', 'roles'] });
+await users.findAll({ relations: ['team'] });
 await users.existsById(1);
 await users.count();
 await users.updateById(1, { name: 'park' });
@@ -267,8 +282,8 @@ const users = npa.user;
 
 await users.insert({ name: 'kim', createdAt: new Date() });
 await users.save({ id: 1, name: 'lee', createdAt: new Date() });
-await users.findById(1);
-await users.findAll();
+await users.findById(1, { relations: ['team', 'roles'] });
+await users.findAll({ relations: ['team'] });
 await users.existsById(1);
 await users.count();
 await users.updateById(1, { name: 'park' });

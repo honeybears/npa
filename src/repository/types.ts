@@ -9,9 +9,13 @@ export interface RepositoryMethodExecutor<TResult = unknown> {
   (invocation: RepositoryMethodInvocation): TResult;
 }
 
+export interface NPALoadOptions<TEntity extends object = object> {
+  relations?: true | Array<Extract<keyof TEntity, string> | string>;
+}
+
 export interface NPARepository<TEntity extends object, TId = unknown> {
-  findById(id: TId): Promise<TEntity | null>;
-  findAll(): Promise<TEntity[]>;
+  findById(id: TId, options?: NPALoadOptions<TEntity>): Promise<TEntity | null>;
+  findAll(options?: NPALoadOptions<TEntity>): Promise<TEntity[]>;
   existsById(id: TId): Promise<boolean>;
   count(): Promise<number>;
   save(entity: TEntity): Promise<TEntity | null>;

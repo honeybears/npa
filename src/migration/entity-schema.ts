@@ -4,6 +4,8 @@ import {
   NPAMigrationColumnSchema,
   NPAMigrationEntitySchema,
   NPAMigrationIndexSchema,
+  NPAMigrationReferentialAction,
+  NPAMigrationRelationKind,
   NPAMigrationRelationSchema,
 } from "./types";
 
@@ -15,7 +17,12 @@ interface DecoratorOptions {
   index?: boolean | string;
   unique?: boolean | string;
   columns?: string[];
+  mappedBy?: string;
+  joinColumn?: string;
   joinTable?: string;
+  foreignKeyName?: string;
+  onDelete?: NPAMigrationReferentialAction;
+  onUpdate?: NPAMigrationReferentialAction;
 }
 
 type FieldDecoratorName = "Id" | "Column" | "Version" | "Index" | "Unique";
@@ -263,49 +270,80 @@ function parseRelations(
   let cursor = 0;
 
   while (cursor < classBody.length) {
-    const decoratorIndex = classBody.indexOf("@ManyToMany", cursor);
+    const match = findNextRelationDecorator(classBody, cursor);
 
-    if (decoratorIndex < 0) {
+    if (!match) {
       break;
     }
 
-    const openIndex = skipWhitespace(classBody, decoratorIndex + "@ManyToMany".length);
+    const { decoratorName, kind, index: decoratorIndex } = match;
+    const openIndex = skipWhitespace(classBody, decoratorIndex + decoratorName.length + 1);
 
     if (classBody[openIndex] !== "(") {
-      throw new Error(`@ManyToMany for ${className} must include decorator arguments.`);
+      throw new Error(`@${decoratorName} for ${className} must include decorator arguments.`);
     }
 
     const closeIndex = findMatching(classBody, openIndex, "(", ")");
 
     if (closeIndex < 0) {
-      throw new Error(`@ManyToMany for ${className} has unbalanced parentheses.`);
+      throw new Error(`@${decoratorName} for ${className} has unbalanced parentheses.`);
     }
 
     const rawArguments = classBody.slice(openIndex + 1, closeIndex);
     const propertyName = readDecoratedPropertyName(
       classBody,
       closeIndex + 1,
-      `@ManyToMany for ${className}`,
+      `@${decoratorName} for ${className}`,
     );
     const targetClassName = readRelationTarget(
       rawArguments,
-      `@ManyToMany for ${className}.${propertyName}`,
+      `@${decoratorName} for ${className}.${propertyName}`,
     );
     const relationOptions = readRelationOptions(
       rawArguments,
-      `@ManyToMany for ${className}.${propertyName}`,
+      `@${decoratorName} for ${className}.${propertyName}`,
     );
 
     relations.push({
       propertyName,
-      kind: "many-to-many",
+      kind,
       targetClassName,
+      mappedBy: relationOptions.mappedBy,
+      joinColumn: relationOptions.joinColumn,
       joinTable: relationOptions.joinTable ?? relationOptions.name,
+      foreignKeyName: relationOptions.foreignKeyName,
+      onDelete: relationOptions.onDelete,
+      onUpdate: relationOptions.onUpdate,
     });
     cursor = closeIndex + 1;
   }
 
   return relations;
+}
+
+function findNextRelationDecorator(
+  source: string,
+  cursor: number,
+): { decoratorName: string; kind: NPAMigrationRelationKind; index: number } | undefined {
+  const candidates: Array<{ decoratorName: string; kind: NPAMigrationRelationKind; index: number }> = [
+    {
+      decoratorName: "OneToMany",
+      kind: "one-to-many" as const,
+      index: source.indexOf("@OneToMany", cursor),
+    },
+    {
+      decoratorName: "ManyToOne",
+      kind: "many-to-one" as const,
+      index: source.indexOf("@ManyToOne", cursor),
+    },
+    {
+      decoratorName: "ManyToMany",
+      kind: "many-to-many" as const,
+      index: source.indexOf("@ManyToMany", cursor),
+    },
+  ].filter((candidate) => candidate.index >= 0);
+
+  return candidates.sort((left, right) => left.index - right.index)[0];
 }
 
 function readRelationTarget(rawArguments: string, context: string): string {
@@ -328,7 +366,15 @@ function readRelationOptions(rawArguments: string, context: string): DecoratorOp
     return {};
   }
 
-  return parseDecoratorOptions(optionsArgument, context, ["joinTable"]);
+  return parseDecoratorOptions(optionsArgument, context, [
+    "mappedBy",
+    "inversedBy",
+    "joinColumn",
+    "joinTable",
+    "foreignKeyName",
+    "onDelete",
+    "onUpdate",
+  ]);
 }
 
 function readDecoratedPropertyName(
@@ -432,10 +478,36 @@ function parseDecoratorOptions(
       options.type = stringValue;
     } else if (key === "joinTable") {
       options.joinTable = stringValue;
+    } else if (key === "joinColumn") {
+      options.joinColumn = stringValue;
+    } else if (key === "mappedBy") {
+      options.mappedBy = stringValue;
+    } else if (key === "foreignKeyName") {
+      options.foreignKeyName = stringValue;
+    } else if (key === "onDelete") {
+      options.onDelete = readReferentialAction(stringValue, `${context}.${key}`);
+    } else if (key === "onUpdate") {
+      options.onUpdate = readReferentialAction(stringValue, `${context}.${key}`);
     }
   }
 
   return options;
+}
+
+function readReferentialAction(
+  value: string,
+  context: string,
+): NPAMigrationReferentialAction {
+  if (
+    value !== "CASCADE" &&
+    value !== "SET NULL" &&
+    value !== "RESTRICT" &&
+    value !== "NO ACTION"
+  ) {
+    throw new Error(`${context} must be CASCADE, SET NULL, RESTRICT, or NO ACTION.`);
+  }
+
+  return value;
 }
 
 function parseNamedDecoratorOptions(

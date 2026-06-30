@@ -1,5 +1,6 @@
 import {
   mysqlEntityColumnProperties,
+  normalizeMysqlPropertyValue,
   mysqlPrimaryKeyProperty,
   mysqlPropertyToColumn,
   mysqlVersionProperty,
@@ -25,7 +26,7 @@ export function compileMysqlInsert<TEntity extends object>(
   }
 
   const columns = entries.map(([property]) => mysqlPropertyToColumn(property, options));
-  const values = entries.map(([, value]) => value);
+  const values = entries.map(([property, value]) => normalizeMysqlPropertyValue(property, value, options));
   const placeholders = values.map(() => "?");
 
   return {
@@ -53,7 +54,7 @@ export function compileMysqlUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([, value]) => value);
+  const values = entries.map(([property, value]) => normalizeMysqlPropertyValue(property, value, options));
   const assignments = entries.map(
     ([property]) => `${mysqlPropertyToColumn(property, options)} = ?`,
   );
@@ -86,7 +87,7 @@ export function compileMysqlVersionedUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([, value]) => value);
+  const values = entries.map(([property, value]) => normalizeMysqlPropertyValue(property, value, options));
   const assignments = entries.map(
     ([property]) => `${mysqlPropertyToColumn(property, options)} = ?`,
   );

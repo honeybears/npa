@@ -49,10 +49,26 @@ test("parses entity source files into migration schemas", () => {
   ]);
   assert.deepEqual(product.relations, [
     {
+      propertyName: "primaryCategory",
+      kind: "many-to-one",
+      targetClassName: "Category",
+      mappedBy: undefined,
+      joinColumn: "primary_category_id",
+      joinTable: undefined,
+      foreignKeyName: "fk_products_primary_category",
+      onDelete: "SET NULL",
+      onUpdate: undefined,
+    },
+    {
       propertyName: "categories",
       kind: "many-to-many",
       targetClassName: "Category",
+      mappedBy: undefined,
+      joinColumn: undefined,
       joinTable: "product_categories",
+      foreignKeyName: undefined,
+      onDelete: undefined,
+      onUpdate: undefined,
     },
   ]);
   assert.deepEqual(
@@ -181,12 +197,16 @@ test("compiles PostgreSQL and MySQL schema migration SQL", () => {
       '  "description" TEXT,',
       '  "active" BOOLEAN NOT NULL,',
       '  "created_at" TIMESTAMPTZ NOT NULL,',
-      '  "lock_version" INTEGER NOT NULL',
+      '  "lock_version" INTEGER NOT NULL,',
+      '  "primary_category_id" INTEGER',
       ")",
     ].join("\n"),
     'CREATE INDEX IF NOT EXISTS "idx_products_active" ON "shop"."products" ("active")',
     'CREATE INDEX IF NOT EXISTS "idx_products_active_created_at" ON "shop"."products" ("active", "created_at")',
     'CREATE UNIQUE INDEX IF NOT EXISTS "uidx_products_name" ON "shop"."products" ("product_name")',
+    'ALTER TABLE "shop"."product_categories" ADD CONSTRAINT "fk_product_categories_category_id_categories" FOREIGN KEY ("category_id") REFERENCES "shop"."categories" ("category_id")',
+    'ALTER TABLE "shop"."product_categories" ADD CONSTRAINT "fk_product_categories_product_id_products" FOREIGN KEY ("product_id") REFERENCES "shop"."products" ("product_id")',
+    'ALTER TABLE "shop"."products" ADD CONSTRAINT "fk_products_primary_category" FOREIGN KEY ("primary_category_id") REFERENCES "shop"."categories" ("category_id") ON DELETE SET NULL',
   ]);
 
   assert.deepEqual(compileMysqlMigrationStatements({ entities: schemas }), [
@@ -220,12 +240,16 @@ test("compiles PostgreSQL and MySQL schema migration SQL", () => {
       "  `description` VARCHAR(255),",
       "  `active` BOOLEAN NOT NULL,",
       "  `created_at` DATETIME(3) NOT NULL,",
-      "  `lock_version` INT NOT NULL",
+      "  `lock_version` INT NOT NULL,",
+      "  `primary_category_id` INT",
       ")",
     ].join("\n"),
     "CREATE INDEX `idx_products_active` ON `shop`.`products` (`active`)",
     "CREATE INDEX `idx_products_active_created_at` ON `shop`.`products` (`active`, `created_at`)",
     "CREATE UNIQUE INDEX `uidx_products_name` ON `shop`.`products` (`product_name`)",
+    "ALTER TABLE `shop`.`product_categories` ADD CONSTRAINT `fk_product_categories_category_id_categories` FOREIGN KEY (`category_id`) REFERENCES `shop`.`categories` (`category_id`)",
+    "ALTER TABLE `shop`.`product_categories` ADD CONSTRAINT `fk_product_categories_product_id_products` FOREIGN KEY (`product_id`) REFERENCES `shop`.`products` (`product_id`)",
+    "ALTER TABLE `shop`.`products` ADD CONSTRAINT `fk_products_primary_category` FOREIGN KEY (`primary_category_id`) REFERENCES `shop`.`categories` (`category_id`) ON DELETE SET NULL",
   ]);
 });
 
@@ -313,7 +337,7 @@ function makeMigrationFixture() {
   fs.writeFileSync(
     path.join(src, "product.entity.ts"),
     `
-import { Column, Entity, Id, Index, ManyToMany, Unique, Version } from "@npa/test";
+import { Column, Entity, Id, Index, ManyToMany, ManyToOne, Unique, Version } from "@npa/test";
 
 @Index({ name: "idx_products_active_created_at", columns: ["active", "createdAt"] })
 @Entity({ name: "products", schema: "shop" })
@@ -336,6 +360,9 @@ export class Product {
 
   @Version({ name: "lock_version" })
   version!: number;
+
+  @ManyToOne(() => Category, { joinColumn: "primary_category_id", foreignKeyName: "fk_products_primary_category", onDelete: "SET NULL" })
+  primaryCategory?: Category;
 
   @ManyToMany(() => Category, { joinTable: "product_categories" })
   categories?: Category[];

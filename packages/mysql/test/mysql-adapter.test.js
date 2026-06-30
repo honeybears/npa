@@ -6,6 +6,9 @@ const {
   Column,
   Entity,
   Id,
+  ManyToMany,
+  ManyToOne,
+  OneToMany,
   Version,
   parseQueryMethod,
 } = require("../../../dist");
@@ -31,6 +34,24 @@ Column()(Product.prototype, "active");
 Column()(Product.prototype, "status");
 Column({ name: "created_at" })(Product.prototype, "createdAt");
 Entity({ name: "products", schema: "shop" })(Product);
+
+class Team {}
+Id({ name: "team_id" })(Team.prototype, "id");
+Column()(Team.prototype, "label");
+OneToMany(() => Member, { mappedBy: "team" })(Team.prototype, "members");
+Entity({ name: "teams" })(Team);
+
+class Role {}
+Id({ name: "role_id" })(Role.prototype, "id");
+Column()(Role.prototype, "name");
+Entity({ name: "roles" })(Role);
+
+class Member {}
+Id({ name: "member_id" })(Member.prototype, "id");
+Column()(Member.prototype, "name");
+ManyToOne(() => Team, { joinColumn: "team_id" })(Member.prototype, "team");
+ManyToMany(() => Role, { joinTable: "member_roles" })(Member.prototype, "roles");
+Entity({ name: "members" })(Member);
 
 class VersionedProduct {}
 
@@ -265,6 +286,66 @@ test("runs derived queries and CRUD through a mysql2-style queryable", async () 
       values: [],
     },
   ]);
+});
+
+test("loads MySQL many-to-one, one-to-many, and many-to-many relations", async () => {
+  const calls = [];
+  const queryable = {
+    async query(text, values) {
+      calls.push({ text, values });
+
+      if (text === "SELECT * FROM `members` WHERE `member_id` = ? LIMIT 1") {
+        return [[{ member_id: values[0], name: "kim", team_id: 2 }], []];
+      }
+
+      if (text === "SELECT * FROM `teams` WHERE `team_id` IN (?)") {
+        return [[{ team_id: 2, label: "core" }], []];
+      }
+
+      if (text.includes("FROM `member_roles` j")) {
+        return [[
+          { __npa_source_id: 10, role_id: 7, name: "admin" },
+          { __npa_source_id: 10, role_id: 8, name: "writer" },
+        ], []];
+      }
+
+      if (text === "SELECT * FROM `teams`") {
+        return [[{ team_id: 2, label: "core" }], []];
+      }
+
+      if (text === "SELECT * FROM `members` WHERE `team_id` IN (?)") {
+        return [[
+          { member_id: 10, name: "kim", team_id: 2 },
+          { member_id: 11, name: "lee", team_id: 2 },
+        ], []];
+      }
+
+      throw new Error(`Unexpected query: ${text}`);
+    },
+  };
+  const members = createMysqlDerivedQueryRepository(
+    {},
+    { entity: Member, queryable },
+  );
+  const teams = createMysqlDerivedQueryRepository(
+    {},
+    { entity: Team, queryable },
+  );
+
+  const member = await members.findById(10, { relations: ["team", "roles"] });
+  assert.deepEqual(member.team, { team_id: 2, label: "core" });
+  assert.deepEqual(member.roles, [
+    { role_id: 7, name: "admin" },
+    { role_id: 8, name: "writer" },
+  ]);
+
+  const [team] = await teams.findAll({ relations: ["members"] });
+  assert.deepEqual(team.members, [
+    { member_id: 10, name: "kim", team_id: 2 },
+    { member_id: 11, name: "lee", team_id: 2 },
+  ]);
+
+  assert.equal(calls.length, 5);
 });
 
 

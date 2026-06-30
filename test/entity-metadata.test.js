@@ -127,8 +127,8 @@ test("uses entity metadata for PostgreSQL insert and derived query mapping", () 
     ),
     {
       text:
-        'INSERT INTO "app"."npa_users" ("full_name", "created_at", "lock_version") VALUES ($1, $2, $3) RETURNING *',
-      values: ["kim", 10, 0],
+        'INSERT INTO "app"."npa_users" ("full_name", "created_at", "team_id", "lock_version") VALUES ($1, $2, $3, $4) RETURNING *',
+      values: ["kim", 10, 1, 0],
     },
   );
 

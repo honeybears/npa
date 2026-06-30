@@ -16,13 +16,19 @@ export interface NPAMigrationIndexSchema {
   unique: boolean;
 }
 
-export type NPAMigrationRelationKind = "many-to-many";
+export type NPAMigrationRelationKind = "one-to-many" | "many-to-one" | "many-to-many";
+export type NPAMigrationReferentialAction = "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION";
 
 export interface NPAMigrationRelationSchema {
   propertyName: string;
   kind: NPAMigrationRelationKind;
   targetClassName: string;
+  mappedBy?: string;
+  joinColumn?: string;
   joinTable?: string;
+  foreignKeyName?: string;
+  onDelete?: NPAMigrationReferentialAction;
+  onUpdate?: NPAMigrationReferentialAction;
 }
 
 export interface NPAMigrationEntitySchema {

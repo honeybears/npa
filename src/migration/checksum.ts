@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NPAMigrationAdapterName, NPAMigrationEntitySchema } from "./types";
 
-export const NPA_MIGRATION_FORMAT_VERSION = "npa-migration-v3";
+export const NPA_MIGRATION_FORMAT_VERSION = "npa-migration-v4";
 
 export function createMigrationChecksum(
   adapter: NPAMigrationAdapterName,
@@ -51,11 +51,36 @@ export function createMigrationSnapshot(
             propertyName: relation.propertyName,
             kind: relation.kind,
             targetClassName: relation.targetClassName,
+            mappedBy: relation.mappedBy,
+            joinColumn: relation.joinColumn,
             joinTable: relation.joinTable,
+            foreignKeyName: relation.foreignKeyName,
+            onDelete: relation.onDelete,
+            onUpdate: relation.onUpdate,
           }))
           .sort((left, right) =>
-            `${left.kind}.${left.propertyName}.${left.targetClassName}.${left.joinTable ?? ""}`.localeCompare(
-              `${right.kind}.${right.propertyName}.${right.targetClassName}.${right.joinTable ?? ""}`,
+            [
+              left.kind,
+              left.propertyName,
+              left.targetClassName,
+              left.mappedBy ?? "",
+              left.joinColumn ?? "",
+              left.joinTable ?? "",
+              left.foreignKeyName ?? "",
+              left.onDelete ?? "",
+              left.onUpdate ?? "",
+            ].join(".").localeCompare(
+              [
+                right.kind,
+                right.propertyName,
+                right.targetClassName,
+                right.mappedBy ?? "",
+                right.joinColumn ?? "",
+                right.joinTable ?? "",
+                right.foreignKeyName ?? "",
+                right.onDelete ?? "",
+                right.onUpdate ?? "",
+              ].join("."),
             ),
           ),
       }))

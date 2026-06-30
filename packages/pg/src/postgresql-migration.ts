@@ -8,17 +8,30 @@ import type {
   NPAMigrationResult,
   NPAMigrationRunOptions,
 } from "@honeybeaers/npa";
+import { createHash } from "node:crypto";
 import { PostgresqlConnection, PostgresqlDriverConnection } from "./postgresql-connection";
 
 const MIGRATION_NAME = "schema";
 const LOCK_KEY = "npa:migrations";
+const MAX_FOREIGN_KEY_IDENTIFIER_LENGTH = 63;
 
 interface MigrationTableSchema {
   tableName: string;
   schema?: string;
   columns: NPAMigrationColumnSchema[];
   indexes: NPAMigrationIndexSchema[];
+  foreignKeys: MigrationForeignKeySchema[];
   primaryKey?: string[];
+}
+
+interface MigrationForeignKeySchema {
+  name: string;
+  columns: string[];
+  referencedTable: string;
+  referencedSchema?: string;
+  referencedColumns: string[];
+  onDelete?: string;
+  onUpdate?: string;
 }
 
 interface CurrentColumnSchema {
@@ -34,10 +47,19 @@ interface CurrentIndexSchema {
   primary: boolean;
 }
 
+interface CurrentForeignKeySchema {
+  name: string;
+  columns: string[];
+  referencedTable: string;
+  referencedSchema?: string;
+  referencedColumns: string[];
+}
+
 interface CurrentTableSchema {
   exists: boolean;
   columns: Map<string, CurrentColumnSchema>;
   indexes: Map<string, CurrentIndexSchema>;
+  foreignKeys: Map<string, CurrentForeignKeySchema>;
 }
 
 interface PostgresqlColumnRow {
@@ -52,6 +74,14 @@ interface PostgresqlIndexRow {
   columns: string[];
   unique: boolean;
   primary: boolean;
+}
+
+interface PostgresqlForeignKeyRow {
+  constraintName: string;
+  columns: string[];
+  referencedSchema: string;
+  referencedTable: string;
+  referencedColumns: string[];
 }
 
 interface PostgresqlHistoryRow {
@@ -76,9 +106,12 @@ export function compilePostgresqlMigrationStatements(
 export function compilePostgresqlSchemaStatements(
   entities: NPAMigrationEntitySchema[],
 ): string[] {
+  const desiredTables = buildDesiredTables(entities);
+
   return [
     ...compilePostgresqlNamespaceStatements(entities),
-    ...buildDesiredTables(entities).flatMap((table) => compilePostgresqlCreateTableStatements(table)),
+    ...desiredTables.flatMap((table) => compilePostgresqlCreateTableStatements(table)),
+    ...desiredTables.flatMap((table) => compilePostgresqlForeignKeyDiffStatements(table, new Map())),
   ];
 }
 
@@ -326,12 +359,16 @@ function compilePostgresqlTableDiffStatements(
   currentTables: Map<string, CurrentTableSchema>,
 ): string[] {
   const statements: string[] = [];
+  const foreignKeyStatements: string[] = [];
 
   for (const table of desiredTables) {
     const currentTable = currentTables.get(tableKey(table));
 
     if (!currentTable?.exists) {
       statements.push(...compilePostgresqlCreateTableStatements(table));
+      foreignKeyStatements.push(
+        ...compilePostgresqlForeignKeyDiffStatements(table, new Map()),
+      );
       continue;
     }
 
@@ -373,9 +410,12 @@ function compilePostgresqlTableDiffStatements(
     }
 
     statements.push(...compilePostgresqlIndexDiffStatements(table, currentTable.indexes));
+    foreignKeyStatements.push(
+      ...compilePostgresqlForeignKeyDiffStatements(table, currentTable.foreignKeys),
+    );
   }
 
-  return statements;
+  return [...statements, ...foreignKeyStatements];
 }
 
 function compilePostgresqlCreateTableStatements(table: MigrationTableSchema): string[] {
@@ -383,6 +423,25 @@ function compilePostgresqlCreateTableStatements(table: MigrationTableSchema): st
     compilePostgresqlCreateTable(table),
     ...table.indexes.map((index) => compilePostgresqlCreateIndex(table, index)),
   ];
+}
+
+function compilePostgresqlForeignKeyDiffStatements(
+  table: MigrationTableSchema,
+  currentForeignKeys: Map<string, CurrentForeignKeySchema>,
+): string[] {
+  const statements: string[] = [];
+
+  for (const foreignKey of [...table.foreignKeys].sort(compareForeignKeys)) {
+    if (currentForeignKeys.has(foreignKey.name)) {
+      continue;
+    }
+
+    statements.push(
+      `ALTER TABLE ${qualifiedTable(table)} ADD ${compilePostgresqlForeignKeyConstraint(foreignKey)}`,
+    );
+  }
+
+  return statements;
 }
 
 function compilePostgresqlIndexDiffStatements(
@@ -438,6 +497,18 @@ function compilePostgresqlCreateTable(table: MigrationTableSchema): string {
   ].join("\n");
 }
 
+function compilePostgresqlForeignKeyConstraint(
+  foreignKey: MigrationForeignKeySchema,
+): string {
+  return [
+    `CONSTRAINT ${quoteQualifiedIdentifier(foreignKey.name)}`,
+    `FOREIGN KEY (${foreignKey.columns.map(quoteQualifiedIdentifier).join(", ")})`,
+    `REFERENCES ${qualifiedTable({ schema: foreignKey.referencedSchema, tableName: foreignKey.referencedTable })} (${foreignKey.referencedColumns.map(quoteQualifiedIdentifier).join(", ")})`,
+    foreignKey.onDelete ? `ON DELETE ${foreignKey.onDelete}` : undefined,
+    foreignKey.onUpdate ? `ON UPDATE ${foreignKey.onUpdate}` : undefined,
+  ].filter(Boolean).join(" ");
+}
+
 function columnDefinition(
   column: NPAMigrationColumnSchema,
   options: { inlinePrimary: boolean },
@@ -490,9 +561,10 @@ function defaultType(
 function buildDesiredTables(entities: NPAMigrationEntitySchema[]): MigrationTableSchema[] {
   const tables = new Map<string, MigrationTableSchema>();
   const sortedEntities = [...entities].sort(compareEntities);
+  const byClassName = new Map(sortedEntities.map((entity) => [entity.className, entity]));
 
   for (const entity of sortedEntities) {
-    const table = entityTable(entity);
+    const table = entityTable(entity, byClassName);
     tables.set(tableKey(table), table);
   }
 
@@ -503,12 +575,51 @@ function buildDesiredTables(entities: NPAMigrationEntitySchema[]): MigrationTabl
   return [...tables.values()].sort(compareTables);
 }
 
-function entityTable(entity: NPAMigrationEntitySchema): MigrationTableSchema {
+function entityTable(
+  entity: NPAMigrationEntitySchema,
+  byClassName: Map<string, NPAMigrationEntitySchema>,
+): MigrationTableSchema {
+  const columns = new Map(entity.columns.map((column) => [column.columnName, column]));
+  const foreignKeys: MigrationForeignKeySchema[] = [];
+
+  for (const relation of entity.relations ?? []) {
+    if (relation.kind !== "many-to-one") {
+      continue;
+    }
+
+    const target = byClassName.get(relation.targetClassName);
+
+    if (!target) {
+      throw new Error(
+        `@ManyToOne for ${entity.className}.${relation.propertyName} targets unknown entity ${relation.targetClassName}.`,
+      );
+    }
+
+    const targetPrimary = primaryColumn(target);
+    const joinColumn = relation.joinColumn ?? `${relation.propertyName}_${targetPrimary.columnName}`;
+    const column = {
+      ...relationColumn(targetPrimary, joinColumn),
+      nullable: true,
+    };
+
+    columns.set(joinColumn, column);
+    foreignKeys.push({
+      name: relation.foreignKeyName ?? foreignKeyName(entity.tableName, [joinColumn], target.tableName),
+      columns: [joinColumn],
+      referencedSchema: target.schema,
+      referencedTable: target.tableName,
+      referencedColumns: [targetPrimary.columnName],
+      onDelete: relation.onDelete,
+      onUpdate: relation.onUpdate,
+    });
+  }
+
   return {
     tableName: entity.tableName,
     schema: entity.schema,
-    columns: entity.columns,
+    columns: [...columns.values()],
     indexes: entity.indexes ?? [],
+    foreignKeys,
   };
 }
 
@@ -548,6 +659,22 @@ function buildJoinTables(entities: NPAMigrationEntitySchema[]): MigrationTableSc
           relationColumn(targetPrimary, targetColumnName),
         ],
         indexes: [],
+        foreignKeys: [
+          {
+            name: foreignKeyName(joinTable.tableName, [sourceColumnName], entity.tableName),
+            columns: [sourceColumnName],
+            referencedSchema: entity.schema,
+            referencedTable: entity.tableName,
+            referencedColumns: [sourcePrimary.columnName],
+          },
+          {
+            name: foreignKeyName(joinTable.tableName, [targetColumnName], target.tableName),
+            columns: [targetColumnName],
+            referencedSchema: target.schema,
+            referencedTable: target.tableName,
+            referencedColumns: [targetPrimary.columnName],
+          },
+        ],
         primaryKey: [sourceColumnName, targetColumnName],
       });
     }
@@ -645,11 +772,13 @@ async function readCurrentTables(
     }
 
     const indexes = await readCurrentIndexes(connection, table);
+    const foreignKeys = await readCurrentForeignKeys(connection, table);
 
     currentTables.set(tableKey(table), {
       exists: columns.size > 0,
       columns,
       indexes,
+      foreignKeys,
     });
   }
 
@@ -699,6 +828,47 @@ async function readCurrentIndexes(
   }
 
   return indexes;
+}
+
+async function readCurrentForeignKeys(
+  connection: PostgresqlConnection,
+  table: MigrationTableSchema,
+): Promise<Map<string, CurrentForeignKeySchema>> {
+  const result = await connection.query<PostgresqlForeignKeyRow>(
+    [
+      "SELECT",
+      "  tc.constraint_name AS \"constraintName\",",
+      "  array_agg(kcu.column_name ORDER BY kcu.ordinal_position) AS \"columns\",",
+      "  ccu.table_schema AS \"referencedSchema\",",
+      "  ccu.table_name AS \"referencedTable\",",
+      "  array_agg(ccu.column_name ORDER BY kcu.ordinal_position) AS \"referencedColumns\"",
+      "FROM information_schema.table_constraints tc",
+      "JOIN information_schema.key_column_usage kcu",
+      "  ON tc.constraint_schema = kcu.constraint_schema",
+      " AND tc.constraint_name = kcu.constraint_name",
+      "JOIN information_schema.constraint_column_usage ccu",
+      "  ON tc.constraint_schema = ccu.constraint_schema",
+      " AND tc.constraint_name = ccu.constraint_name",
+      "WHERE tc.constraint_type = 'FOREIGN KEY'",
+      "  AND tc.table_schema = $1",
+      "  AND tc.table_name = $2",
+      "GROUP BY tc.constraint_name, ccu.table_schema, ccu.table_name",
+    ].join("\n"),
+    [table.schema ?? "public", table.tableName],
+  );
+  const foreignKeys = new Map<string, CurrentForeignKeySchema>();
+
+  for (const row of result.rows) {
+    foreignKeys.set(row.constraintName, {
+      name: row.constraintName,
+      columns: row.columns,
+      referencedSchema: row.referencedSchema,
+      referencedTable: row.referencedTable,
+      referencedColumns: row.referencedColumns,
+    });
+  }
+
+  return foreignKeys;
 }
 
 async function readPreviousChecksum(
@@ -818,6 +988,27 @@ function sanitizeIdentifier(value: string): string {
   return value.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
+function foreignKeyName(
+  tableName: string,
+  columns: string[],
+  targetTableName: string,
+): string {
+  return shortenIdentifier(
+    sanitizeIdentifier(`fk_${tableName}_${columns.join("_")}_${targetTableName}`),
+    MAX_FOREIGN_KEY_IDENTIFIER_LENGTH,
+  );
+}
+
+function shortenIdentifier(identifier: string, maxLength: number): string {
+  if (identifier.length <= maxLength) {
+    return identifier;
+  }
+
+  const hash = createHash("sha256").update(identifier).digest("hex").slice(0, 12);
+  const prefixLength = maxLength - hash.length - 1;
+  return `${identifier.slice(0, prefixLength)}_${hash}`;
+}
+
 function compareCurrentIndexes(left: CurrentIndexSchema, right: CurrentIndexSchema): number {
   return left.name.localeCompare(right.name);
 }
@@ -826,6 +1017,13 @@ function compareIndexes(left: NPAMigrationIndexSchema, right: NPAMigrationIndexS
   return `${left.name ?? ""}.${left.unique ? "unique" : "index"}.${left.columns.join(",")}`.localeCompare(
     `${right.name ?? ""}.${right.unique ? "unique" : "index"}.${right.columns.join(",")}`,
   );
+}
+
+function compareForeignKeys(
+  left: MigrationForeignKeySchema,
+  right: MigrationForeignKeySchema,
+): number {
+  return left.name.localeCompare(right.name);
 }
 
 function qualifiedTable(table: Pick<MigrationTableSchema, "schema" | "tableName">): string {

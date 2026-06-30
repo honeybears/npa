@@ -142,6 +142,9 @@ export function registerRelation(
     inversedBy: options.inversedBy,
     joinColumn: options.joinColumn,
     joinTable: options.joinTable,
+    foreignKeyName: options.foreignKeyName,
+    onDelete: options.onDelete,
+    onUpdate: options.onUpdate,
   });
 }
 

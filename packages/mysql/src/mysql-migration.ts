@@ -8,18 +8,31 @@ import type {
   NPAMigrationResult,
   NPAMigrationRunOptions,
 } from "@honeybeaers/npa";
+import { createHash } from "node:crypto";
 import { MysqlConnection, MysqlDriverConnection } from "./mysql-connection";
 import { normalizeMysqlResult } from "./mysql-result";
 
 const MIGRATION_NAME = "schema";
 const LOCK_KEY = "npa:migrations";
+const MAX_FOREIGN_KEY_IDENTIFIER_LENGTH = 64;
 
 interface MigrationTableSchema {
   tableName: string;
   schema?: string;
   columns: NPAMigrationColumnSchema[];
   indexes: NPAMigrationIndexSchema[];
+  foreignKeys: MigrationForeignKeySchema[];
   primaryKey?: string[];
+}
+
+interface MigrationForeignKeySchema {
+  name: string;
+  columns: string[];
+  referencedTable: string;
+  referencedSchema?: string;
+  referencedColumns: string[];
+  onDelete?: string;
+  onUpdate?: string;
 }
 
 interface CurrentColumnSchema {
@@ -35,10 +48,19 @@ interface CurrentIndexSchema {
   primary: boolean;
 }
 
+interface CurrentForeignKeySchema {
+  name: string;
+  columns: string[];
+  referencedTable: string;
+  referencedSchema?: string;
+  referencedColumns: string[];
+}
+
 interface CurrentTableSchema {
   exists: boolean;
   columns: Map<string, CurrentColumnSchema>;
   indexes: Map<string, CurrentIndexSchema>;
+  foreignKeys: Map<string, CurrentForeignKeySchema>;
 }
 
 interface MysqlColumnRow {
@@ -52,6 +74,15 @@ interface MysqlIndexRow {
   nonUnique: number;
   columnName: string;
   sequence: number;
+}
+
+interface MysqlForeignKeyRow {
+  constraintName: string;
+  columnName: string;
+  referencedSchema: string;
+  referencedTable: string;
+  referencedColumn: string;
+  position: number;
 }
 
 interface MysqlHistoryRow {
@@ -76,9 +107,12 @@ export function compileMysqlMigrationStatements(
 export function compileMysqlSchemaStatements(
   entities: NPAMigrationEntitySchema[],
 ): string[] {
+  const desiredTables = buildDesiredTables(entities);
+
   return [
     ...compileMysqlNamespaceStatements(entities),
-    ...buildDesiredTables(entities).flatMap((table) => compileMysqlCreateTableStatements(table)),
+    ...desiredTables.flatMap((table) => compileMysqlCreateTableStatements(table)),
+    ...desiredTables.flatMap((table) => compileMysqlForeignKeyDiffStatements(table, new Map())),
   ];
 }
 
@@ -302,12 +336,16 @@ function compileMysqlTableDiffStatements(
   currentTables: Map<string, CurrentTableSchema>,
 ): string[] {
   const statements: string[] = [];
+  const foreignKeyStatements: string[] = [];
 
   for (const table of desiredTables) {
     const currentTable = currentTables.get(tableKey(table));
 
     if (!currentTable?.exists) {
       statements.push(...compileMysqlCreateTableStatements(table));
+      foreignKeyStatements.push(
+        ...compileMysqlForeignKeyDiffStatements(table, new Map()),
+      );
       continue;
     }
 
@@ -343,9 +381,12 @@ function compileMysqlTableDiffStatements(
     }
 
     statements.push(...compileMysqlIndexDiffStatements(table, currentTable.indexes));
+    foreignKeyStatements.push(
+      ...compileMysqlForeignKeyDiffStatements(table, currentTable.foreignKeys),
+    );
   }
 
-  return statements;
+  return [...statements, ...foreignKeyStatements];
 }
 
 function compileMysqlCreateTableStatements(table: MigrationTableSchema): string[] {
@@ -353,6 +394,25 @@ function compileMysqlCreateTableStatements(table: MigrationTableSchema): string[
     compileMysqlCreateTable(table),
     ...table.indexes.map((index) => compileMysqlCreateIndex(table, index)),
   ];
+}
+
+function compileMysqlForeignKeyDiffStatements(
+  table: MigrationTableSchema,
+  currentForeignKeys: Map<string, CurrentForeignKeySchema>,
+): string[] {
+  const statements: string[] = [];
+
+  for (const foreignKey of [...table.foreignKeys].sort(compareForeignKeys)) {
+    if (currentForeignKeys.has(foreignKey.name)) {
+      continue;
+    }
+
+    statements.push(
+      `ALTER TABLE ${qualifiedTable(table)} ADD ${compileMysqlForeignKeyConstraint(foreignKey)}`,
+    );
+  }
+
+  return statements;
 }
 
 function compileMysqlIndexDiffStatements(
@@ -408,6 +468,18 @@ function compileMysqlCreateTable(table: MigrationTableSchema): string {
   ].join("\n");
 }
 
+function compileMysqlForeignKeyConstraint(
+  foreignKey: MigrationForeignKeySchema,
+): string {
+  return [
+    `CONSTRAINT ${quoteQualifiedIdentifier(foreignKey.name)}`,
+    `FOREIGN KEY (${foreignKey.columns.map(quoteQualifiedIdentifier).join(", ")})`,
+    `REFERENCES ${qualifiedTable({ schema: foreignKey.referencedSchema, tableName: foreignKey.referencedTable })} (${foreignKey.referencedColumns.map(quoteQualifiedIdentifier).join(", ")})`,
+    foreignKey.onDelete ? `ON DELETE ${foreignKey.onDelete}` : undefined,
+    foreignKey.onUpdate ? `ON UPDATE ${foreignKey.onUpdate}` : undefined,
+  ].filter(Boolean).join(" ");
+}
+
 function columnDefinition(
   column: NPAMigrationColumnSchema,
   options: { inlinePrimary: boolean },
@@ -460,9 +532,10 @@ function defaultType(
 function buildDesiredTables(entities: NPAMigrationEntitySchema[]): MigrationTableSchema[] {
   const tables = new Map<string, MigrationTableSchema>();
   const sortedEntities = [...entities].sort(compareEntities);
+  const byClassName = new Map(sortedEntities.map((entity) => [entity.className, entity]));
 
   for (const entity of sortedEntities) {
-    const table = entityTable(entity);
+    const table = entityTable(entity, byClassName);
     tables.set(tableKey(table), table);
   }
 
@@ -473,12 +546,51 @@ function buildDesiredTables(entities: NPAMigrationEntitySchema[]): MigrationTabl
   return [...tables.values()].sort(compareTables);
 }
 
-function entityTable(entity: NPAMigrationEntitySchema): MigrationTableSchema {
+function entityTable(
+  entity: NPAMigrationEntitySchema,
+  byClassName: Map<string, NPAMigrationEntitySchema>,
+): MigrationTableSchema {
+  const columns = new Map(entity.columns.map((column) => [column.columnName, column]));
+  const foreignKeys: MigrationForeignKeySchema[] = [];
+
+  for (const relation of entity.relations ?? []) {
+    if (relation.kind !== "many-to-one") {
+      continue;
+    }
+
+    const target = byClassName.get(relation.targetClassName);
+
+    if (!target) {
+      throw new Error(
+        `@ManyToOne for ${entity.className}.${relation.propertyName} targets unknown entity ${relation.targetClassName}.`,
+      );
+    }
+
+    const targetPrimary = primaryColumn(target);
+    const joinColumn = relation.joinColumn ?? `${relation.propertyName}_${targetPrimary.columnName}`;
+    const column = {
+      ...relationColumn(targetPrimary, joinColumn),
+      nullable: true,
+    };
+
+    columns.set(joinColumn, column);
+    foreignKeys.push({
+      name: relation.foreignKeyName ?? foreignKeyName(entity.tableName, [joinColumn], target.tableName),
+      columns: [joinColumn],
+      referencedSchema: target.schema,
+      referencedTable: target.tableName,
+      referencedColumns: [targetPrimary.columnName],
+      onDelete: relation.onDelete,
+      onUpdate: relation.onUpdate,
+    });
+  }
+
   return {
     tableName: entity.tableName,
     schema: entity.schema,
-    columns: entity.columns,
+    columns: [...columns.values()],
     indexes: entity.indexes ?? [],
+    foreignKeys,
   };
 }
 
@@ -518,6 +630,22 @@ function buildJoinTables(entities: NPAMigrationEntitySchema[]): MigrationTableSc
           relationColumn(targetPrimary, targetColumnName),
         ],
         indexes: [],
+        foreignKeys: [
+          {
+            name: foreignKeyName(joinTable.tableName, [sourceColumnName], entity.tableName),
+            columns: [sourceColumnName],
+            referencedSchema: entity.schema,
+            referencedTable: entity.tableName,
+            referencedColumns: [sourcePrimary.columnName],
+          },
+          {
+            name: foreignKeyName(joinTable.tableName, [targetColumnName], target.tableName),
+            columns: [targetColumnName],
+            referencedSchema: target.schema,
+            referencedTable: target.tableName,
+            referencedColumns: [targetPrimary.columnName],
+          },
+        ],
         primaryKey: [sourceColumnName, targetColumnName],
       });
     }
@@ -616,11 +744,13 @@ async function readCurrentTables(
     }
 
     const indexes = await readCurrentIndexes(connection, table);
+    const foreignKeys = await readCurrentForeignKeys(connection, table);
 
     currentTables.set(tableKey(table), {
       exists: columns.size > 0,
       columns,
       indexes,
+      foreignKeys,
     });
   }
 
@@ -665,6 +795,52 @@ async function readCurrentIndexes(
   }
 
   return indexes;
+}
+
+async function readCurrentForeignKeys(
+  connection: MysqlConnection,
+  table: MigrationTableSchema,
+): Promise<Map<string, CurrentForeignKeySchema>> {
+  const result = normalizeMysqlResult<MysqlForeignKeyRow>(
+    await connection.query(
+      [
+        "SELECT",
+        "  CONSTRAINT_NAME AS constraintName,",
+        "  COLUMN_NAME AS columnName,",
+        "  REFERENCED_TABLE_SCHEMA AS referencedSchema,",
+        "  REFERENCED_TABLE_NAME AS referencedTable,",
+        "  REFERENCED_COLUMN_NAME AS referencedColumn,",
+        "  ORDINAL_POSITION AS position",
+        "FROM information_schema.KEY_COLUMN_USAGE",
+        `WHERE table_schema = ${table.schema ? "?" : "DATABASE()"} AND table_name = ?`,
+        "  AND REFERENCED_TABLE_NAME IS NOT NULL",
+        "ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION",
+      ].join("\n"),
+      table.schema ? [table.schema, table.tableName] : [table.tableName],
+    ),
+  );
+  const foreignKeys = new Map<string, CurrentForeignKeySchema>();
+
+  for (const row of result.rows) {
+    const current = foreignKeys.get(row.constraintName) ?? {
+      name: row.constraintName,
+      columns: [],
+      referencedSchema: row.referencedSchema,
+      referencedTable: row.referencedTable,
+      referencedColumns: [],
+    };
+
+    current.columns[row.position - 1] = row.columnName;
+    current.referencedColumns[row.position - 1] = row.referencedColumn;
+    foreignKeys.set(row.constraintName, current);
+  }
+
+  for (const foreignKey of foreignKeys.values()) {
+    foreignKey.columns = foreignKey.columns.filter(Boolean);
+    foreignKey.referencedColumns = foreignKey.referencedColumns.filter(Boolean);
+  }
+
+  return foreignKeys;
 }
 
 async function acquireLock(connection: MysqlConnection): Promise<void> {
@@ -791,6 +967,27 @@ function sanitizeIdentifier(value: string): string {
   return value.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
+function foreignKeyName(
+  tableName: string,
+  columns: string[],
+  targetTableName: string,
+): string {
+  return shortenIdentifier(
+    sanitizeIdentifier(`fk_${tableName}_${columns.join("_")}_${targetTableName}`),
+    MAX_FOREIGN_KEY_IDENTIFIER_LENGTH,
+  );
+}
+
+function shortenIdentifier(identifier: string, maxLength: number): string {
+  if (identifier.length <= maxLength) {
+    return identifier;
+  }
+
+  const hash = createHash("sha256").update(identifier).digest("hex").slice(0, 12);
+  const prefixLength = maxLength - hash.length - 1;
+  return `${identifier.slice(0, prefixLength)}_${hash}`;
+}
+
 function compareCurrentIndexes(left: CurrentIndexSchema, right: CurrentIndexSchema): number {
   return left.name.localeCompare(right.name);
 }
@@ -799,6 +996,13 @@ function compareIndexes(left: NPAMigrationIndexSchema, right: NPAMigrationIndexS
   return `${left.name ?? ""}.${left.unique ? "unique" : "index"}.${left.columns.join(",")}`.localeCompare(
     `${right.name ?? ""}.${right.unique ? "unique" : "index"}.${right.columns.join(",")}`,
   );
+}
+
+function compareForeignKeys(
+  left: MigrationForeignKeySchema,
+  right: MigrationForeignKeySchema,
+): number {
+  return left.name.localeCompare(right.name);
 }
 
 function qualifiedTable(table: Pick<MigrationTableSchema, "schema" | "tableName">): string {

@@ -18,6 +18,7 @@ import {
   getMysqlPrimaryKeyValue,
 } from "./mysql-crud-compiler";
 import { compileMysqlQuery } from "./mysql-query-compiler";
+import { loadMysqlRelations } from "./mysql-relation-loader";
 import { executeMysqlQuery } from "./mysql-result";
 import { MysqlRepositoryOptions } from "./types";
 
@@ -81,11 +82,14 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     }
   };
 
-  findById = async (id: TId): Promise<TEntity | null> => {
-    return this.manage(await this.findByIdRow(id));
+  findById = async (id: TId, load?: { relations?: true | string[] }): Promise<TEntity | null> => {
+    const row = await this.findByIdRow(id);
+    const loaded = await this.loadRelations(row ? [row] : [], load);
+
+    return this.manage(loaded[0] ?? null);
   };
 
-  findAll = async (): Promise<TEntity[]> => {
+  findAll = async (load?: { relations?: true | string[] }): Promise<TEntity[]> => {
     const query = compileMysqlFindAll(this.options);
     const result = await executeMysqlQuery<TEntity>(
       this.options,
@@ -93,7 +97,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       query.values,
     );
 
-    return this.manageMany(result.rows);
+    return this.manageMany(await this.loadRelations(result.rows, load));
   };
 
   existsById = async (id: TId): Promise<boolean> => {
@@ -234,6 +238,18 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return context.manageMany(entities, {
       adapter: this.dirtyCheckAdapter,
       entity: entityTarget,
+    });
+  }
+
+  private async loadRelations(
+    entities: TEntity[],
+    load: { relations?: true | string[] } | undefined,
+  ): Promise<TEntity[]> {
+    return loadMysqlRelations(entities, {
+      entity: this.getEntityTarget(),
+      load,
+      preferExecute: this.options.preferExecute,
+      queryable: this.options.queryable,
     });
   }
 

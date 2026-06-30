@@ -25,9 +25,14 @@ export interface RelationOptions {
   inversedBy?: string;
   joinColumn?: string;
   joinTable?: string;
+  foreignKeyName?: string;
+  onDelete?: ReferentialAction;
+  onUpdate?: ReferentialAction;
 }
 
 export type RelationKind = "one-to-many" | "many-to-one" | "many-to-many";
+
+export type ReferentialAction = "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION";
 
 export interface ColumnMetadata {
   propertyName: string;
@@ -52,6 +57,9 @@ export interface RelationMetadata {
   inversedBy?: string;
   joinColumn?: string;
   joinTable?: string;
+  foreignKeyName?: string;
+  onDelete?: ReferentialAction;
+  onUpdate?: ReferentialAction;
 }
 
 export interface EntityMetadata {

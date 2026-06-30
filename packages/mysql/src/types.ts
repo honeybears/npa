@@ -1,4 +1,4 @@
-import { EntityTarget } from "@honeybeaers/npa";
+import { EntityTarget, NPALoadOptions } from "@honeybeaers/npa";
 
 export interface MysqlOkPacket {
   affectedRows?: number;
@@ -39,6 +39,9 @@ export interface MysqlRepositoryOptions extends MysqlQueryCompilerOptions {
   queryable: MysqlQueryable;
   preferExecute?: boolean;
 }
+
+export type MysqlFindOptions<TEntity extends object = object> =
+  NPALoadOptions<TEntity>;
 
 export interface MysqlCompiledQuery {
   text: string;

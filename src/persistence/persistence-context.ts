@@ -2,6 +2,7 @@ import {
   ColumnMetadata,
   EntityMetadata,
   getEntityMetadata,
+  readRelationForeignKeyValue,
 } from "../entity";
 import { OptimisticLockError } from "./optimistic-lock-error";
 import { NPADirtyCheckAdapter, NPAManageEntityOptions } from "./types";
@@ -182,6 +183,25 @@ function diffEntity<TEntity extends object>(
     }
   }
 
+  for (const relation of metadata.relations) {
+    if (relation.kind !== "many-to-one") {
+      continue;
+    }
+
+    const currentValue = readRelationForeignKeyValue(
+      readPropertyValue(entity, relation.propertyName),
+      relation,
+    );
+
+    if (currentValue === undefined) {
+      continue;
+    }
+
+    if (!isSameValue(currentValue, snapshot.get(relation.propertyName))) {
+      patchRecord[relation.propertyName] = currentValue;
+    }
+  }
+
   return patch;
 }
 
@@ -189,12 +209,27 @@ function snapshotEntity(
   entity: object,
   metadata: EntityMetadata,
 ): EntitySnapshot {
-  return new Map(
-    metadata.columns.map((column) => [
+  return new Map([
+    ...metadata.columns.map((column) => [
       column.propertyName,
       snapshotValue(readColumnValue(entity, column)),
-    ]),
-  );
+    ] as const),
+    ...metadata.relations
+      .filter((relation) => relation.kind === "many-to-one")
+      .map((relation) => [
+        relation.propertyName,
+        snapshotValue(
+          readRelationForeignKeyValue(
+            readPropertyValue(entity, relation.propertyName),
+            relation,
+          ),
+        ),
+      ] as const),
+  ]);
+}
+
+function readPropertyValue(entity: object, propertyName: string): unknown {
+  return (entity as Record<string, unknown>)[propertyName];
 }
 
 function readColumnValue(entity: object, column: ColumnMetadata): unknown {

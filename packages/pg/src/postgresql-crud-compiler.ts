@@ -5,6 +5,7 @@ import {
 import {
   entityColumnProperties,
   primaryKeyProperty as resolvePrimaryKeyProperty,
+  normalizePropertyValue,
   propertyToColumn,
   quoteTable,
   versionProperty as resolveVersionProperty,
@@ -28,7 +29,7 @@ export function compilePostgresqlInsert<TEntity extends object>(
   }
 
   const columns = entries.map(([property]) => propertyToColumn(property, options));
-  const values = entries.map(([, value]) => value);
+  const values = entries.map(([property, value]) => normalizePropertyValue(property, value, options));
   const placeholders = values.map((_, index) => `$${index + 1}`);
 
   return {
@@ -56,7 +57,7 @@ export function compilePostgresqlUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([, value]) => value);
+  const values = entries.map(([property, value]) => normalizePropertyValue(property, value, options));
   const assignments = entries.map(
     ([property], index) => `${propertyToColumn(property, options)} = $${index + 1}`,
   );
@@ -91,7 +92,7 @@ export function compilePostgresqlVersionedUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([, value]) => value);
+  const values = entries.map(([property, value]) => normalizePropertyValue(property, value, options));
   const assignments = entries.map(
     ([property], index) => `${propertyToColumn(property, options)} = $${index + 1}`,
   );

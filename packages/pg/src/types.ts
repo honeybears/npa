@@ -1,4 +1,4 @@
-import { EntityTarget } from "@honeybeaers/npa";
+import { EntityTarget, NPALoadOptions } from "@honeybeaers/npa";
 
 export interface PostgresqlQueryResult<TRow = Record<string, unknown>> {
   rows: TRow[];
@@ -24,6 +24,9 @@ export interface PostgresqlRepositoryOptions
   extends PostgresqlQueryCompilerOptions {
   queryable: PostgresqlQueryable;
 }
+
+export type PostgresqlFindOptions<TEntity extends object = object> =
+  NPALoadOptions<TEntity>;
 
 export interface PostgresqlCompiledQuery {
   text: string;

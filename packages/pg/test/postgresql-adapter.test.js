@@ -19,6 +19,9 @@ const {
   Column,
   Entity,
   Id,
+  ManyToMany,
+  ManyToOne,
+  OneToMany,
   Version,
   parseQueryMethod,
 } = require("../../../dist");
@@ -30,6 +33,24 @@ Column({ name: "product_name" })(PgProduct.prototype, "name");
 Column()(PgProduct.prototype, "price");
 Version({ name: "lock_version" })(PgProduct.prototype, "version");
 Entity({ name: "products" })(PgProduct);
+
+class PgTeam {}
+Id({ name: "team_id" })(PgTeam.prototype, "id");
+Column()(PgTeam.prototype, "label");
+OneToMany(() => PgMember, { mappedBy: "team" })(PgTeam.prototype, "members");
+Entity({ name: "teams" })(PgTeam);
+
+class PgRole {}
+Id({ name: "role_id" })(PgRole.prototype, "id");
+Column()(PgRole.prototype, "name");
+Entity({ name: "roles" })(PgRole);
+
+class PgMember {}
+Id({ name: "member_id" })(PgMember.prototype, "id");
+Column()(PgMember.prototype, "name");
+ManyToOne(() => PgTeam, { joinColumn: "team_id" })(PgMember.prototype, "team");
+ManyToMany(() => PgRole, { joinTable: "member_roles" })(PgMember.prototype, "roles");
+Entity({ name: "members" })(PgMember);
 
 class TestTransactionManager extends AbstractTransactionManager {
   acquireTransactionResource() {
@@ -350,6 +371,72 @@ test("runs save, insert, updateById, and deleteById through a PostgreSQL queryab
       values: [],
     },
   ]);
+});
+
+test("loads PostgreSQL many-to-one, one-to-many, and many-to-many relations", async () => {
+  const calls = [];
+  const queryable = {
+    async query(text, values) {
+      calls.push({ text, values });
+
+      if (text === 'SELECT * FROM "members" WHERE "member_id" = $1 LIMIT 1') {
+        return { rows: [{ member_id: values[0], name: "kim", team_id: 2 }], rowCount: 1 };
+      }
+
+      if (text === 'SELECT * FROM "teams" WHERE "team_id" IN ($1)') {
+        return { rows: [{ team_id: 2, label: "core" }], rowCount: 1 };
+      }
+
+      if (text.includes('FROM "member_roles" j')) {
+        return {
+          rows: [
+            { __npa_source_id: 10, role_id: 7, name: "admin" },
+            { __npa_source_id: 10, role_id: 8, name: "writer" },
+          ],
+          rowCount: 2,
+        };
+      }
+
+      if (text === 'SELECT * FROM "teams"') {
+        return { rows: [{ team_id: 2, label: "core" }], rowCount: 1 };
+      }
+
+      if (text === 'SELECT * FROM "members" WHERE "team_id" IN ($1)') {
+        return {
+          rows: [
+            { member_id: 10, name: "kim", team_id: 2 },
+            { member_id: 11, name: "lee", team_id: 2 },
+          ],
+          rowCount: 2,
+        };
+      }
+
+      throw new Error(`Unexpected query: ${text}`);
+    },
+  };
+  const members = createPostgresqlDerivedQueryRepository(
+    {},
+    { entity: PgMember, queryable },
+  );
+  const teams = createPostgresqlDerivedQueryRepository(
+    {},
+    { entity: PgTeam, queryable },
+  );
+
+  const member = await members.findById(10, { relations: ["team", "roles"] });
+  assert.deepEqual(member.team, { team_id: 2, label: "core" });
+  assert.deepEqual(member.roles, [
+    { role_id: 7, name: "admin" },
+    { role_id: 8, name: "writer" },
+  ]);
+
+  const [team] = await teams.findAll({ relations: ["members"] });
+  assert.deepEqual(team.members, [
+    { member_id: 10, name: "kim", team_id: 2 },
+    { member_id: 11, name: "lee", team_id: 2 },
+  ]);
+
+  assert.equal(calls.length, 5);
 });
 
 
