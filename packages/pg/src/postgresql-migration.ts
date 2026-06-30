@@ -8,6 +8,7 @@ import type {
   NPAMigrationResult,
   NPAMigrationRunOptions,
 } from "@honeybeaers/npa";
+import { NPAMigrationRelationKind } from "@honeybeaers/npa";
 import { createHash } from "node:crypto";
 import { PostgresqlConnection, PostgresqlDriverConnection } from "./postgresql-connection";
 
@@ -583,7 +584,7 @@ function entityTable(
   const foreignKeys: MigrationForeignKeySchema[] = [];
 
   for (const relation of entity.relations ?? []) {
-    if (relation.kind !== "many-to-one") {
+    if (relation.kind !== NPAMigrationRelationKind.MANY_TO_ONE) {
       continue;
     }
 
@@ -629,7 +630,7 @@ function buildJoinTables(entities: NPAMigrationEntitySchema[]): MigrationTableSc
 
   for (const entity of entities) {
     for (const relation of entity.relations ?? []) {
-      if (relation.kind !== "many-to-many") {
+      if (relation.kind !== NPAMigrationRelationKind.MANY_TO_MANY) {
         continue;
       }
 

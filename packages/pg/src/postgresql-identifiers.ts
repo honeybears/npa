@@ -4,6 +4,7 @@ import {
   getOptionalEntityMetadata,
   readRelationForeignKeyValue,
   relationJoinColumnName,
+  RelationKind,
 } from "@honeybeaers/npa";
 import { PostgresqlQueryCompilerOptions } from "./types";
 
@@ -56,7 +57,7 @@ export function entityColumnProperties(
   return [
     ...metadata.columns.map((column) => column.propertyName),
     ...metadata.relations
-      .filter((relation) => relation.kind === "many-to-one")
+      .filter((relation) => relation.kind === RelationKind.MANY_TO_ONE)
       .map((relation) => relation.propertyName),
   ];
 }
@@ -67,7 +68,7 @@ export function normalizePropertyValue(
   options: PostgresqlQueryCompilerOptions,
 ): unknown {
   const relation = getMetadata(options)?.relations.find(
-    (candidate) => candidate.kind === "many-to-one" && candidate.propertyName === property,
+    (candidate) => candidate.kind === RelationKind.MANY_TO_ONE && candidate.propertyName === property,
   );
 
   return relation ? readRelationForeignKeyValue(value, relation) : value;
@@ -100,7 +101,7 @@ function findManyToOneRelation(
   options: PostgresqlQueryCompilerOptions,
 ) {
   return getMetadata(options)?.relations.find(
-    (relation) => relation.kind === "many-to-one" && relation.propertyName === property,
+    (relation) => relation.kind === RelationKind.MANY_TO_ONE && relation.propertyName === property,
   );
 }
 

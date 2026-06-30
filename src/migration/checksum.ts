@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NPAMigrationAdapterName, NPAMigrationEntitySchema } from "./types";
 
-export const NPA_MIGRATION_FORMAT_VERSION = "npa-migration-v4";
+export const NPA_MIGRATION_FORMAT_VERSION = "npa-migration-v5";
 
 export function createMigrationChecksum(
   adapter: NPAMigrationAdapterName,

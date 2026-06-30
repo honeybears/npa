@@ -11,6 +11,7 @@ import {
   EntityOptions,
   EntityTarget,
   IndexOptions,
+  RelationKind,
   RelationOptions,
 } from "./types";
 
@@ -59,7 +60,7 @@ export function OneToMany(
   options: RelationOptions = {},
 ): PropertyDecorator {
   return (source, propertyKey) => {
-    registerRelation(source, propertyKey, "one-to-many", target, options);
+    registerRelation(source, propertyKey, RelationKind.ONE_TO_MANY, target, options);
   };
 }
 
@@ -68,7 +69,7 @@ export function ManyToOne(
   options: RelationOptions = {},
 ): PropertyDecorator {
   return (source, propertyKey) => {
-    registerRelation(source, propertyKey, "many-to-one", target, options);
+    registerRelation(source, propertyKey, RelationKind.MANY_TO_ONE, target, options);
   };
 }
 
@@ -77,7 +78,7 @@ export function ManyToMany(
   options: RelationOptions = {},
 ): PropertyDecorator {
   return (source, propertyKey) => {
-    registerRelation(source, propertyKey, "many-to-many", target, options);
+    registerRelation(source, propertyKey, RelationKind.MANY_TO_MANY, target, options);
   };
 }
 

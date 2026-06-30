@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+const { NPATransactionIsolation } = require("../../../dist");
 const { MysqlTransactionManager } = require("../dist");
 
 test("routes MySQL queries through a transaction connection", async () => {
@@ -53,7 +54,7 @@ test("rolls back MySQL transactions and renders transaction options", async () =
           await manager.queryable.query("UPDATE inside", [3]);
           throw new Error("fail");
         },
-        { isolation: "repeatable_read", readOnly: true },
+        { isolation: NPATransactionIsolation.REPEATABLE_READ, readOnly: true },
       ),
     /fail/,
   );

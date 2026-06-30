@@ -3,11 +3,12 @@ export enum NPATransactionPropagation {
   REQUIRES_NEW = "REQUIRES_NEW",
 }
 
-export type NPATransactionIsolation =
-  | "read_uncommitted"
-  | "read_committed"
-  | "repeatable_read"
-  | "serializable";
+export enum NPATransactionIsolation {
+  READ_UNCOMMITTED = "READ_UNCOMMITTED",
+  READ_COMMITTED = "READ_COMMITTED",
+  REPEATABLE_READ = "REPEATABLE_READ",
+  SERIALIZABLE = "SERIALIZABLE",
+}
 
 export interface NPATransactionOptions {
   propagation?: NPATransactionPropagation;

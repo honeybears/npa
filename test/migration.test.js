@@ -11,6 +11,7 @@ const {
   formatMigrationSql,
   loadMigrationFiles,
   loadNPAMigrationConfig,
+  NPAMigrationRelationKind,
   parseEntitySchemas,
   writeMigrationFile,
 } = require("../dist");
@@ -50,7 +51,7 @@ test("parses entity source files into migration schemas", () => {
   assert.deepEqual(product.relations, [
     {
       propertyName: "primaryCategory",
-      kind: "many-to-one",
+      kind: NPAMigrationRelationKind.MANY_TO_ONE,
       targetClassName: "Category",
       mappedBy: undefined,
       joinColumn: "primary_category_id",
@@ -61,7 +62,7 @@ test("parses entity source files into migration schemas", () => {
     },
     {
       propertyName: "categories",
-      kind: "many-to-many",
+      kind: NPAMigrationRelationKind.MANY_TO_MANY,
       targetClassName: "Category",
       mappedBy: undefined,
       joinColumn: undefined,

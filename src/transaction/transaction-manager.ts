@@ -115,10 +115,8 @@ export abstract class AbstractTransactionManager<TResource>
     switch (propagation) {
       case undefined:
       case NPATransactionPropagation.REQUIRED:
-      case "required":
         return NPATransactionPropagation.REQUIRED;
       case NPATransactionPropagation.REQUIRES_NEW:
-      case "requires_new":
         return NPATransactionPropagation.REQUIRES_NEW;
       default:
         throw new Error(`Unsupported transaction propagation: ${String(propagation)}`);

@@ -3,6 +3,7 @@ import {
   EntityMetadata,
   getEntityMetadata,
   readRelationForeignKeyValue,
+  RelationKind,
 } from "../entity";
 import { OptimisticLockError } from "./optimistic-lock-error";
 import { NPADirtyCheckAdapter, NPAManageEntityOptions } from "./types";
@@ -184,7 +185,7 @@ function diffEntity<TEntity extends object>(
   }
 
   for (const relation of metadata.relations) {
-    if (relation.kind !== "many-to-one") {
+    if (relation.kind !== RelationKind.MANY_TO_ONE) {
       continue;
     }
 
@@ -215,7 +216,7 @@ function snapshotEntity(
       snapshotValue(readColumnValue(entity, column)),
     ] as const),
     ...metadata.relations
-      .filter((relation) => relation.kind === "many-to-one")
+      .filter((relation) => relation.kind === RelationKind.MANY_TO_ONE)
       .map((relation) => [
         relation.propertyName,
         snapshotValue(

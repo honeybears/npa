@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { Transaction } = require("../../dist");
+const { NPATransactionIsolation, Transaction } = require("../../dist");
 const {
   assertRepositoryContract,
   createProductEntity,
@@ -90,7 +90,7 @@ decorateMethod(ProductService, "createThenFail", Transaction());
 decorateMethod(
   ProductService,
   "createTwo",
-  Transaction({ isolation: "read_committed" }),
+  Transaction({ isolation: NPATransactionIsolation.READ_COMMITTED }),
 );
 decorateMethod(ProductService, "renameManagedProduct", Transaction());
 

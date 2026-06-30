@@ -328,17 +328,17 @@ function findNextRelationDecorator(
   const candidates: Array<{ decoratorName: string; kind: NPAMigrationRelationKind; index: number }> = [
     {
       decoratorName: "OneToMany",
-      kind: "one-to-many" as const,
+      kind: NPAMigrationRelationKind.ONE_TO_MANY,
       index: source.indexOf("@OneToMany", cursor),
     },
     {
       decoratorName: "ManyToOne",
-      kind: "many-to-one" as const,
+      kind: NPAMigrationRelationKind.MANY_TO_ONE,
       index: source.indexOf("@ManyToOne", cursor),
     },
     {
       decoratorName: "ManyToMany",
-      kind: "many-to-many" as const,
+      kind: NPAMigrationRelationKind.MANY_TO_MANY,
       index: source.indexOf("@ManyToMany", cursor),
     },
   ].filter((candidate) => candidate.index >= 0);
@@ -498,16 +498,18 @@ function readReferentialAction(
   value: string,
   context: string,
 ): NPAMigrationReferentialAction {
-  if (
-    value !== "CASCADE" &&
-    value !== "SET NULL" &&
-    value !== "RESTRICT" &&
-    value !== "NO ACTION"
-  ) {
-    throw new Error(`${context} must be CASCADE, SET NULL, RESTRICT, or NO ACTION.`);
+  switch (value) {
+    case NPAMigrationReferentialAction.CASCADE:
+      return NPAMigrationReferentialAction.CASCADE;
+    case NPAMigrationReferentialAction.SET_NULL:
+      return NPAMigrationReferentialAction.SET_NULL;
+    case NPAMigrationReferentialAction.RESTRICT:
+      return NPAMigrationReferentialAction.RESTRICT;
+    case NPAMigrationReferentialAction.NO_ACTION:
+      return NPAMigrationReferentialAction.NO_ACTION;
+    default:
+      throw new Error(`${context} must be CASCADE, SET NULL, RESTRICT, or NO ACTION.`);
   }
-
-  return value;
 }
 
 function parseNamedDecoratorOptions(

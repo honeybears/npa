@@ -71,13 +71,13 @@ function renderStartTransactionStatement(options: NPATransactionOptions): string
 
 function renderIsolation(isolation: NPATransactionIsolation): string {
   switch (isolation) {
-    case "read_uncommitted":
+    case NPATransactionIsolation.READ_UNCOMMITTED:
       return "READ UNCOMMITTED";
-    case "read_committed":
+    case NPATransactionIsolation.READ_COMMITTED:
       return "READ COMMITTED";
-    case "repeatable_read":
+    case NPATransactionIsolation.REPEATABLE_READ:
       return "REPEATABLE READ";
-    case "serializable":
+    case NPATransactionIsolation.SERIALIZABLE:
       return "SERIALIZABLE";
   }
 }

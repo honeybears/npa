@@ -30,9 +30,18 @@ export interface RelationOptions {
   onUpdate?: ReferentialAction;
 }
 
-export type RelationKind = "one-to-many" | "many-to-one" | "many-to-many";
+export enum RelationKind {
+  ONE_TO_MANY = "ONE_TO_MANY",
+  MANY_TO_ONE = "MANY_TO_ONE",
+  MANY_TO_MANY = "MANY_TO_MANY",
+}
 
-export type ReferentialAction = "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION";
+export enum ReferentialAction {
+  CASCADE = "CASCADE",
+  SET_NULL = "SET NULL",
+  RESTRICT = "RESTRICT",
+  NO_ACTION = "NO ACTION",
+}
 
 export interface ColumnMetadata {
   propertyName: string;

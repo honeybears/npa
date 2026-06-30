@@ -34,6 +34,7 @@ import {
   ManyToOne,
   NPARepository,
   OneToMany,
+  ReferentialAction,
   Unique,
   Version,
 } from '@honeybeaers/npa';
@@ -57,7 +58,7 @@ class User {
   @ManyToOne(() => Team, {
     joinColumn: 'team_id',
     foreignKeyName: 'fk_users_team',
-    onDelete: 'SET NULL',
+    onDelete: ReferentialAction.SET_NULL,
   })
   team?: Team;
 
@@ -304,7 +305,11 @@ transactional calls reuse the active transaction. Use
 transaction.
 
 ```ts
-import { NPATransactionPropagation, Transaction } from '@honeybeaers/npa';
+import {
+  NPATransactionIsolation,
+  NPATransactionPropagation,
+  Transaction,
+} from '@honeybeaers/npa';
 import { PostgresqlTransactionManager } from '@honeybeaers/npa-pg';
 import { Pool } from 'pg';
 import { createNPAClient } from './generated/npa';
@@ -321,7 +326,7 @@ class UserService {
     private readonly transactionManager = txManager,
   ) {}
 
-  @Transaction()
+  @Transaction({ isolation: NPATransactionIsolation.READ_COMMITTED })
   async renameUser(id: number, name: string): Promise<void> {
     await this.users.updateById(id, { name });
     await this.users.findById(id);

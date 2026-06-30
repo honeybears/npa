@@ -7,6 +7,7 @@ const {
   Entity,
   getCurrentPersistenceContext,
   Id,
+  NPATransactionIsolation,
   NPATransactionPropagation,
   RollbackOnlyError,
   Transaction,
@@ -61,14 +62,14 @@ test("runs work inside a transaction and commits", async () => {
       assert.equal(manager.currentId(), 1);
       return "created";
     },
-    { isolation: "serializable" },
+    { isolation: NPATransactionIsolation.SERIALIZABLE },
   );
 
   assert.equal(result, "created");
   assert.equal(manager.isTransactionActive(), false);
   assert.deepEqual(manager.calls, [
     "acquire:1",
-    "begin:1:serializable",
+    "begin:1:SERIALIZABLE",
     "commit:1",
     "release:1",
   ]);
@@ -135,7 +136,7 @@ test("rolls back and releases when work fails", async () => {
   ]);
 });
 
-test("joins an existing required transaction and starts requires_new separately", async () => {
+test("joins an existing required transaction and starts REQUIRES_NEW separately", async () => {
   const manager = new RecordingTransactionManager();
 
   await manager.transactional(async () => {
@@ -194,7 +195,7 @@ test("marks joined required transactions rollback-only after an inner failure", 
   ]);
 });
 
-test("keeps outer transactions committable when a requires_new transaction fails", async () => {
+test("keeps outer transactions committable when a REQUIRES_NEW transaction fails", async () => {
   const manager = new RecordingTransactionManager();
 
   await manager.transactional(async () => {

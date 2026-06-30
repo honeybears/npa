@@ -9,6 +9,7 @@ const {
   ManyToMany,
   ManyToOne,
   OneToMany,
+  RelationKind,
   Unique,
   Version,
   getEntityMetadata,
@@ -99,13 +100,13 @@ test("registers JPA-style entity metadata including relations", () => {
     [
       {
         propertyName: "team",
-        kind: "many-to-one",
+        kind: RelationKind.MANY_TO_ONE,
         joinColumn: "team_id",
         joinTable: undefined,
       },
       {
         propertyName: "roles",
-        kind: "many-to-many",
+        kind: RelationKind.MANY_TO_MANY,
         joinColumn: undefined,
         joinTable: "user_roles",
       },

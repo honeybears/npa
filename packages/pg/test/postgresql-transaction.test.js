@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+const { NPATransactionIsolation } = require("../../../dist");
 const { PostgresqlTransactionManager } = require("../dist");
 
 test("routes PostgreSQL queries through a transaction client", async () => {
@@ -53,7 +54,7 @@ test("rolls back PostgreSQL transactions and renders transaction options", async
           await manager.queryable.query("UPDATE inside", [3]);
           throw new Error("fail");
         },
-        { isolation: "serializable", readOnly: true },
+        { isolation: NPATransactionIsolation.SERIALIZABLE, readOnly: true },
       ),
     /fail/,
   );

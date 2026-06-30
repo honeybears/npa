@@ -5,6 +5,7 @@ import {
   NPALoadOptions,
   readEntityPrimaryValue,
   relationJoinColumnName,
+  RelationKind,
   RelationMetadata,
   joinTableColumnName,
 } from "@honeybeaers/npa";
@@ -31,11 +32,11 @@ export async function loadPostgresqlRelations<TEntity extends object>(
   const relations = selectRelations(metadata, options.load.relations);
 
   for (const relation of relations) {
-    if (relation.kind === "many-to-one") {
+    if (relation.kind === RelationKind.MANY_TO_ONE) {
       await loadManyToOne(entities, metadata, relation, options.queryable);
-    } else if (relation.kind === "one-to-many") {
+    } else if (relation.kind === RelationKind.ONE_TO_MANY) {
       await loadOneToMany(entities, metadata, relation, options.queryable);
-    } else if (relation.kind === "many-to-many") {
+    } else if (relation.kind === RelationKind.MANY_TO_MANY) {
       await loadManyToMany(entities, metadata, relation, options.queryable);
     }
   }
@@ -108,7 +109,7 @@ async function loadOneToMany<TEntity extends object>(
 
   const targetMetadata = getEntityMetadata(relation.target());
   const targetRelation = targetMetadata.relations.find((candidate) =>
-    candidate.kind === "many-to-one" && candidate.propertyName === relation.mappedBy,
+    candidate.kind === RelationKind.MANY_TO_ONE && candidate.propertyName === relation.mappedBy,
   );
 
   if (!targetRelation) {
