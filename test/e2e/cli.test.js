@@ -154,7 +154,15 @@ function coreLibraryImport() {
 
 function adapterLibraryImport(adapterName) {
   const packageName = adapterName === "mysql" ? "mysql" : "pg";
-  return path.resolve(__dirname, "..", "..", "packages", packageName, "dist");
+  return path.resolve(
+    __dirname,
+    "..",
+    "..",
+    "packages",
+    packageName,
+    "dist",
+    "index.js",
+  );
 }
 
 function toCompiledPath(root, sourcePath) {

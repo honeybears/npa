@@ -32,7 +32,6 @@ import {
   Index,
   ManyToMany,
   ManyToOne,
-  NPARepository,
   OneToMany,
   ReferentialAction,
   Unique,
@@ -87,13 +86,20 @@ Application code extends only NPA, not a database-specific repository type.
 `existsById`, `count`, `save`, `insert`, `update`, `updateById`, `delete`,
 `deleteById`, and `deleteAll`.
 
+Declare repositories as abstract classes and bind them to entities with
+`@Repository`. NPA creates the concrete implementation at runtime with a
+`Proxy`, so only the methods you want autocomplete for need to be declared.
+
 ```ts
-interface UserRepository extends NPARepository<User, number> {
-  findTop10ByNameContainingOrderByCreatedAtDesc(
+import { NPARepository, Repository } from '@honeybeaers/npa';
+
+@Repository(User)
+export abstract class UserRepository extends NPARepository<User, number> {
+  abstract findTop10ByNameContainingOrderByCreatedAtDesc(
     name: string,
   ): Promise<User[]>;
-  existsByName(name: string): Promise<boolean>;
-  deleteByNameContaining(name: string): Promise<number>;
+  abstract existsByName(name: string): Promise<boolean>;
+  abstract deleteByNameContaining(name: string): Promise<number>;
 }
 ```
 
@@ -106,10 +112,9 @@ const teams = await teamRepository.findAll({ relations: ['members'] });
 
 ## CLI Generate
 
-Run `npa generate` to create a typed client file. This is what makes method-name
-query autocomplete visible in TypeScript. The generated client imports shared
-repository types from `@honeybeaers/npa` and the selected
-adapter factory from the connector package.
+Run `npa generate` when you want NPA to create a typed client file and
+single-column method variants for you. Hand-written abstract repositories remain
+the recommended path for JPA-style repository declarations.
 
 ```bash
 npa generate \
@@ -220,25 +225,25 @@ decorator expressions are rejected by migration parsing.
 ## Adapter Wiring
 
 Choose the adapter in composition code. PostgreSQL and MySQL both implement the
-same `NPARepositoryAdapter` contract.
+same runtime adapter contract used by `createNPA`.
 
 ### PostgreSQL
 
 ```ts
 import { Pool } from 'pg';
-import { PostgresqlConnection } from '@honeybeaers/npa-pg';
-import { createNPAClient } from './generated/npa';
+import { createNPA } from '@honeybeaers/npa';
+import { PostgresqlConnection, postgresql } from '@honeybeaers/npa-pg';
+import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const connection = new PostgresqlConnection(pool);
 
-const npa = createNPAClient({
-  postgresql: {
-    queryable: connection,
-  },
+const npa = createNPA({
+  adapter: postgresql({ queryable: connection }),
+  repositories: [UserRepository],
 });
 
-const users = npa.user;
+const users = npa.get(UserRepository);
 
 await users.insert({ name: 'kim', createdAt: new Date() });
 await users.save({ id: 1, name: 'lee', createdAt: new Date() });
@@ -254,32 +259,23 @@ await users.findTop10ByNameContainingOrderByCreatedAtDesc('ki');
 
 ### MySQL
 
-Generate a MySQL client first:
-
-```bash
-npa generate \
-  --entities "src/**/*.entity.ts" \
-  --out src/generated/npa.ts \
-  --adapter mysql
-```
-
-Then wire it with a `mysql2` pool or connection.
+Wire the MySQL adapter with a `mysql2` pool or connection.
 
 ```ts
 import mysql from 'mysql2/promise';
-import { MysqlConnection } from '@honeybeaers/npa-mysql';
-import { createNPAClient } from './generated/npa';
+import { createNPA } from '@honeybeaers/npa';
+import { MysqlConnection, mysql as npaMysql } from '@honeybeaers/npa-mysql';
+import { UserRepository } from './user.repository';
 
 const pool = mysql.createPool(process.env.DATABASE_URL);
 const connection = new MysqlConnection(pool);
 
-const npa = createNPAClient({
-  mysql: {
-    queryable: connection,
-  },
+const npa = createNPA({
+  adapter: npaMysql({ queryable: connection }),
+  repositories: [UserRepository],
 });
 
-const users = npa.user;
+const users = npa.get(UserRepository);
 
 await users.insert({ name: 'kim', createdAt: new Date() });
 await users.save({ id: 1, name: 'lee', createdAt: new Date() });
@@ -298,7 +294,7 @@ await users.findTop10ByNameContainingOrderByCreatedAtDesc('ki');
 
 Use a database transaction manager when multiple repository calls must commit or
 roll back as one unit. Pass the manager's context-aware `queryable` to the
-generated client, then decorate service methods with `@Transaction()`. The
+runtime adapter, then decorate service methods with `@Transaction()`. The
 default propagation is `NPATransactionPropagation.REQUIRED`, so nested
 transactional calls reuse the active transaction. Use
 `{ propagation: NPATransactionPropagation.REQUIRES_NEW }` to force a separate
@@ -309,20 +305,22 @@ import {
   NPATransactionIsolation,
   NPATransactionPropagation,
   Transaction,
+  createNPA,
 } from '@honeybeaers/npa';
-import { PostgresqlTransactionManager } from '@honeybeaers/npa-pg';
+import { PostgresqlTransactionManager, postgresql } from '@honeybeaers/npa-pg';
 import { Pool } from 'pg';
-import { createNPAClient } from './generated/npa';
+import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const txManager = new PostgresqlTransactionManager(pool);
-const npa = createNPAClient({
-  postgresql: { queryable: txManager.queryable },
+const npa = createNPA({
+  adapter: postgresql({ queryable: txManager.queryable }),
+  repositories: [UserRepository],
 });
 
 class UserService {
   constructor(
-    private readonly users = npa.user,
+    private readonly users = npa.get(UserRepository),
     private readonly transactionManager = txManager,
   ) {}
 

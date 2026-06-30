@@ -13,6 +13,7 @@ const {
   compilePostgresqlUpdate,
   createPostgresqlDerivedQueryRepository,
   PostgresqlConnection,
+  postgresql,
 } = require("../dist");
 const {
   AbstractTransactionManager,
@@ -21,8 +22,11 @@ const {
   Id,
   ManyToMany,
   ManyToOne,
+  NPARepository,
   OneToMany,
+  Repository,
   Version,
+  createNPA,
   parseQueryMethod,
 } = require("../../../dist");
 
@@ -33,6 +37,14 @@ Column({ name: "product_name" })(PgProduct.prototype, "name");
 Column()(PgProduct.prototype, "price");
 Version({ name: "lock_version" })(PgProduct.prototype, "version");
 Entity({ name: "products" })(PgProduct);
+
+class PgProductRepository extends NPARepository {
+  repositoryName() {
+    return "pg-products";
+  }
+}
+
+Repository(PgProduct)(PgProductRepository);
 
 class PgTeam {}
 Id({ name: "team_id" })(PgTeam.prototype, "id");
@@ -168,6 +180,46 @@ test("runs findOne, exists, count, and delete through a PostgreSQL queryable", a
     {
       text: 'DELETE FROM "users" WHERE ("status" = ANY($1))',
       values: [["inactive", "blocked"]],
+    },
+  ]);
+});
+
+test("creates PostgreSQL repositories from @Repository tokens", async () => {
+  const calls = [];
+  const queryable = {
+    async query(text, values) {
+      calls.push({ text, values });
+
+      return {
+        rows: [{ product_id: values[0], product_name: "desk" }],
+        rowCount: 1,
+      };
+    },
+  };
+  const npa = createNPA({
+    adapter: postgresql({ queryable }),
+    repositories: [PgProductRepository],
+  });
+  const products = npa.get(PgProductRepository);
+
+  assert.equal(products instanceof PgProductRepository, true);
+  assert.equal(products.repositoryName(), "pg-products");
+  assert.deepEqual(await products.findById(10), {
+    product_id: 10,
+    product_name: "desk",
+  });
+  assert.deepEqual(await products.findByName("desk"), [
+    { product_id: "desk", product_name: "desk" },
+  ]);
+
+  assert.deepEqual(calls, [
+    {
+      text: 'SELECT * FROM "products" WHERE "product_id" = $1 LIMIT 1',
+      values: [10],
+    },
+    {
+      text: 'SELECT * FROM "products" WHERE ("product_name" = $1)',
+      values: ["desk"],
     },
   ]);
 });

@@ -9,20 +9,23 @@ export function createNPARepository<
   target: TRepository,
   adapter: NPARepositoryAdapter<TEntity, TId>,
 ): TRepository & NPARepository<TEntity, TId> {
-  const repository = {
-    findById: adapter.findById,
-    findAll: adapter.findAll,
-    existsById: adapter.existsById,
-    count: adapter.count,
-    save: adapter.save,
-    insert: adapter.insert,
-    update: adapter.update,
-    updateById: adapter.updateById,
-    delete: adapter.delete,
-    deleteById: adapter.deleteById,
-    deleteAll: adapter.deleteAll,
-    ...target,
-  };
+  const repository = Object.assign(
+    Object.create(Object.getPrototypeOf(target) ?? Object.prototype),
+    {
+      findById: adapter.findById,
+      findAll: adapter.findAll,
+      existsById: adapter.existsById,
+      count: adapter.count,
+      save: adapter.save,
+      insert: adapter.insert,
+      update: adapter.update,
+      updateById: adapter.updateById,
+      delete: adapter.delete,
+      deleteById: adapter.deleteById,
+      deleteAll: adapter.deleteAll,
+    },
+    target,
+  );
 
   return createDerivedQueryRepository(repository, (invocation) =>
     adapter.executeDerivedQuery(invocation),

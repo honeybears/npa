@@ -1,4 +1,5 @@
 export * from "./create-mysql-derived-query-repository";
+export * from "./mysql-adapter";
 export * from "./mysql-connection";
 export * from "./mysql-crud-compiler";
 export * from "./mysql-query-compiler";

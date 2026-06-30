@@ -8,8 +8,11 @@ const {
   Id,
   ManyToMany,
   ManyToOne,
+  NPARepository,
   OneToMany,
+  Repository,
   Version,
+  createNPA,
   parseQueryMethod,
 } = require("../../../dist");
 const {
@@ -24,6 +27,7 @@ const {
   compileMysqlFindById,
   createMysqlDerivedQueryRepository,
   MysqlConnection,
+  mysql,
 } = require("../dist");
 class Product {}
 
@@ -34,6 +38,14 @@ Column()(Product.prototype, "active");
 Column()(Product.prototype, "status");
 Column({ name: "created_at" })(Product.prototype, "createdAt");
 Entity({ name: "products", schema: "shop" })(Product);
+
+class ProductRepository extends NPARepository {
+  repositoryName() {
+    return "mysql-products";
+  }
+}
+
+Repository(Product)(ProductRepository);
 
 class Team {}
 Id({ name: "team_id" })(Team.prototype, "id");
@@ -160,6 +172,44 @@ test("compiles JPA-style MySQL repository SQL", () => {
     text: "DELETE FROM `shop`.`products`",
     values: [],
   });
+});
+
+test("creates MySQL repositories from @Repository tokens", async () => {
+  const calls = [];
+  const queryable = {
+    async query(text, values) {
+      calls.push({ text, values });
+
+      return [[{ product_id: values[0], product_name: "desk" }], []];
+    },
+  };
+  const npa = createNPA({
+    adapter: mysql({ queryable }),
+    repositories: [ProductRepository],
+  });
+  const products = npa.get(ProductRepository);
+
+  assert.equal(products instanceof ProductRepository, true);
+  assert.equal(products.repositoryName(), "mysql-products");
+  assert.deepEqual(await products.findById(10), {
+    product_id: 10,
+    product_name: "desk",
+  });
+  assert.deepEqual(await products.findByName("desk"), [
+    { product_id: "desk", product_name: "desk" },
+  ]);
+
+  assert.deepEqual(calls, [
+    {
+      text:
+        "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
+      values: [10],
+    },
+    {
+      text: "SELECT * FROM `shop`.`products` WHERE (`product_name` = ?)",
+      values: ["desk"],
+    },
+  ]);
 });
 
 test("runs derived queries and CRUD through a mysql2-style queryable", async () => {
