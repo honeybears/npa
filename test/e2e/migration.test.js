@@ -15,7 +15,7 @@ const {
 
 for (const adapter of databaseAdapters) {
   test(
-    `runs npa migrate against ${adapter.name} and alters existing schema`,
+    `runs npa db push against ${adapter.name} and alters existing schema`,
     async (t) => {
       const tableName = uniqueTableName(`${adapter.tablePrefix}_migration`);
       const categoryTableName = uniqueTableName(`${adapter.tablePrefix}_category`);
@@ -63,11 +63,11 @@ for (const adapter of databaseAdapters) {
         url: container.getConnectionUri(),
       });
 
-      const first = runCli(["migrate", "--config", "npa.config.mjs"], root);
+      const first = runCli(["db", "push", "--config", "npa.config.mjs"], root);
       assert.equal(first.status, 0, first.stderr);
-      assert.match(first.stdout, /Applied migration schema/);
+      assert.match(first.stdout, /Pushed database schema/);
 
-      const second = runCli(["migrate", "--config", "npa.config.mjs"], root);
+      const second = runCli(["db", "push", "--config", "npa.config.mjs"], root);
       assert.equal(second.status, 0, second.stderr);
       assert.match(second.stdout, /Database schema is up to date/);
 
@@ -86,9 +86,9 @@ for (const adapter of databaseAdapters) {
         skuUniqueIndexName,
         withRelations: true,
       });
-      const altered = runCli(["migrate", "--config", "npa.config.mjs"], root);
+      const altered = runCli(["db", "push", "--config", "npa.config.mjs"], root);
       assert.equal(altered.status, 0, altered.stderr);
-      assert.match(altered.stdout, /Applied migration schema/);
+      assert.match(altered.stdout, /Pushed database schema/);
 
       const productColumns = await readColumnNames(adapter, queryable, tableName);
       assert.equal(productColumns.includes("sku"), true);
@@ -103,10 +103,87 @@ for (const adapter of databaseAdapters) {
       assert.deepEqual(indexes.get(statusIndexName), { unique: false });
       assert.deepEqual(indexes.get(skuUniqueIndexName), { unique: true });
 
-      const third = runCli(["migrate", "--config", "npa.config.mjs"], root);
+      const third = runCli(["db", "push", "--config", "npa.config.mjs"], root);
       assert.equal(third.status, 0, third.stderr);
       assert.match(third.stdout, /Database schema is up to date/);
 
+      await assertRepositoryContract(repository);
+    },
+  );
+}
+
+for (const adapter of databaseAdapters) {
+  test(
+    `runs npa migrate dev and deploy against ${adapter.name}`,
+    async (t) => {
+      const tableName = uniqueTableName(`${adapter.tablePrefix}_migrate_file`);
+      const categoryTableName = uniqueTableName(`${adapter.tablePrefix}_migrate_category`);
+      const joinTableName = uniqueTableName(`${adapter.tablePrefix}_migrate_join`);
+      const statusIndexName = uniqueTableName(`${adapter.tablePrefix}_migrate_status_idx`);
+      const skuUniqueIndexName = uniqueTableName(`${adapter.tablePrefix}_migrate_sku_uidx`);
+      const container = await startContainerOrSkip(t, adapter.createContainer());
+
+      if (!container) {
+        return;
+      }
+
+      let queryable;
+
+      t.after(async () => {
+        try {
+          if (queryable) {
+            for (const table of [
+              joinTableName,
+              categoryTableName,
+              tableName,
+              "_npa_migrations",
+            ]) {
+              await adapter.executeSql(
+                queryable,
+                `DROP TABLE IF EXISTS ${adapter.quoteIdentifier(table)}`,
+              );
+            }
+          }
+        } finally {
+          if (queryable) {
+            await adapter.closeQueryable(queryable);
+          }
+          await container.stop();
+        }
+      });
+
+      const root = makeMigrationProject({
+        adapter: adapter.adapterName,
+        tableName,
+        categoryTableName,
+        joinTableName,
+        statusIndexName,
+        skuUniqueIndexName,
+        url: container.getConnectionUri(),
+      });
+
+      const created = runCli(["migrate", "dev", "--name", "init", "--config", "npa.config.mjs"], root);
+      assert.equal(created.status, 0, created.stderr);
+      assert.match(created.stdout, /Created and applied migration \d{14}_init/);
+
+      const migrationRoot = path.join(root, "npa", "migrations");
+      const migrationDirs = fs.readdirSync(migrationRoot);
+      assert.equal(migrationDirs.length, 1);
+      assert.match(migrationDirs[0], /^\d{14}_init$/);
+      assert.equal(
+        fs.existsSync(path.join(migrationRoot, migrationDirs[0], "migration.sql")),
+        true,
+      );
+
+      const deploy = runCli(["migrate", "deploy", "--config", "npa.config.mjs"], root);
+      assert.equal(deploy.status, 0, deploy.stderr);
+      assert.match(deploy.stdout, /No pending migrations/);
+
+      queryable = await adapter.createQueryable(container);
+      const repository = adapter.createRepository({
+        entity: createProductEntity(tableName),
+        queryable,
+      });
       await assertRepositoryContract(repository);
     },
   );

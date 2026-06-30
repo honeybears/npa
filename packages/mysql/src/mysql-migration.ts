@@ -1,6 +1,9 @@
 import type {
   NPAMigrationColumnSchema,
+  NPAMigrationDeployOptions,
+  NPAMigrationDeployResult,
   NPAMigrationEntitySchema,
+  NPAMigrationFile,
   NPAMigrationIndexSchema,
   NPAMigrationResult,
   NPAMigrationRunOptions,
@@ -51,6 +54,10 @@ interface MysqlIndexRow {
   sequence: number;
 }
 
+interface MysqlHistoryRow {
+  checksum: string;
+}
+
 export interface MysqlMigrationCompileOptions {
   entities: NPAMigrationEntitySchema[];
   historyTable?: string;
@@ -87,15 +94,51 @@ export function compileMysqlHistoryTable(historyTable: string): string {
   ].join("\n");
 }
 
+export async function planMysqlMigration(
+  options: NPAMigrationRunOptions,
+): Promise<NPAMigrationResult> {
+  if (!options.url) {
+    const statements = compileMysqlSchemaStatements(options.entities);
+
+    return {
+      status: "dry-run",
+      checksum: options.checksum,
+      statements,
+      statementCount: statements.length,
+    };
+  }
+
+  const connection = new MysqlConnection(await createPool(options.url));
+
+  try {
+    const namespaceStatements = compileMysqlNamespaceStatements(options.entities);
+    const desiredTables = buildDesiredTables(options.entities);
+    const currentTables = await readCurrentTables(connection, desiredTables);
+    const statements = [
+      ...namespaceStatements,
+      ...compileMysqlTableDiffStatements(desiredTables, currentTables),
+    ];
+
+    return {
+      status: "dry-run",
+      checksum: options.checksum,
+      statements,
+      statementCount: statements.length,
+    };
+  } finally {
+    await connection.close();
+  }
+}
+
 export async function migrateMysql(
   options: NPAMigrationRunOptions,
 ): Promise<NPAMigrationResult> {
   if (options.dryRun && !options.url) {
-    const schemaStatements = compileMysqlSchemaStatements(options.entities);
+    const plan = await planMysqlMigration(options);
     const statements = [
       compileMysqlHistoryTable(options.historyTable),
-      ...schemaStatements,
-      compileHistoryUpsertPreview(options.historyTable, options.checksum, schemaStatements.length),
+      ...plan.statements,
+      compileHistoryUpsertPreview(options.historyTable, options.checksum, plan.statementCount),
     ];
 
     return {
@@ -114,17 +157,11 @@ export async function migrateMysql(
 
   try {
     if (options.dryRun) {
-      const namespaceStatements = compileMysqlNamespaceStatements(options.entities);
-      const desiredTables = buildDesiredTables(options.entities);
-      const currentTables = await readCurrentTables(connection, desiredTables);
-      const migrationStatements = [
-        ...namespaceStatements,
-        ...compileMysqlTableDiffStatements(desiredTables, currentTables),
-      ];
+      const plan = await planMysqlMigration(options);
       const statements = [
         compileMysqlHistoryTable(options.historyTable),
-        ...migrationStatements,
-        compileHistoryUpsertPreview(options.historyTable, options.checksum, migrationStatements.length),
+        ...plan.statements,
+        compileHistoryUpsertPreview(options.historyTable, options.checksum, plan.statementCount),
       ];
 
       return {
@@ -172,6 +209,73 @@ export async function migrateMysql(
       previousChecksum,
       statements: migrationStatements,
       statementCount: migrationStatements.length,
+    };
+  } finally {
+    await Promise.resolve(connection.query("SELECT RELEASE_LOCK(?)", [LOCK_KEY])).catch(
+      () => undefined,
+    );
+    await connection.close();
+  }
+}
+
+export async function deployMysqlMigrations(
+  options: NPAMigrationDeployOptions,
+): Promise<NPAMigrationDeployResult> {
+  if (!options.url) {
+    throw new Error("MySQL migration deploy requires a database url.");
+  }
+
+  const connection = new MysqlConnection(await createPool(options.url));
+
+  try {
+    await acquireLock(connection);
+    await connection.query(compileMysqlHistoryTable(options.historyTable));
+    const results: NPAMigrationDeployResult["migrations"] = [];
+    let statementCount = 0;
+    let pendingCount = 0;
+
+    for (const migration of options.migrations) {
+      const existing = await readHistoryRecord(
+        connection,
+        options.historyTable,
+        migration.name,
+      );
+
+      if (existing) {
+        if (existing.checksum !== migration.checksum) {
+          throw new Error(
+            `Migration ${migration.name} checksum mismatch. The migration file changed after it was applied.`,
+          );
+        }
+
+        results.push(toDeployResult(migration, "skipped"));
+        continue;
+      }
+
+      const status = options.dryRun ? "pending" : "applied";
+      results.push(toDeployResult(migration, status));
+      pendingCount += 1;
+      statementCount += migration.statementCount;
+
+      if (options.dryRun) {
+        continue;
+      }
+
+      for (const statement of migration.statements) {
+        await connection.query(statement);
+      }
+
+      await insertHistory(connection, options, migration);
+    }
+
+    return {
+      status: options.dryRun
+        ? "dry-run"
+        : pendingCount === 0
+          ? "noop"
+          : "applied",
+      migrations: results,
+      statementCount,
     };
   } finally {
     await Promise.resolve(connection.query("SELECT RELEASE_LOCK(?)", [LOCK_KEY])).catch(
@@ -578,14 +682,24 @@ async function readPreviousChecksum(
   connection: MysqlConnection,
   historyTable: string,
 ): Promise<string | undefined> {
-  const result = normalizeMysqlResult<{ checksum: string }>(
+  const result = await readHistoryRecord(connection, historyTable, MIGRATION_NAME);
+
+  return result?.checksum;
+}
+
+async function readHistoryRecord(
+  connection: MysqlConnection,
+  historyTable: string,
+  name: string,
+): Promise<MysqlHistoryRow | undefined> {
+  const result = normalizeMysqlResult<MysqlHistoryRow>(
     await connection.query(
       `SELECT checksum FROM ${quoteQualifiedIdentifier(historyTable)} WHERE name = ? LIMIT 1`,
-      [MIGRATION_NAME],
+      [name],
     ),
   );
 
-  return result.rows[0]?.checksum;
+  return result.rows[0];
 }
 
 async function upsertHistory(
@@ -605,6 +719,32 @@ async function upsertHistory(
     ].join("\n"),
     [MIGRATION_NAME, options.checksum, options.adapter, statementCount],
   );
+}
+
+async function insertHistory(
+  connection: MysqlConnection,
+  options: NPAMigrationDeployOptions,
+  migration: NPAMigrationFile,
+): Promise<void> {
+  await connection.query(
+    [
+      `INSERT INTO ${quoteQualifiedIdentifier(options.historyTable)} (name, checksum, adapter, statement_count)`,
+      "VALUES (?, ?, ?, ?)",
+    ].join("\n"),
+    [migration.name, migration.checksum, options.adapter, migration.statementCount],
+  );
+}
+
+function toDeployResult(
+  migration: NPAMigrationFile,
+  status: "applied" | "pending" | "skipped",
+): NPAMigrationDeployResult["migrations"][number] {
+  return {
+    name: migration.name,
+    checksum: migration.checksum,
+    statementCount: migration.statementCount,
+    status,
+  };
 }
 
 async function createPool(url: string): Promise<MysqlDriverConnection> {

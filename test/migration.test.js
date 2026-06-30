@@ -6,9 +6,13 @@ const test = require("node:test");
 
 const {
   createMigrationChecksum,
+  createMigrationChecksumFromSql,
   discoverEntitySchemas,
+  formatMigrationSql,
+  loadMigrationFiles,
   loadNPAMigrationConfig,
   parseEntitySchemas,
+  writeMigrationFile,
 } = require("../dist");
 const {
   compilePostgresqlMigrationStatements,
@@ -252,7 +256,7 @@ test("loads migration config and applies CLI overrides", async () => {
       adapter: "postgresql",
       url: "postgresql://localhost/db",
       entities: ["models/**/*.entity.ts"],
-      migrations: { table: "custom_migrations" }
+      migrations: { dir: "database/migrations", table: "custom_migrations" }
     };`,
     "utf8",
   );
@@ -261,7 +265,7 @@ test("loads migration config and applies CLI overrides", async () => {
     adapter: "postgresql",
     url: "postgresql://localhost/db",
     entities: ["models/**/*.entity.ts"],
-    migrations: { table: "custom_migrations" },
+    migrations: { dir: "database/migrations", table: "custom_migrations" },
   });
 
   assert.deepEqual(
@@ -275,9 +279,31 @@ test("loads migration config and applies CLI overrides", async () => {
       adapter: "mysql",
       url: "mysql://localhost/db",
       entities: ["src/**/*.entity.ts"],
-      migrations: { table: "custom_migrations" },
+      migrations: { dir: "database/migrations", table: "custom_migrations" },
     },
   );
+});
+
+test("writes and loads migration SQL files deterministically", () => {
+  const root = makeTempRoot();
+  const statements = [
+    "CREATE TABLE products (id INT PRIMARY KEY)",
+    "ALTER TABLE products ADD COLUMN name TEXT",
+  ];
+  const migration = writeMigrationFile(root, "npa/migrations", "Init Products", statements);
+
+  assert.match(migration.name, /^\d{14}_init_products$/);
+  assert.equal(path.basename(migration.filePath), "migration.sql");
+  assert.equal(migration.statementCount, 2);
+  assert.equal(
+    fs.readFileSync(migration.filePath, "utf8"),
+    `${statements[0]};\n\n${statements[1]};\n`,
+  );
+  assert.equal(
+    migration.checksum,
+    createMigrationChecksumFromSql(formatMigrationSql(statements)),
+  );
+  assert.deepEqual(loadMigrationFiles(root, "npa/migrations"), [migration]);
 });
 
 function makeMigrationFixture() {

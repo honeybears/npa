@@ -11,7 +11,9 @@ test("prints CLI help when no command is provided", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage:/);
   assert.match(result.stdout, /npa generate/);
-  assert.match(result.stdout, /npa migrate/);
+  assert.match(result.stdout, /npa db push/);
+  assert.match(result.stdout, /npa migrate dev/);
+  assert.match(result.stdout, /npa migrate deploy/);
 });
 
 test("rejects unsupported CLI adapter names", () => {
@@ -78,6 +80,69 @@ test("prints migrate dry-run SQL", () => {
   assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS "_npa_migrations"/);
   assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS "products"/);
   assert.match(result.stdout, /"product_id" SERIAL PRIMARY KEY/);
+});
+
+test("prints db push dry-run SQL", () => {
+  const root = makeCliFixtureProject();
+  const result = runCli(
+    [
+      "db",
+      "push",
+      "--dry-run",
+      "--adapter",
+      "postgresql",
+      "--entities",
+      "src/**/*.entity.ts",
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Adapter: postgresql/);
+  assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS "_npa_migrations"/);
+  assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS "products"/);
+});
+
+test("prints migrate dev dry-run SQL without migration history statements", () => {
+  const root = makeCliFixtureProject();
+  const result = runCli(
+    [
+      "migrate",
+      "dev",
+      "--dry-run",
+      "--name",
+      "init",
+      "--adapter",
+      "mysql",
+      "--entities",
+      "src/**/*.entity.ts",
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Adapter: mysql/);
+  assert.match(result.stdout, /Migration name: init/);
+  assert.match(result.stdout, /CREATE TABLE IF NOT EXISTS `products`/);
+  assert.doesNotMatch(result.stdout, /_npa_migrations/);
+});
+
+test("skips migrate deploy when no migration files exist", () => {
+  const root = makeCliFixtureProject();
+  const result = runCli(
+    [
+      "migrate",
+      "deploy",
+      "--adapter",
+      "postgresql",
+      "--url",
+      "postgresql://localhost/db",
+    ],
+    root,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /No migration files found in npa\/migrations/);
 });
 
 test("runs migrate dry-run from npa.config.mjs", () => {

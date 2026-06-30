@@ -10,6 +10,7 @@ import {
 
 const DEFAULT_CONFIG_FILE = "npa.config.mjs";
 const DEFAULT_ENTITIES = ["src/**/*.entity.ts"];
+const DEFAULT_MIGRATIONS_DIR = "npa/migrations";
 const DEFAULT_MIGRATIONS_TABLE = "_npa_migrations";
 
 export async function loadNPAMigrationConfig(
@@ -24,6 +25,7 @@ export async function loadNPAMigrationConfig(
     url,
     entities: options.entities ?? normalizeEntities(config.entities),
     migrations: {
+      dir: config.migrations?.dir ?? DEFAULT_MIGRATIONS_DIR,
       table: config.migrations?.table ?? DEFAULT_MIGRATIONS_TABLE,
     },
   };

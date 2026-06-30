@@ -1,6 +1,9 @@
 import type {
   NPAMigrationColumnSchema,
+  NPAMigrationDeployOptions,
+  NPAMigrationDeployResult,
   NPAMigrationEntitySchema,
+  NPAMigrationFile,
   NPAMigrationIndexSchema,
   NPAMigrationResult,
   NPAMigrationRunOptions,
@@ -51,6 +54,10 @@ interface PostgresqlIndexRow {
   primary: boolean;
 }
 
+interface PostgresqlHistoryRow {
+  checksum: string;
+}
+
 export interface PostgresqlMigrationCompileOptions {
   entities: NPAMigrationEntitySchema[];
   historyTable?: string;
@@ -87,15 +94,51 @@ export function compilePostgresqlHistoryTable(historyTable: string): string {
   ].join("\n");
 }
 
+export async function planPostgresqlMigration(
+  options: NPAMigrationRunOptions,
+): Promise<NPAMigrationResult> {
+  if (!options.url) {
+    const statements = compilePostgresqlSchemaStatements(options.entities);
+
+    return {
+      status: "dry-run",
+      checksum: options.checksum,
+      statements,
+      statementCount: statements.length,
+    };
+  }
+
+  const connection = new PostgresqlConnection(await createPool(options.url));
+
+  try {
+    const namespaceStatements = compilePostgresqlNamespaceStatements(options.entities);
+    const desiredTables = buildDesiredTables(options.entities);
+    const currentTables = await readCurrentTables(connection, desiredTables);
+    const statements = [
+      ...namespaceStatements,
+      ...compilePostgresqlTableDiffStatements(desiredTables, currentTables),
+    ];
+
+    return {
+      status: "dry-run",
+      checksum: options.checksum,
+      statements,
+      statementCount: statements.length,
+    };
+  } finally {
+    await connection.close();
+  }
+}
+
 export async function migratePostgresql(
   options: NPAMigrationRunOptions,
 ): Promise<NPAMigrationResult> {
   if (options.dryRun && !options.url) {
-    const schemaStatements = compilePostgresqlSchemaStatements(options.entities);
+    const plan = await planPostgresqlMigration(options);
     const statements = [
       compilePostgresqlHistoryTable(options.historyTable),
-      ...schemaStatements,
-      compileHistoryUpsertPreview(options.historyTable, options.checksum, schemaStatements.length),
+      ...plan.statements,
+      compileHistoryUpsertPreview(options.historyTable, options.checksum, plan.statementCount),
     ];
 
     return {
@@ -114,20 +157,14 @@ export async function migratePostgresql(
 
   try {
     if (options.dryRun) {
-      const namespaceStatements = compilePostgresqlNamespaceStatements(options.entities);
-      const desiredTables = buildDesiredTables(options.entities);
-      const currentTables = await readCurrentTables(connection, desiredTables);
-      const migrationStatements = [
-        ...namespaceStatements,
-        ...compilePostgresqlTableDiffStatements(desiredTables, currentTables),
-      ];
+      const plan = await planPostgresqlMigration(options);
       const statements = [
         compilePostgresqlHistoryTable(options.historyTable),
-        ...migrationStatements,
+        ...plan.statements,
         compileHistoryUpsertPreview(
           options.historyTable,
           options.checksum,
-          migrationStatements.length,
+          plan.statementCount,
         ),
       ];
 
@@ -181,6 +218,82 @@ export async function migratePostgresql(
         previousChecksum,
         statements: migrationStatements,
         statementCount: migrationStatements.length,
+      };
+    } catch (error) {
+      await Promise.resolve(connection.query("ROLLBACK")).catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await Promise.resolve(
+      connection.query("SELECT pg_advisory_unlock(hashtext($1))", [LOCK_KEY]),
+    ).catch(() => undefined);
+    await connection.close();
+  }
+}
+
+export async function deployPostgresqlMigrations(
+  options: NPAMigrationDeployOptions,
+): Promise<NPAMigrationDeployResult> {
+  if (!options.url) {
+    throw new Error("PostgreSQL migration deploy requires a database url.");
+  }
+
+  const connection = new PostgresqlConnection(await createPool(options.url));
+
+  try {
+    await connection.query("SELECT pg_advisory_lock(hashtext($1))", [LOCK_KEY]);
+    await connection.query("BEGIN");
+
+    try {
+      await connection.query(compilePostgresqlHistoryTable(options.historyTable));
+      const results: NPAMigrationDeployResult["migrations"] = [];
+      let statementCount = 0;
+      let pendingCount = 0;
+
+      for (const migration of options.migrations) {
+        const existing = await readHistoryRecord(
+          connection,
+          options.historyTable,
+          migration.name,
+        );
+
+        if (existing) {
+          if (existing.checksum !== migration.checksum) {
+            throw new Error(
+              `Migration ${migration.name} checksum mismatch. The migration file changed after it was applied.`,
+            );
+          }
+
+          results.push(toDeployResult(migration, "skipped"));
+          continue;
+        }
+
+        const status = options.dryRun ? "pending" : "applied";
+        results.push(toDeployResult(migration, status));
+        pendingCount += 1;
+        statementCount += migration.statementCount;
+
+        if (options.dryRun) {
+          continue;
+        }
+
+        for (const statement of migration.statements) {
+          await connection.query(statement);
+        }
+
+        await insertHistory(connection, options, migration);
+      }
+
+      await connection.query("COMMIT");
+
+      return {
+        status: options.dryRun
+          ? "dry-run"
+          : pendingCount === 0
+            ? "noop"
+            : "applied",
+        migrations: results,
+        statementCount,
       };
     } catch (error) {
       await Promise.resolve(connection.query("ROLLBACK")).catch(() => undefined);
@@ -592,12 +705,22 @@ async function readPreviousChecksum(
   connection: PostgresqlConnection,
   historyTable: string,
 ): Promise<string | undefined> {
-  const result = await connection.query<{ checksum: string }>(
+  const result = await readHistoryRecord(connection, historyTable, MIGRATION_NAME);
+
+  return result?.checksum;
+}
+
+async function readHistoryRecord(
+  connection: PostgresqlConnection,
+  historyTable: string,
+  name: string,
+): Promise<PostgresqlHistoryRow | undefined> {
+  const result = await connection.query<PostgresqlHistoryRow>(
     `SELECT checksum FROM ${quoteQualifiedIdentifier(historyTable)} WHERE name = $1 LIMIT 1`,
-    [MIGRATION_NAME],
+    [name],
   );
 
-  return result.rows[0]?.checksum;
+  return result.rows[0];
 }
 
 async function upsertHistory(
@@ -617,6 +740,32 @@ async function upsertHistory(
     ].join("\n"),
     [MIGRATION_NAME, options.checksum, options.adapter, statementCount],
   );
+}
+
+async function insertHistory(
+  connection: PostgresqlConnection,
+  options: NPAMigrationDeployOptions,
+  migration: NPAMigrationFile,
+): Promise<void> {
+  await connection.query(
+    [
+      `INSERT INTO ${quoteQualifiedIdentifier(options.historyTable)} (name, checksum, adapter, statement_count)`,
+      "VALUES ($1, $2, $3, $4)",
+    ].join("\n"),
+    [migration.name, migration.checksum, options.adapter, migration.statementCount],
+  );
+}
+
+function toDeployResult(
+  migration: NPAMigrationFile,
+  status: "applied" | "pending" | "skipped",
+): NPAMigrationDeployResult["migrations"][number] {
+  return {
+    name: migration.name,
+    checksum: migration.checksum,
+    statementCount: migration.statementCount,
+    status,
+  };
 }
 
 async function createPool(url: string): Promise<PostgresqlDriverConnection> {

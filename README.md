@@ -136,10 +136,11 @@ declared manually on your repository interface. Base methods such as
 interfaces do not need to repeat them.
 
 
-## CLI Migrate
+## Schema Push and Migrations
 
-Run `npa migrate` to synchronize database tables from exported `@Entity`
-classes. NPA creates missing tables, adds missing columns, changes supported
+Use `npa db push` for Prisma `db push`-style local synchronization: NPA reads
+exported `@Entity` classes and applies the current schema directly to the
+database. It creates missing tables, adds missing columns, changes supported
 column types/nullability, drops columns removed from the entity, creates normal
 and unique indexes, and creates `@ManyToMany({ joinTable })` tables. Rename
 detection is not inferred; a rename is treated as a drop plus add, so review
@@ -152,26 +153,41 @@ export default {
   adapter: 'postgresql', // or 'mysql'
   url: process.env.DATABASE_URL,
   entities: ['src/**/*.entity.ts'],
-  migrations: { table: '_npa_migrations' },
+  migrations: {
+    dir: 'npa/migrations',
+    table: '_npa_migrations',
+  },
 };
 ```
 
 Preview SQL without touching the database:
 
 ```bash
-npa migrate --dry-run
+npa db push --dry-run
 ```
 
-Apply it:
+Push the current entity schema directly:
 
 ```bash
-npa migrate
+npa db push
 ```
 
-You can also pass flags directly:
+Use migration files for a Prisma `migrate dev` / `migrate deploy`-style flow:
 
 ```bash
-npa migrate \
+npa migrate dev --name init
+npa migrate deploy
+```
+
+`migrate dev` applies pending local migration files, creates a new
+`npa/migrations/<timestamp>_<name>/migration.sql` from the current entity diff,
+and applies it unless `--create-only` is passed. `migrate deploy` does not parse
+entities; it applies pending migration files in order and verifies their
+checksums against `_npa_migrations`. You can also pass flags directly:
+
+```bash
+npa migrate dev \
+  --name add_users \
   --adapter mysql \
   --url "$DATABASE_URL" \
   --entities "src/**/*.entity.ts"

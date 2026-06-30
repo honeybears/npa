@@ -40,6 +40,7 @@ export interface NPAMigrationConfigFile {
   url?: string;
   entities?: string | string[];
   migrations?: {
+    dir?: string;
     table?: string;
   };
 }
@@ -49,6 +50,7 @@ export interface ResolvedNPAMigrationConfig {
   url?: string;
   entities: string[];
   migrations: {
+    dir: string;
     table: string;
   };
 }
@@ -80,4 +82,39 @@ export interface NPAMigrationResult {
 
 export interface NPAMigrationAdapterRunner {
   (options: NPAMigrationRunOptions): Promise<NPAMigrationResult>;
+}
+
+export interface NPAMigrationFile {
+  name: string;
+  checksum: string;
+  statements: string[];
+  statementCount: number;
+  filePath?: string;
+}
+
+export interface NPAMigrationDeployOptions {
+  adapter: NPAMigrationAdapterName;
+  url?: string;
+  historyTable: string;
+  migrations: NPAMigrationFile[];
+  dryRun?: boolean;
+}
+
+export interface NPAMigrationDeployItemResult {
+  name: string;
+  checksum: string;
+  statementCount: number;
+  status: "applied" | "pending" | "skipped";
+}
+
+export interface NPAMigrationDeployResult {
+  status: "applied" | "noop" | "dry-run";
+  migrations: NPAMigrationDeployItemResult[];
+  statementCount: number;
+}
+
+export interface NPAMigrationAdapter {
+  plan(options: NPAMigrationRunOptions): Promise<NPAMigrationResult>;
+  push(options: NPAMigrationRunOptions): Promise<NPAMigrationResult>;
+  deploy(options: NPAMigrationDeployOptions): Promise<NPAMigrationDeployResult>;
 }

@@ -1,22 +1,56 @@
-import { loadMigrationAdapterRunner } from "./adapter-loader";
+import * as path from "node:path";
+import { loadMigrationAdapter, loadMigrationAdapterRunner } from "./adapter-loader";
 import { createMigrationChecksum } from "./checksum";
 import { loadNPAMigrationConfig } from "./config";
 import { discoverEntitySchemas } from "./entity-schema";
-import { NPAMigrationResult } from "./types";
+import { loadMigrationFiles, writeMigrationFile } from "./files";
+import {
+  NPAMigrationDeployResult,
+  NPAMigrationFile,
+  NPAMigrationResult,
+} from "./types";
 
 export async function runMigrateCommand(args: string[], cwd: string): Promise<void> {
+  const [subcommand, ...subcommandArgs] = args;
+
+  if (subcommand === "dev") {
+    await runMigrateDevCommand(subcommandArgs, cwd);
+    return;
+  }
+
+  if (subcommand === "deploy") {
+    await runMigrateDeployCommand(subcommandArgs, cwd);
+    return;
+  }
+
+  if (subcommand && !subcommand.startsWith("--")) {
+    throw new Error(`Unsupported migrate command "${subcommand}". Use dev or deploy.`);
+  }
+
+  await runDbPushCommand(args, cwd, { legacy: true });
+}
+
+export async function runDbCommand(args: string[], cwd: string): Promise<void> {
+  const [subcommand, ...subcommandArgs] = args;
+
+  if (subcommand !== "push") {
+    throw new Error("Unsupported db command. Use `npa db push`.");
+  }
+
+  await runDbPushCommand(subcommandArgs, cwd);
+}
+
+async function runDbPushCommand(
+  args: string[],
+  cwd: string,
+  options: { legacy?: boolean } = {},
+): Promise<void> {
   const values = parseFlags(args, new Set(["dry-run"]));
   const dryRun = values.dryRun === "true";
-  const config = await loadNPAMigrationConfig({
-    cwd,
-    config: values.config,
-    adapter: values.adapter,
-    url: values.url,
-    entities: values.entities ? splitList(values.entities) : undefined,
-  });
+  const config = await loadConfig(cwd, values);
 
   if (!dryRun && !config.url) {
-    throw new Error("Migration requires database url unless --dry-run is used.");
+    throw new Error("Database push requires database url unless --dry-run is used.");
   }
 
   const entities = discoverEntitySchemas(cwd, config.entities);
@@ -38,10 +72,120 @@ export async function runMigrateCommand(args: string[], cwd: string): Promise<vo
     dryRun,
   });
 
-  writeResult(result, config.adapter);
+  writePushResult(result, config.adapter, options.legacy === true);
 }
 
-function writeResult(result: NPAMigrationResult, adapter: string): void {
+async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> {
+  const values = parseFlags(args, new Set(["dry-run", "create-only"]));
+  const dryRun = values.dryRun === "true";
+  const createOnly = values.createOnly === "true";
+  const config = await loadConfig(cwd, values);
+
+  if (!dryRun && !config.url) {
+    throw new Error("Migration dev requires database url unless --dry-run is used.");
+  }
+
+  const entities = discoverEntitySchemas(cwd, config.entities);
+
+  if (entities.length === 0) {
+    throw new Error(
+      `No @Entity classes found for migration pattern(s): ${config.entities.join(", ")}`,
+    );
+  }
+
+  const adapter = loadMigrationAdapter(config.adapter, cwd);
+  const existingMigrations = loadMigrationFiles(cwd, config.migrations.dir);
+
+  if (!dryRun && existingMigrations.length > 0) {
+    await adapter.deploy({
+      adapter: config.adapter,
+      url: config.url,
+      historyTable: config.migrations.table,
+      migrations: existingMigrations,
+    });
+  }
+
+  const checksum = createMigrationChecksum(config.adapter, entities);
+  const plan = await adapter.plan({
+    adapter: config.adapter,
+    url: config.url,
+    entities,
+    checksum,
+    historyTable: config.migrations.table,
+    dryRun: true,
+  });
+
+  if (dryRun) {
+    writeMigrateDevDryRun(plan, config.adapter, values.name);
+    return;
+  }
+
+  if (plan.statements.length === 0 && !createOnly) {
+    process.stdout.write("No schema changes found. Database is up to date.\n");
+    return;
+  }
+
+  const migration = writeMigrationFile(
+    cwd,
+    config.migrations.dir,
+    values.name,
+    plan.statements,
+  );
+
+  if (createOnly) {
+    process.stdout.write(
+      `Created migration ${relativePath(cwd, migration.filePath)} (${migration.statementCount} statements).\n`,
+    );
+    return;
+  }
+
+  const deployResult = await adapter.deploy({
+    adapter: config.adapter,
+    url: config.url,
+    historyTable: config.migrations.table,
+    migrations: [migration],
+  });
+
+  process.stdout.write(
+    `Created and applied migration ${migration.name} (${deployResult.statementCount} statements).\n`,
+  );
+}
+
+async function runMigrateDeployCommand(args: string[], cwd: string): Promise<void> {
+  const values = parseFlags(args, new Set(["dry-run"]));
+  const dryRun = values.dryRun === "true";
+  const config = await loadConfig(cwd, values);
+
+  if (!config.url) {
+    throw new Error("Migration deploy requires database url.");
+  }
+
+  const migrations = loadMigrationFiles(cwd, config.migrations.dir);
+
+  if (migrations.length === 0) {
+    process.stdout.write(
+      `No migration files found in ${config.migrations.dir}.\n`,
+    );
+    return;
+  }
+
+  const adapter = loadMigrationAdapter(config.adapter, cwd);
+  const result = await adapter.deploy({
+    adapter: config.adapter,
+    url: config.url,
+    historyTable: config.migrations.table,
+    migrations,
+    dryRun,
+  });
+
+  writeDeployResult(result, migrations, dryRun);
+}
+
+function writePushResult(
+  result: NPAMigrationResult,
+  adapter: string,
+  legacy: boolean,
+): void {
   if (result.status === "dry-run") {
     process.stdout.write(`Adapter: ${adapter}\n`);
     process.stdout.write(`Checksum: ${result.checksum}\n`);
@@ -59,9 +203,70 @@ function writeResult(result: NPAMigrationResult, adapter: string): void {
     return;
   }
 
+  const action = legacy ? "Applied migration schema" : "Pushed database schema";
   process.stdout.write(
-    `Applied migration schema (${result.statementCount} statements, checksum ${result.checksum}).\n`,
+    `${action} (${result.statementCount} statements, checksum ${result.checksum}).\n`,
   );
+}
+
+function writeMigrateDevDryRun(
+  result: NPAMigrationResult,
+  adapter: string,
+  name: string | undefined,
+): void {
+  process.stdout.write(`Adapter: ${adapter}\n`);
+  process.stdout.write(`Migration name: ${name ?? "migration"}\n`);
+  process.stdout.write(`Checksum: ${result.checksum}\n`);
+  process.stdout.write(`Statements: ${result.statementCount}\n`);
+
+  for (const statement of result.statements) {
+    process.stdout.write(`${statement};\n`);
+  }
+}
+
+function writeDeployResult(
+  result: NPAMigrationDeployResult,
+  migrations: NPAMigrationFile[],
+  dryRun: boolean,
+): void {
+  if (dryRun) {
+    const pending = result.migrations.filter((migration) => migration.status === "pending");
+    process.stdout.write(`Pending migrations: ${pending.length}\n`);
+
+    for (const migration of pending) {
+      process.stdout.write(`${migration.name} (${migration.statementCount} statements)\n`);
+    }
+
+    return;
+  }
+
+  if (result.status === "noop") {
+    process.stdout.write(`No pending migrations (${migrations.length} checked).\n`);
+    return;
+  }
+
+  const applied = result.migrations.filter((migration) => migration.status === "applied");
+  process.stdout.write(
+    `Applied ${applied.length} migration(s) (${result.statementCount} statements).\n`,
+  );
+}
+
+function loadConfig(cwd: string, values: Record<string, string>) {
+  return loadNPAMigrationConfig({
+    cwd,
+    config: values.config,
+    adapter: values.adapter,
+    url: values.url,
+    entities: values.entities ? splitList(values.entities) : undefined,
+  });
+}
+
+function relativePath(cwd: string, filePath: string | undefined): string {
+  if (!filePath) {
+    return "migration.sql";
+  }
+
+  return path.relative(cwd, filePath);
 }
 
 function parseFlags(args: string[], booleanFlags = new Set<string>()): Record<string, string> {

@@ -1,20 +1,49 @@
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import { NPAMigrationAdapterName, NPAMigrationAdapterRunner } from "./types";
+import {
+  NPAMigrationAdapter,
+  NPAMigrationAdapterName,
+  NPAMigrationAdapterRunner,
+} from "./types";
 
 export function loadMigrationAdapterRunner(
   adapter: NPAMigrationAdapterName,
   cwd: string,
 ): NPAMigrationAdapterRunner {
-  const moduleValue = loadAdapterModule(adapter, cwd);
-  const exportName = adapter === "mysql" ? "migrateMysql" : "migratePostgresql";
-  const runner = (moduleValue as Record<string, unknown>)[exportName];
+  return loadMigrationAdapter(adapter, cwd).push;
+}
 
-  if (typeof runner !== "function") {
-    throw new Error(`Connector package does not export ${exportName}.`);
+export function loadMigrationAdapter(
+  adapter: NPAMigrationAdapterName,
+  cwd: string,
+): NPAMigrationAdapter {
+  const moduleValue = loadAdapterModule(adapter, cwd);
+  const exports = moduleValue as Record<string, unknown>;
+  const pushName = adapter === "mysql" ? "migrateMysql" : "migratePostgresql";
+  const planName = adapter === "mysql" ? "planMysqlMigration" : "planPostgresqlMigration";
+  const deployName =
+    adapter === "mysql" ? "deployMysqlMigrations" : "deployPostgresqlMigrations";
+  const push = exports[pushName];
+  const plan = exports[planName];
+  const deploy = exports[deployName];
+
+  if (typeof push !== "function") {
+    throw new Error(`Connector package does not export ${pushName}.`);
   }
 
-  return runner as NPAMigrationAdapterRunner;
+  if (typeof plan !== "function") {
+    throw new Error(`Connector package does not export ${planName}.`);
+  }
+
+  if (typeof deploy !== "function") {
+    throw new Error(`Connector package does not export ${deployName}.`);
+  }
+
+  return {
+    plan: plan as NPAMigrationAdapter["plan"],
+    push: push as NPAMigrationAdapter["push"],
+    deploy: deploy as NPAMigrationAdapter["deploy"],
+  };
 }
 
 function loadAdapterModule(adapter: NPAMigrationAdapterName, cwd: string): unknown {
