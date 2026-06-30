@@ -14,7 +14,32 @@ const {
   createPostgresqlDerivedQueryRepository,
   PostgresqlConnection,
 } = require("../dist");
-const { parseQueryMethod } = require("../../../dist");
+const {
+  AbstractTransactionManager,
+  Column,
+  Entity,
+  Id,
+  parseQueryMethod,
+} = require("../../../dist");
+
+class PgProduct {}
+
+Id({ name: "product_id" })(PgProduct.prototype, "id");
+Column({ name: "product_name" })(PgProduct.prototype, "name");
+Column()(PgProduct.prototype, "price");
+Entity({ name: "products" })(PgProduct);
+
+class TestTransactionManager extends AbstractTransactionManager {
+  acquireTransactionResource() {
+    return {};
+  }
+
+  beginTransaction() {}
+
+  commitTransaction() {}
+
+  rollbackTransaction() {}
+}
 
 test("compiles a derived query method into parameterized PostgreSQL SQL", () => {
   const compiled = compilePostgresqlQuery(
@@ -321,6 +346,52 @@ test("runs save, insert, updateById, and deleteById through a PostgreSQL queryab
     {
       text: 'DELETE FROM "users"',
       values: [],
+    },
+  ]);
+});
+
+
+test("flushes dirty managed entities through a PostgreSQL repository", async () => {
+  const calls = [];
+  const queryable = {
+    async query(text, values) {
+      calls.push({ text, values });
+
+      if (text.startsWith("UPDATE")) {
+        return {
+          rows: [{ product_id: 1, product_name: values[0], price: values[1] }],
+          rowCount: 1,
+        };
+      }
+
+      return {
+        rows: [{ product_id: 1, product_name: "desk", price: 10 }],
+        rowCount: 1,
+      };
+    },
+  };
+  const repository = createPostgresqlDerivedQueryRepository(
+    {},
+    { entity: PgProduct, queryable },
+  );
+  const manager = new TestTransactionManager();
+
+  await manager.transactional(async () => {
+    const productEntity = await repository.findById(1);
+    productEntity.name = "chair";
+    productEntity.price = 12;
+  });
+
+  assert.deepEqual(calls, [
+    {
+      text:
+        'SELECT * FROM "products" WHERE "product_id" = $1 LIMIT 1',
+      values: [1],
+    },
+    {
+      text:
+        'UPDATE "products" SET "product_name" = $1, "price" = $2 WHERE "product_id" = $3 RETURNING *',
+      values: ["chair", 12, 1],
     },
   ]);
 });

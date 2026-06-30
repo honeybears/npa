@@ -1,7 +1,14 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { AbstractTransactionManager, Transaction } = require("../dist");
+const {
+  AbstractTransactionManager,
+  Column,
+  Entity,
+  getCurrentPersistenceContext,
+  Id,
+  Transaction,
+} = require("../dist");
 
 class RecordingTransactionManager extends AbstractTransactionManager {
   constructor() {
@@ -37,6 +44,12 @@ class RecordingTransactionManager extends AbstractTransactionManager {
   }
 }
 
+class TransactionUser {}
+
+Id()(TransactionUser.prototype, "id");
+Column()(TransactionUser.prototype, "name");
+Entity({ name: "transaction_users" })(TransactionUser);
+
 test("runs work inside a transaction and commits", async () => {
   const manager = new RecordingTransactionManager();
 
@@ -54,6 +67,48 @@ test("runs work inside a transaction and commits", async () => {
   assert.deepEqual(manager.calls, [
     "acquire:1",
     "begin:1:serializable",
+    "commit:1",
+    "release:1",
+  ]);
+});
+
+
+test("flushes dirty managed entities before commit", async () => {
+  const manager = new RecordingTransactionManager();
+  const updates = [];
+  const row = { id: 1, name: "kim" };
+
+  await manager.transactional(async () => {
+    const context = getCurrentPersistenceContext();
+    assert.ok(context);
+
+    context.manage(row, {
+      entity: TransactionUser,
+      adapter: {
+        async updateDirty(_entity, id, patch) {
+          updates.push({
+            id,
+            patch,
+            callsBeforeCommit: [...manager.calls],
+          });
+          return _entity;
+        },
+      },
+    });
+
+    row.name = "lee";
+  });
+
+  assert.deepEqual(updates, [
+    {
+      id: 1,
+      patch: { name: "lee" },
+      callsBeforeCommit: ["acquire:1", "begin:1:none"],
+    },
+  ]);
+  assert.deepEqual(manager.calls, [
+    "acquire:1",
+    "begin:1:none",
     "commit:1",
     "release:1",
   ]);

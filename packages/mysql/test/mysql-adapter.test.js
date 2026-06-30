@@ -2,9 +2,11 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  AbstractTransactionManager,
   Column,
   Entity,
   Id,
+  parseQueryMethod,
 } = require("../../../dist");
 const {
   compileMysqlCount,
@@ -19,8 +21,6 @@ const {
   createMysqlDerivedQueryRepository,
   MysqlConnection,
 } = require("../dist");
-const { parseQueryMethod } = require("../../../dist");
-
 class Product {}
 
 Id({ name: "product_id" })(Product.prototype, "id");
@@ -30,6 +30,19 @@ Column()(Product.prototype, "active");
 Column()(Product.prototype, "status");
 Column({ name: "created_at" })(Product.prototype, "createdAt");
 Entity({ name: "products", schema: "shop" })(Product);
+
+
+class TestTransactionManager extends AbstractTransactionManager {
+  acquireTransactionResource() {
+    return {};
+  }
+
+  beginTransaction() {}
+
+  commitTransaction() {}
+
+  rollbackTransaction() {}
+}
 
 test("compiles derived query methods into parameterized MySQL SQL", () => {
   assert.deepEqual(
@@ -242,6 +255,55 @@ test("runs derived queries and CRUD through a mysql2-style queryable", async () 
     {
       text: "DELETE FROM `shop`.`products`",
       values: [],
+    },
+  ]);
+});
+
+
+test("flushes dirty managed entities through a MySQL repository", async () => {
+  const calls = [];
+  const queryable = {
+    async query(text, values) {
+      calls.push({ text, values });
+
+      if (text.startsWith("UPDATE")) {
+        return [{ affectedRows: 1 }, []];
+      }
+
+      return [[{
+        product_id: values[0],
+        product_name: "desk",
+        price: 10,
+      }], []];
+    },
+  };
+  const repository = createMysqlDerivedQueryRepository(
+    {},
+    { entity: Product, queryable },
+  );
+  const manager = new TestTransactionManager();
+
+  await manager.transactional(async () => {
+    const productEntity = await repository.findById(10);
+    productEntity.name = "chair";
+    productEntity.price = 15;
+  });
+
+  assert.deepEqual(calls, [
+    {
+      text:
+        "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
+      values: [10],
+    },
+    {
+      text:
+        "UPDATE `shop`.`products` SET `product_name` = ?, `price` = ? WHERE `product_id` = ?",
+      values: ["chair", 15, 10],
+    },
+    {
+      text:
+        "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
+      values: [10],
     },
   ]);
 });

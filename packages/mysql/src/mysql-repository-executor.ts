@@ -1,4 +1,10 @@
-import { NPARepositoryAdapter, RepositoryMethodExecutor } from "@honeybeaers/npa";
+import {
+  getCurrentPersistenceContext,
+  type EntityTarget,
+  NPARepositoryAdapter,
+  NPADirtyCheckAdapter,
+  RepositoryMethodExecutor,
+} from "@honeybeaers/npa";
 import {
   compileMysqlCount,
   compileMysqlDeleteAll,
@@ -17,6 +23,23 @@ import { MysqlRepositoryOptions } from "./types";
 export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
   implements NPARepositoryAdapter<TEntity, TId>
 {
+  private readonly dirtyCheckAdapter: NPADirtyCheckAdapter<TEntity> = {
+    updateDirty: async (_entity, id, patch) => {
+      const query = compileMysqlUpdate(id, patch, this.options);
+      const result = await executeMysqlQuery<TEntity>(
+        this.options,
+        query.text,
+        query.values,
+      );
+
+      if (result.affectedRows === 0) {
+        return null;
+      }
+
+      return this.findByIdRow(id as TId);
+    },
+  };
+
   constructor(private readonly options: MysqlRepositoryOptions) {}
 
   executeDerivedQuery: RepositoryMethodExecutor<Promise<unknown>> = async (
@@ -31,27 +54,27 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
 
     switch (invocation.query.action) {
       case "find":
-        return result.rows;
+        return this.manageMany(result.rows as TEntity[]);
       case "findOne":
-        return result.rows[0] ?? null;
+        return this.manage((result.rows[0] as TEntity | undefined) ?? null);
       case "exists":
         return Boolean(result.rows[0]?.exists);
       case "count":
         return Number(result.rows[0]?.count ?? 0);
-      case "delete":
-        return result.affectedRows ?? 0;
+      case "delete": {
+        const deletedCount = result.affectedRows ?? 0;
+
+        if (deletedCount > 0) {
+          this.detachAll();
+        }
+
+        return deletedCount;
+      }
     }
   };
 
   findById = async (id: TId): Promise<TEntity | null> => {
-    const query = compileMysqlFindById(id, this.options);
-    const result = await executeMysqlQuery<TEntity>(
-      this.options,
-      query.text,
-      query.values,
-    );
-
-    return result.rows[0] ?? null;
+    return this.manage(await this.findByIdRow(id));
   };
 
   findAll = async (): Promise<TEntity[]> => {
@@ -62,7 +85,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       query.values,
     );
 
-    return result.rows;
+    return this.manageMany(result.rows);
   };
 
   existsById = async (id: TId): Promise<boolean> => {
@@ -107,7 +130,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       return entity;
     }
 
-    return (await this.findById(id as TId)) ?? entity;
+    return this.manage((await this.findByIdRow(id as TId)) ?? entity);
   };
 
   update = async (entity: TEntity): Promise<TEntity | null> => {
@@ -130,7 +153,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       return null;
     }
 
-    return this.findById(id);
+    return this.manage(await this.findByIdRow(id));
   };
 
   delete = async (entityOrId: TEntity | TId): Promise<number> => {
@@ -145,14 +168,98 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
   deleteById = async (id: TId): Promise<number> => {
     const query = compileMysqlDeleteById(id, this.options);
     const result = await executeMysqlQuery(this.options, query.text, query.values);
+    const deletedCount = result.affectedRows ?? 0;
 
-    return result.affectedRows ?? 0;
+    if (deletedCount > 0) {
+      this.detachById(id);
+    }
+
+    return deletedCount;
   };
 
   deleteAll = async (): Promise<number> => {
     const query = compileMysqlDeleteAll(this.options);
     const result = await executeMysqlQuery(this.options, query.text, query.values);
+    this.detachAll();
 
     return result.affectedRows ?? 0;
   };
+
+  private async findByIdRow(id: TId): Promise<TEntity | null> {
+    const query = compileMysqlFindById(id, this.options);
+    const result = await executeMysqlQuery<TEntity>(
+      this.options,
+      query.text,
+      query.values,
+    );
+
+    return result.rows[0] ?? null;
+  }
+
+  private manage(entity: TEntity): TEntity;
+  private manage(entity: null): null;
+  private manage(entity: TEntity | null): TEntity | null;
+  private manage(entity: TEntity | null): TEntity | null {
+    const context = getCurrentPersistenceContext();
+
+    const entityTarget = this.getEntityTarget();
+
+    if (!context || !entityTarget || !entity) {
+      return entity;
+    }
+
+    return context.manage(entity, {
+      adapter: this.dirtyCheckAdapter,
+      entity: entityTarget,
+    });
+  }
+
+  private manageMany(entities: TEntity[]): TEntity[] {
+    const context = getCurrentPersistenceContext();
+
+    const entityTarget = this.getEntityTarget();
+
+    if (!context || !entityTarget) {
+      return entities;
+    }
+
+    return context.manageMany(entities, {
+      adapter: this.dirtyCheckAdapter,
+      entity: entityTarget,
+    });
+  }
+
+  private detachById(id: TId): void {
+    const context = getCurrentPersistenceContext();
+
+    const entityTarget = this.getEntityTarget();
+
+    if (!context || !entityTarget) {
+      return;
+    }
+
+    context.detachById(id, {
+      adapter: this.dirtyCheckAdapter,
+      entity: entityTarget,
+    });
+  }
+
+  private detachAll(): void {
+    const context = getCurrentPersistenceContext();
+
+    const entityTarget = this.getEntityTarget();
+
+    if (!context || !entityTarget) {
+      return;
+    }
+
+    context.detachAll({
+      adapter: this.dirtyCheckAdapter,
+      entity: entityTarget,
+    });
+  }
+
+  private getEntityTarget(): EntityTarget<TEntity> | undefined {
+    return this.options.entity as EntityTarget<TEntity> | undefined;
+  }
 }

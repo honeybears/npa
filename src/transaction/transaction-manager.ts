@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { PersistenceContext, runWithPersistenceContext } from "../persistence";
 import {
   NPATransactionManager,
   NPATransactionOptions,
@@ -33,8 +34,13 @@ export abstract class AbstractTransactionManager<TResource>
       await this.beginTransaction(resource, options);
       began = true;
 
+      const persistenceContext = new PersistenceContext();
       const result = await this.storage.run({ resource }, () =>
-        Promise.resolve(work()),
+        runWithPersistenceContext(persistenceContext, async () => {
+          const value = await work();
+          await persistenceContext.flush();
+          return value;
+        }),
       );
 
       await this.commitTransaction(resource, options);

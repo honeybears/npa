@@ -45,6 +45,11 @@ for (const adapter of databaseAdapters) {
 
           await service.createTwo();
           assert.equal(await repository.count(), 2);
+
+          const [created] = await repository.findAll();
+          await service.renameManagedProduct(created.product_id, "dirty commit");
+          const renamed = await repository.findById(created.product_id);
+          assert.equal(renamed.product_name, "dirty commit");
         } finally {
           await runtime.close();
         }
@@ -68,6 +73,16 @@ class ProductService {
     await this.repository.insert(product("commit one", 30));
     await this.repository.insert(product("commit two", 40));
   }
+
+  async renameManagedProduct(id, name) {
+    const productEntity = await this.repository.findById(id);
+
+    if (!productEntity) {
+      throw new Error("Product was not found.");
+    }
+
+    productEntity.name = name;
+  }
 }
 
 decorateMethod(ProductService, "createThenFail", Transaction());
@@ -76,6 +91,7 @@ decorateMethod(
   "createTwo",
   Transaction({ isolation: "read_committed" }),
 );
+decorateMethod(ProductService, "renameManagedProduct", Transaction());
 
 function product(name, price) {
   return {
