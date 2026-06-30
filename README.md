@@ -13,13 +13,13 @@ MySQL users do not install `pg`.
 PostgreSQL:
 
 ```bash
-npm install @honeybeaers/node-persistence-api-pg
+npm install @honeybeaers/npa-pg
 ```
 
 MySQL:
 
 ```bash
-npm install @honeybeaers/node-persistence-api-mysql
+npm install @honeybeaers/npa-mysql
 ```
 
 ## Entity Model
@@ -29,21 +29,25 @@ import {
   Column,
   Entity,
   Id,
+  Index,
   ManyToMany,
   ManyToOne,
   NPARepository,
   OneToMany,
-} from '@honeybeaers/node-persistence-api-core';
+  Unique,
+} from '@honeybeaers/npa';
 
+@Index({ name: 'idx_users_name_created_at', columns: ['name', 'createdAt'] })
 @Entity({ name: 'users', schema: 'app' })
 class User {
   @Id({ name: 'user_id' })
   id?: number;
 
+  @Unique({ name: 'uidx_users_full_name' })
   @Column({ name: 'full_name' })
   name!: string;
 
-  @Column({ name: 'created_at' })
+  @Column({ name: 'created_at', index: 'idx_users_created_at' })
   createdAt!: Date;
 
   @ManyToOne(() => Team, { joinColumn: 'team_id' })
@@ -55,8 +59,12 @@ class User {
 ```
 
 `@Entity`, `@Id`, and `@Column` drive table, primary key, and column mapping.
-Relation decorators are recorded as metadata for association support.
-Entity classes must be exported so the generated client can import them.
+Use `@Index` for normal indexes and `@Unique` for unique indexes. Property-level
+index decorators target that column; class-level decorators use property names in
+`columns` for composite indexes. `@Column({ index: true })` and
+`@Column({ unique: true })` are shorthand for single-column indexes. Relation
+decorators are recorded as metadata for association support. Entity classes must
+be exported so the generated client can import them.
 
 ## Repository Usage
 
@@ -79,7 +87,7 @@ interface UserRepository extends NPARepository<User, number> {
 
 Run `npa generate` to create a typed client file. This is what makes method-name
 query autocomplete visible in TypeScript. The generated client imports shared
-repository types from `@honeybeaers/node-persistence-api-core` and the selected
+repository types from `@honeybeaers/npa` and the selected
 adapter factory from the connector package.
 
 ```bash
@@ -94,11 +102,11 @@ Use `--adapter mysql` to generate a MySQL-backed client factory.
 Generated output includes:
 
 ```ts
-import { NPARepository } from '@honeybeaers/node-persistence-api-core';
+import { NPARepository } from '@honeybeaers/npa';
 import {
   PostgresqlQueryable,
   createPostgresqlDerivedQueryRepository,
-} from '@honeybeaers/node-persistence-api-pg';
+} from '@honeybeaers/npa-pg';
 
 export interface UserRepository extends NPARepository<User, number> {
   findByName(value: NonNullable<User['name']>): Promise<User[]>;
@@ -121,6 +129,56 @@ declared manually on your repository interface. Base methods such as
 `findById`, `findAll`, and `deleteAll` come from `NPARepository`, so generated
 interfaces do not need to repeat them.
 
+
+## CLI Migrate
+
+Run `npa migrate` to synchronize database tables from exported `@Entity`
+classes. NPA creates missing tables, adds missing columns, changes supported
+column types/nullability, drops columns removed from the entity, creates normal
+and unique indexes, and creates `@ManyToMany({ joinTable })` tables. Rename
+detection is not inferred; a rename is treated as a drop plus add, so review
+dry-run SQL before applying it.
+
+Create `npa.config.mjs`:
+
+```js
+export default {
+  adapter: 'postgresql', // or 'mysql'
+  url: process.env.DATABASE_URL,
+  entities: ['src/**/*.entity.ts'],
+  migrations: { table: '_npa_migrations' },
+};
+```
+
+Preview SQL without touching the database:
+
+```bash
+npa migrate --dry-run
+```
+
+Apply it:
+
+```bash
+npa migrate
+```
+
+You can also pass flags directly:
+
+```bash
+npa migrate \
+  --adapter mysql \
+  --url "$DATABASE_URL" \
+  --entities "src/**/*.entity.ts"
+```
+
+Default TypeScript-to-DB mapping is intentionally small: `string`, `number`,
+`boolean`, and `Date`, with numeric `@Id` mapped to auto-increment primary keys.
+Use `@Column({ type: 'VARCHAR(80)' })` when you need an explicit database type.
+For many-to-many relations, NPA creates a join table with both primary-key
+columns and a composite primary key, for example `@ManyToMany(() => Role,
+{ joinTable: 'user_roles' })`. Dynamic decorator expressions are rejected by
+migration parsing.
+
 ## Adapter Wiring
 
 Choose the adapter in composition code. PostgreSQL and MySQL both implement the
@@ -130,7 +188,7 @@ same `NPARepositoryAdapter` contract.
 
 ```ts
 import { Pool } from 'pg';
-import { PostgresqlConnection } from '@honeybeaers/node-persistence-api-pg';
+import { PostgresqlConnection } from '@honeybeaers/npa-pg';
 import { createNPAClient } from './generated/npa';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -171,7 +229,7 @@ Then wire it with a `mysql2` pool or connection.
 
 ```ts
 import mysql from 'mysql2/promise';
-import { MysqlConnection } from '@honeybeaers/node-persistence-api-mysql';
+import { MysqlConnection } from '@honeybeaers/npa-mysql';
 import { createNPAClient } from './generated/npa';
 
 const pool = mysql.createPool(process.env.DATABASE_URL);
@@ -196,6 +254,48 @@ await users.deleteById(1);
 await users.deleteAll();
 await users.findTop10ByNameContainingOrderByCreatedAtDesc('ki');
 ```
+
+
+## Transactions
+
+Use a database transaction manager when multiple repository calls must commit or
+roll back as one unit. Pass the manager's context-aware `queryable` to the
+generated client, then decorate service methods with `@Transaction()`. The
+default propagation is `required`, so nested transactional calls reuse the active
+transaction. Use `{ propagation: 'requires_new' }` to force a separate
+transaction.
+
+```ts
+import { Transaction } from '@honeybeaers/npa';
+import { PostgresqlTransactionManager } from '@honeybeaers/npa-pg';
+import { Pool } from 'pg';
+import { createNPAClient } from './generated/npa';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const txManager = new PostgresqlTransactionManager(pool);
+const npa = createNPAClient({
+  postgresql: { queryable: txManager.queryable },
+});
+
+class UserService {
+  constructor(
+    private readonly users = npa.user,
+    private readonly transactionManager = txManager,
+  ) {}
+
+  @Transaction()
+  async renameUser(id: number, name: string): Promise<void> {
+    await this.users.updateById(id, { name });
+    await this.users.findById(id);
+  }
+}
+
+const service = new UserService();
+```
+
+MySQL uses the same core decorator with `MysqlTransactionManager` from
+`@honeybeaers/npa-mysql`. Transaction options currently support `isolation`,
+`readOnly`, `required`, and `requires_new`.
 
 ## Runtime Flow
 
