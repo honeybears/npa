@@ -28,8 +28,12 @@
     "test": "pnpm run test:core",
     "test:core": "cd ../.. && npm run build && node --test packages/vscode/test/*.test.js",
     "test:host": "cd ../.. && npm run build && pnpm --filter npa-vscode run build && node packages/vscode/test/run-extension-host.js",
-    "package:vsix": "cd ../.. && npm run build && pnpm --filter npa-vscode run build && pnpm --filter npa-vscode exec vsce package --no-dependencies --allow-missing-repository --out ../../dist/npa-vscode-0.1.0.vsix",
-    "verify:install": "node scripts/verify-install.js ../../dist/npa-vscode-0.1.0.vsix",
+    "package:vsix": "node scripts/package-vsix.js",
+    "package:vsix:pre": "node scripts/package-vsix.js --pre-release",
+    "publish:marketplace": "node scripts/publish-marketplace.js",
+    "publish:marketplace:pre": "node scripts/publish-marketplace.js --pre-release",
+    "verify:pat": "pnpm exec vsce verify-pat honeybeaers",
+    "verify:install": "node scripts/verify-install.js",
     "package:check": "pnpm run package:vsix && pnpm run verify:install"
   },
   "devDependencies": {

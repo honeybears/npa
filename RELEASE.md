@@ -58,3 +58,41 @@ The comparison benchmark is useful release evidence, but it should be framed as
 a local sample for a specific schema, query mix, machine, Node version, and
 PostgreSQL container. Keep benchmark claims near the reproduction command and
 avoid presenting them as universal ORM rankings.
+
+## VS Code Extension
+
+The VS Code package is `packages/vscode`, with Marketplace extension id
+`honeybeaers.npa-vscode`. It vendors the built language helper output into the
+VSIX, so publish it after the core build succeeds.
+
+For beta releases, publish the extension to the Marketplace pre-release channel:
+
+```bash
+pnpm run test:vscode
+pnpm run package:vscode:pre
+pnpm run verify:vscode-install
+pnpm run verify:vscode-pat
+VSCE_PAT=... pnpm run publish:vscode:pre
+```
+
+`verify:vscode-install` requires the `code` command to be available. If VS Code
+is installed but the command is named differently, set `VSCODE_CLI=/path/to/code`.
+
+For a stable Marketplace release, use:
+
+```bash
+pnpm run test:vscode
+pnpm run package:vscode
+pnpm run verify:vscode-install
+pnpm run verify:vscode-pat
+VSCE_PAT=... pnpm run publish:vscode
+```
+
+`vsce` also supports an interactive login flow:
+
+```bash
+pnpm --filter npa-vscode exec vsce login honeybeaers
+```
+
+The generated VSIX path is version-derived from `packages/vscode/package.json`,
+for example `dist/npa-vscode-0.1.0.vsix`.

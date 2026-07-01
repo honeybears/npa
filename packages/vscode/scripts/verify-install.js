@@ -3,7 +3,9 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const packageRoot = path.resolve(__dirname, "..");
-const vsixPath = path.resolve(packageRoot, process.argv[2] ?? "../../dist/npa-vscode-0.1.0.vsix");
+const { getVsixPath } = require("./vsix");
+
+const vsixPath = path.resolve(packageRoot, process.argv[2] ?? getVsixPath());
 const codeCommand = process.env.VSCODE_CLI || "code";
 const tmpRoot = path.join(packageRoot, ".tmp", "install-check");
 const extensionsDir = path.join(tmpRoot, "extensions");
