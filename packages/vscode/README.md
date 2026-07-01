@@ -2,7 +2,7 @@
 
 This package is the VS Code integration shell for NPA repository method names.
 It scans TypeScript entity and repository source, then delegates completion and
-diagnostic decisions to `@honeybeaers/npa-language`.
+diagnostic decisions to `@node-persistence-api/language`.
 
 MVP support:
 

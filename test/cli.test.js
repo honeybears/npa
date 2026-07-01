@@ -193,7 +193,7 @@ function makeCliFixtureProject() {
           rootDir: "src",
           baseUrl: ".",
           paths: {
-            "@honeybeaers/npa": [library],
+            "@node-persistence-api/core": [library],
           },
           skipLibCheck: true,
           strict: true,

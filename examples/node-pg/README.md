@@ -1,6 +1,6 @@
 # NPA Node PostgreSQL Example
 
-This example wires `@honeybeaers/npa` to `@honeybeaers/npa-pg` with local
+This example wires `@node-persistence-api/core` to `@node-persistence-api/connector-pg` with local
 workspace dependencies.
 
 The app imports `src/repositories.ts` before constructing `NPA`, so decorated

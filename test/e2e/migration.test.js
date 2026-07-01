@@ -220,7 +220,7 @@ function writeProductEntity(root, options) {
   fs.writeFileSync(
     path.join(root, "src", "product.entity.ts"),
     `
-import { Column, Entity, Id, Version${options.withRelations ? ", Index, ManyToMany, Unique" : ""} } from "@honeybeaers/npa";
+import { Column, Entity, Id, Version${options.withRelations ? ", Index, ManyToMany, Unique" : ""} } from "@node-persistence-api/core";
 
 @Entity({ name: ${JSON.stringify(options.tableName)} })
 export class Product {

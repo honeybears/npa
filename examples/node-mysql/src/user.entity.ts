@@ -4,7 +4,7 @@ import {
   Id,
   NPARepository,
   Repository,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 
 @Entity({ name: "users" })
 export class User {

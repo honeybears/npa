@@ -13,13 +13,13 @@ MySQL users do not install `pg`.
 PostgreSQL:
 
 ```bash
-npm install @honeybeaers/npa-pg
+npm install @node-persistence-api/connector-pg
 ```
 
 MySQL:
 
 ```bash
-npm install @honeybeaers/npa-mysql
+npm install @node-persistence-api/connector-mysql
 ```
 
 ## Examples
@@ -51,7 +51,7 @@ import {
   ReferentialAction,
   Unique,
   Version,
-} from '@honeybeaers/npa';
+} from '@node-persistence-api/core';
 
 @Index({ name: 'idx_users_name_created_at', columns: ['name', 'createdAt'] })
 @Entity({ name: 'users', schema: 'app' })
@@ -126,7 +126,7 @@ const users = npa.get(UserRepository);
 ```
 
 ```ts
-import { NPARepository, Repository } from '@honeybeaers/npa';
+import { NPARepository, Repository } from '@node-persistence-api/core';
 
 @Repository(User)
 export abstract class UserRepository extends NPARepository<User, number> {
@@ -240,8 +240,8 @@ same runtime adapter contract used by `new NPA()`.
 
 ```ts
 import { Pool } from 'pg';
-import { NPA } from '@honeybeaers/npa';
-import { PostgresqlConnection, postgresql } from '@honeybeaers/npa-pg';
+import { NPA } from '@node-persistence-api/core';
+import { PostgresqlConnection, postgresql } from '@node-persistence-api/connector-pg';
 import './repositories';
 import { UserRepository } from './user.repository';
 
@@ -272,8 +272,8 @@ Wire the MySQL adapter with a `mysql2` pool or connection.
 
 ```ts
 import mysql from 'mysql2/promise';
-import { NPA } from '@honeybeaers/npa';
-import { MysqlConnection, mysql as npaMysql } from '@honeybeaers/npa-mysql';
+import { NPA } from '@node-persistence-api/core';
+import { MysqlConnection, mysql as npaMysql } from '@node-persistence-api/connector-mysql';
 import './repositories';
 import { UserRepository } from './user.repository';
 
@@ -315,8 +315,8 @@ import {
   NPATransactionPropagation,
   Transaction,
   NPA,
-} from '@honeybeaers/npa';
-import { PostgresqlTransactionManager, postgresql } from '@honeybeaers/npa-pg';
+} from '@node-persistence-api/core';
+import { PostgresqlTransactionManager, postgresql } from '@node-persistence-api/connector-pg';
 import { Pool } from 'pg';
 import './repositories';
 import { UserRepository } from './user.repository';
@@ -344,7 +344,7 @@ const service = new UserService();
 ```
 
 MySQL uses the same core decorator with `MysqlTransactionManager` from
-`@honeybeaers/npa-mysql`. Transaction options currently support `isolation`,
+`@node-persistence-api/connector-mysql`. Transaction options currently support `isolation`,
 `readOnly`, `NPATransactionPropagation.REQUIRED`, and
 `NPATransactionPropagation.REQUIRES_NEW`.
 
@@ -368,7 +368,7 @@ and throws `OptimisticLockError` when no row matches the expected version.
 
 ## Language Helpers
 
-`@honeybeaers/npa-language` is an editor-independent package for future VS Code
+`@node-persistence-api/language` is an editor-independent package for future VS Code
 and IDEA support. It does not execute user code or talk to a database. Feed it an
 entity schema and it returns Spring Data-style method completions and diagnostics.
 
@@ -376,7 +376,7 @@ entity schema and it returns Spring Data-style method completions and diagnostic
 import {
   getNPAQueryMethodCompletions,
   validateNPAQueryMethod,
-} from '@honeybeaers/npa-language';
+} from '@node-persistence-api/language';
 
 const completions = getNPAQueryMethodCompletions({
   prefix: 'findByNa',
@@ -397,7 +397,7 @@ entity schemas, call this package, and render completions/diagnostics.
 The `packages/vscode` workspace contains the first VS Code MVP. It registers a
 completion provider and diagnostics for TypeScript repositories extending
 `NPARepository<Entity, Id>`, then delegates method suggestions and validation to
-`@honeybeaers/npa-language`.
+`@node-persistence-api/language`.
 
 ## Develop
 
@@ -407,6 +407,9 @@ pnpm build
 pnpm test
 pnpm pack
 ```
+
+For the first npm release checklist and package order, see
+[`RELEASE.md`](./RELEASE.md).
 
 ### TODO
 

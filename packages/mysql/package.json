@@ -1,5 +1,5 @@
 {
-  "name": "@honeybeaers/npa-mysql",
+  "name": "@node-persistence-api/connector-mysql",
   "version": "0.1.0",
   "description": "MySQL connector for Node Persistence API",
   "main": "dist/index.js",
@@ -14,13 +14,16 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "cd ../.. && npm run build",
     "test": "cd ../.. && npm run build && node --test packages/mysql/test/*.test.js"
   },
   "dependencies": {
-    "@honeybeaers/npa": "workspace:^",
+    "@node-persistence-api/core": "workspace:^",
     "mysql2": "^3.22.5"
   },
   "license": "MIT"

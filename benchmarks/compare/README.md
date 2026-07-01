@@ -55,3 +55,22 @@ pnpm bench:compare -- \
 - `write-and-read`: create one user, then get it by id.
 
 The result is only valid for this schema, query mix, machine, database version, pool size, repeat count, and ORM usage style. It is not a universal ORM ranking.
+
+## Sample Result
+
+This local sample was captured on 2026-07-01 with:
+
+```bash
+pnpm build && node benchmarks/compare/compare.js -- --duration=60 --virtual-users=50 --pool-size=10 --repeat=3 --orms=npa,prisma,typeorm
+```
+
+| Scenario | Metric | NPA | Prisma | TypeORM |
+| --- | --- | ---: | ---: | ---: |
+| Read-heavy | Reads/second | 20,123.95/s | 15,621.93/s | 18,302.6/s |
+| Read-heavy | List Users avg | 2.536ms | 3.255ms | 2.789ms |
+| Read-heavy | Get By ID avg | 2.44ms | 3.15ms | 2.675ms |
+| Write-and-read | Iterations/second | 7,559.25/s | 6,555.07/s | 7,324.64/s |
+| Write-and-read | Create User avg | 3.621ms | 4.103ms | 3.689ms |
+| Write-and-read | Get User avg | 3.031ms | 3.524ms | 3.138ms |
+
+All lanes completed three runs with zero reported errors.

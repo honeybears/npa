@@ -1,0 +1,60 @@
+# Release
+
+This repository publishes npm runtime packages separately from the VS Code
+extension and examples.
+
+## Publishable Packages
+
+- `@node-persistence-api/core`: core repository API and CLI.
+- `@node-persistence-api/language`: editor-independent completion and diagnostics helpers.
+- `@node-persistence-api/connector-pg`: PostgreSQL connector and `pg` driver dependency.
+- `@node-persistence-api/connector-mysql`: MySQL connector and `mysql2` driver dependency.
+
+Do not publish `examples/*` or `packages/vscode` to npm. The VS Code package is
+distributed as a VSIX/Marketplace extension.
+
+## v0.1.0 Checklist
+
+Use `pnpm pack`, not `npm pack`, for workspace packages. `pnpm pack` rewrites
+`workspace:^` dependencies in the packed manifest, which prevents consumers from
+installing a tarball that still references a local workspace protocol.
+
+```bash
+npm whoami
+pnpm install --frozen-lockfile
+pnpm build
+pnpm test
+pnpm test:e2e
+pnpm run release:pack
+pnpm run release:inspect
+```
+
+Inspecting the packed manifests should show `@node-persistence-api/core` dependencies as
+normal semver ranges such as `^0.1.0`, not `workspace:^`.
+
+For the first public publish of scoped packages, npm requires public access to be
+set explicitly. The package manifests include `publishConfig.access=public`, and
+the commands below pass `--access public` as an extra guard.
+
+```bash
+npm publish .release/node-persistence-api-core-0.1.0.tgz --access public
+npm publish .release/node-persistence-api-language-0.1.0.tgz --access public
+npm publish .release/node-persistence-api-connector-pg-0.1.0.tgz --access public
+npm publish .release/node-persistence-api-connector-mysql-0.1.0.tgz --access public
+```
+
+Publish order matters: core first, then language helpers, then database
+connectors. After publishing, verify installs from a disposable project:
+
+```bash
+npm view @node-persistence-api/core version
+npm view @node-persistence-api/connector-pg version
+npm view @node-persistence-api/connector-mysql version
+```
+
+## Benchmark Note
+
+The comparison benchmark is useful release evidence, but it should be framed as
+a local sample for a specific schema, query mix, machine, Node version, and
+PostgreSQL container. Keep benchmark claims near the reproduction command and
+avoid presenting them as universal ORM rankings.

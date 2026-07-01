@@ -61,14 +61,14 @@ function deactivate() {}
 
 function loadNPALanguage() {
   try {
-    return require("@honeybeaers/npa-language");
+    return require("@node-persistence-api/language");
   } catch (error) {
     if (error?.code !== "MODULE_NOT_FOUND" ||
-      !String(error.message).includes("@honeybeaers/npa-language")) {
+      !String(error.message).includes("@node-persistence-api/language")) {
       throw error;
     }
 
-    return require("../vendor/node_modules/@honeybeaers/npa-language");
+    return require("../vendor/node_modules/@node-persistence-api/language");
   }
 }
 

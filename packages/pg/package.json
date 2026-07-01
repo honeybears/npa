@@ -1,5 +1,5 @@
 {
-  "name": "@honeybeaers/npa-pg",
+  "name": "@node-persistence-api/connector-pg",
   "version": "0.1.0",
   "description": "PostgreSQL connector for Node Persistence API",
   "main": "dist/index.js",
@@ -14,13 +14,16 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "cd ../.. && npm run build",
     "test": "cd ../.. && npm run build && node --test packages/pg/test/*.test.js"
   },
   "dependencies": {
-    "@honeybeaers/npa": "workspace:^",
+    "@node-persistence-api/core": "workspace:^",
     "pg": "^8.22.0"
   },
   "license": "MIT"

@@ -8,7 +8,7 @@ import {
   RelationKind,
   RelationMetadata,
   joinTableColumnName,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { quoteIdentifier, quoteQualifiedIdentifier } from "./postgresql-identifiers";
 import { PostgresqlQueryable } from "./types";
 

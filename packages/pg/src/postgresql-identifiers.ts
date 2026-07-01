@@ -5,7 +5,7 @@ import {
   readRelationForeignKeyValue,
   relationJoinColumnName,
   RelationKind,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { PostgresqlQueryCompilerOptions } from "./types";
 
 export function quoteTable(options: PostgresqlQueryCompilerOptions): string {

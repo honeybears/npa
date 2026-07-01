@@ -30,6 +30,7 @@ pnpm-debug.log*
 
 # Package artifacts
 *.tgz
+.release/
 
 # OS and editor noise
 .DS_Store

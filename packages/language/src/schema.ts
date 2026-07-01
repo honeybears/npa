@@ -1,4 +1,4 @@
-import type { NPAMigrationEntitySchema } from "@honeybeaers/npa";
+import type { NPAMigrationEntitySchema } from "@node-persistence-api/core";
 import {
   NPALanguageEntityPropertyKind,
   NPALanguageEntityRelationKind,

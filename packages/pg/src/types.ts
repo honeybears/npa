@@ -1,4 +1,4 @@
-import { EntityTarget, NPALoadOptions } from "@honeybeaers/npa";
+import { EntityTarget, NPALoadOptions } from "@node-persistence-api/core";
 
 export interface PostgresqlQueryResult<TRow = Record<string, unknown>> {
   rows: TRow[];

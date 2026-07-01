@@ -13,15 +13,15 @@ function main() {
   assertDirectory(queryMethodDist, "Run npm run build before packaging the VS Code extension.");
 
   fs.rmSync(path.join(packageRoot, "vendor"), { recursive: true, force: true });
-  copyJavaScriptFiles(languageDist, path.join(vendorNodeModules, "@honeybeaers", "npa-language"));
-  copyJavaScriptFiles(queryMethodDist, path.join(vendorNodeModules, "@honeybeaers", "npa", "query-method"));
+  copyJavaScriptFiles(languageDist, path.join(vendorNodeModules, "@node-persistence-api", "language"));
+  copyJavaScriptFiles(queryMethodDist, path.join(vendorNodeModules, "@node-persistence-api", "core", "query-method"));
 
-  writePackageJson(path.join(vendorNodeModules, "@honeybeaers", "npa-language"), {
-    name: "@honeybeaers/npa-language",
+  writePackageJson(path.join(vendorNodeModules, "@node-persistence-api", "language"), {
+    name: "@node-persistence-api/language",
     main: "index.js",
   });
-  writePackageJson(path.join(vendorNodeModules, "@honeybeaers", "npa"), {
-    name: "@honeybeaers/npa",
+  writePackageJson(path.join(vendorNodeModules, "@node-persistence-api", "core"), {
+    name: "@node-persistence-api/core",
     main: "index.js",
   });
 }

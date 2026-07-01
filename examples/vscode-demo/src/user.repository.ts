@@ -5,7 +5,7 @@ import {
   ManyToOne,
   NPARepository,
   Repository,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 
 @Entity({ name: "teams" })
 export class Team {

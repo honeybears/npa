@@ -1,4 +1,4 @@
-import { NPA } from "@honeybeaers/npa";
+import { NPA } from "@node-persistence-api/core";
 import "./repositories";
 import {
   PostgresqlConnection,
@@ -6,7 +6,7 @@ import {
   type PostgresqlDriverConnection,
   type PostgresqlQueryResult,
   type PostgresqlQueryable,
-} from "@honeybeaers/npa-pg";
+} from "@node-persistence-api/connector-pg";
 import { UserRepository } from "./user.entity";
 
 interface CloseablePostgresqlQueryable extends PostgresqlQueryable {

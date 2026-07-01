@@ -12,8 +12,8 @@
     "db:push:dry-run": "npa db push --config npa.config.mjs --dry-run"
   },
   "dependencies": {
-    "@honeybeaers/npa": "workspace:^",
-    "@honeybeaers/npa-pg": "workspace:^",
+    "@node-persistence-api/core": "workspace:^",
+    "@node-persistence-api/connector-pg": "workspace:^",
     "pg": "^8.22.0"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 export {
   parseQueryMethod as parseNPAQueryMethodName,
-} from "@honeybeaers/npa/query-method";
+} from "@node-persistence-api/core/query-method";
 
 export type {
   ParsedQueryMethod,
@@ -10,4 +10,4 @@ export type {
   QueryOperator,
   QueryOrder,
   QueryPredicatePart,
-} from "@honeybeaers/npa/query-method";
+} from "@node-persistence-api/core/query-method";

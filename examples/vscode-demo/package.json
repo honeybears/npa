@@ -10,8 +10,8 @@
     "demo": "npm run build && node dist/index.js"
   },
   "dependencies": {
-    "@honeybeaers/npa": "workspace:^",
-    "@honeybeaers/npa-language": "workspace:^"
+    "@node-persistence-api/core": "workspace:^",
+    "@node-persistence-api/language": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

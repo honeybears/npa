@@ -4,7 +4,7 @@ import {
   NPARepositoryAdapter,
   NPADirtyCheckAdapter,
   RepositoryMethodExecutor,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import {
   compileMysqlCount,
   compileMysqlDeleteAll,

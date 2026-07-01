@@ -7,8 +7,8 @@ import {
   relationJoinColumnName,
   RelationKind,
   RelationMetadata,
-} from "@honeybeaers/npa";
-import { ParsedQueryMethod } from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
+import { ParsedQueryMethod } from "@node-persistence-api/core";
 import {
   mysqlPrimaryKeyProperty,
   mysqlPropertyToColumn,

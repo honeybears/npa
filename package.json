@@ -1,5 +1,5 @@
 {
-  "name": "@honeybeaers/npa",
+  "name": "@node-persistence-api/core",
   "version": "0.1.0",
   "description": "Core Node and TypeScript persistence API with JPA-style repositories",
   "main": "dist/index.js",
@@ -21,6 +21,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "workspaces": [
     "packages/*",
     "examples/*"
@@ -40,7 +43,9 @@
     "bench:live": "pnpm build && node benchmarks/benchmark.js --live",
     "package:vscode": "pnpm --filter npa-vscode package:vsix",
     "verify:vscode-install": "pnpm --filter npa-vscode verify:install",
-    "bench:compare": "pnpm build && node benchmarks/compare/compare.js"
+    "bench:compare": "pnpm build && node benchmarks/compare/compare.js",
+    "release:pack": "rm -rf .release && mkdir -p .release && pnpm pack --pack-destination .release && pnpm --dir packages/language pack --pack-destination ../../.release && pnpm --dir packages/pg pack --pack-destination ../../.release && pnpm --dir packages/mysql pack --pack-destination ../../.release",
+    "release:inspect": "node scripts/inspect-release.mjs"
   },
   "keywords": [
     "node",

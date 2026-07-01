@@ -1,4 +1,4 @@
-import { NPA } from "@honeybeaers/npa";
+import { NPA } from "@node-persistence-api/core";
 import "./repositories";
 import {
   MysqlConnection,
@@ -6,7 +6,7 @@ import {
   type MysqlDriverConnection,
   type MysqlQueryable,
   type MysqlRawQueryResult,
-} from "@honeybeaers/npa-mysql";
+} from "@node-persistence-api/connector-mysql";
 import { UserRepository } from "./user.entity";
 
 interface CloseableMysqlQueryable extends MysqlQueryable {

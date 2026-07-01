@@ -33,7 +33,7 @@
     "package:check": "pnpm run package:vsix && pnpm run verify:install"
   },
   "devDependencies": {
-    "@honeybeaers/npa-language": "workspace:^",
+    "@node-persistence-api/language": "workspace:^",
     "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.9.2"
   },

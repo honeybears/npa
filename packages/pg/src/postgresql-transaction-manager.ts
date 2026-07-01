@@ -2,7 +2,7 @@ import {
   AbstractTransactionManager,
   NPATransactionIsolation,
   NPATransactionOptions,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { PostgresqlDriverConnection } from "./postgresql-connection";
 import { PostgresqlQueryable, PostgresqlQueryResult } from "./types";
 

@@ -11,7 +11,7 @@ const {
   toNPALanguageWorkspaceSchema,
   validateNPAQueryMethod,
 } = require("../dist");
-const { parseQueryMethod } = require("@honeybeaers/npa/query-method");
+const { parseQueryMethod } = require("@node-persistence-api/core/query-method");
 
 test("reuses the core query method parser", () => {
   const methodName = "findTop5ByTeamNameAndAgeGreaterThanOrderByCreatedAtDesc";

@@ -1,7 +1,7 @@
 # NPA VS Code Demo
 
-This example uses local workspace dependencies for `@honeybeaers/npa` and
-`@honeybeaers/npa-language`.
+This example uses local workspace dependencies for `@node-persistence-api/core` and
+`@node-persistence-api/language`.
 
 Run the language-helper demo:
 

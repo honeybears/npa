@@ -49,8 +49,8 @@ export function loadMigrationAdapter(
 function loadAdapterModule(adapter: NPAMigrationAdapterName, cwd: string): unknown {
   const packageName =
     adapter === "mysql"
-      ? "@honeybeaers/npa-mysql"
-      : "@honeybeaers/npa-pg";
+      ? "@node-persistence-api/connector-mysql"
+      : "@node-persistence-api/connector-pg";
   const requireFromCwd = createRequire(path.join(cwd, "package.json"));
   const candidates = [
     packageName,

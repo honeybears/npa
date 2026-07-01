@@ -1,9 +1,9 @@
-import { createNPARepository } from "@honeybeaers/npa";
+import { createNPARepository } from "@node-persistence-api/core";
 import type {
   NPACreateRepositoryOptions,
   NPARepository,
   NPARuntimeAdapter,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { PostgresqlRepositoryExecutor } from "./postgresql-repository-executor";
 import { PostgresqlQueryable } from "./types";
 

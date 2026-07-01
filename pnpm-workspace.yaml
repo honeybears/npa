@@ -3,4 +3,7 @@ packages:
   - "examples/*"
 allowBuilds:
   '@vscode/vsce-sign': false
+  cpu-features: false
   keytar: false
+  protobufjs: false
+  ssh2: false

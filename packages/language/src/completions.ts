@@ -2,7 +2,7 @@ import {
   findDuplicateQueryPredicates,
   type QueryMethodAction,
   type QueryOperator,
-} from "@honeybeaers/npa/query-method";
+} from "@node-persistence-api/core/query-method";
 import {
   findEntitySchema,
   getDirectQueryProperties,

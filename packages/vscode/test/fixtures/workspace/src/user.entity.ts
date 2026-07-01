@@ -1,4 +1,4 @@
-import { Column, Entity, Id, ManyToOne } from "@honeybeaers/npa";
+import { Column, Entity, Id, ManyToOne } from "@node-persistence-api/core";
 
 @Entity({ name: "users" })
 export class User {

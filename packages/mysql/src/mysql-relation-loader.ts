@@ -8,7 +8,7 @@ import {
   RelationKind,
   RelationMetadata,
   joinTableColumnName,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { executeMysqlQuery } from "./mysql-result";
 import { MysqlQueryable } from "./types";
 

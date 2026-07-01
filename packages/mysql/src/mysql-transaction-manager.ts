@@ -2,7 +2,7 @@ import {
   AbstractTransactionManager,
   NPATransactionIsolation,
   NPATransactionOptions,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { MysqlDriverConnection } from "./mysql-connection";
 import { MysqlQueryable, MysqlRawQueryResult } from "./types";
 

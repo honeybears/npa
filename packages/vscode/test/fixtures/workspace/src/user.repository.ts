@@ -1,4 +1,4 @@
-import { NPARepository } from "@honeybeaers/npa";
+import { NPARepository } from "@node-persistence-api/core";
 import { User } from "./user.entity";
 
 export abstract class UserRepository extends NPARepository<User, number> {

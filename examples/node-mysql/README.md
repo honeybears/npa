@@ -1,6 +1,6 @@
 # NPA Node MySQL Example
 
-This example wires `@honeybeaers/npa` to `@honeybeaers/npa-mysql` with local
+This example wires `@node-persistence-api/core` to `@node-persistence-api/connector-mysql` with local
 workspace dependencies.
 
 The app imports `src/repositories.ts` before constructing `NPA`, so decorated

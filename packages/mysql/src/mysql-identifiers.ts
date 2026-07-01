@@ -5,7 +5,7 @@ import {
   readRelationForeignKeyValue,
   relationJoinColumnName,
   RelationKind,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { MysqlQueryCompilerOptions } from "./types";
 
 export function quoteMysqlTable(options: MysqlQueryCompilerOptions): string {

@@ -7,8 +7,8 @@ import type {
   NPAMigrationIndexSchema,
   NPAMigrationResult,
   NPAMigrationRunOptions,
-} from "@honeybeaers/npa";
-import { NPAMigrationRelationKind } from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
+import { NPAMigrationRelationKind } from "@node-persistence-api/core";
 import { createHash } from "node:crypto";
 import { PostgresqlConnection, PostgresqlDriverConnection } from "./postgresql-connection";
 

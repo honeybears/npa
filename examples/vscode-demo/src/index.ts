@@ -1,9 +1,9 @@
-import { NPAMigrationRelationKind } from "@honeybeaers/npa";
+import { NPAMigrationRelationKind } from "@node-persistence-api/core";
 import {
   getNPAQueryMethodCompletions,
   toNPALanguageWorkspaceSchema,
   validateNPAQueryMethod,
-} from "@honeybeaers/npa-language";
+} from "@node-persistence-api/language";
 
 const workspace = toNPALanguageWorkspaceSchema([
   {

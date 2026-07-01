@@ -1,9 +1,9 @@
-import { createNPARepository } from "@honeybeaers/npa";
+import { createNPARepository } from "@node-persistence-api/core";
 import type {
   NPACreateRepositoryOptions,
   NPARepository,
   NPARuntimeAdapter,
-} from "@honeybeaers/npa";
+} from "@node-persistence-api/core";
 import { MysqlRepositoryExecutor } from "./mysql-repository-executor";
 import { MysqlQueryable } from "./types";
 

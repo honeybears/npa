@@ -4,7 +4,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
-      "@honeybeaers/npa": [
+      "@node-persistence-api/core": [
         "../../dist/index.d.ts"
       ]
     }
