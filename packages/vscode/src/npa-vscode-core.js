@@ -81,8 +81,22 @@ function parseRelationProperty(decorators, propertyName) {
   return {
     name: propertyName,
     kind: "RELATION",
+    type: relation[2],
     target: relation[2],
+    relationKind: toRelationKind(relation[1]),
   };
+}
+
+function toRelationKind(decoratorName) {
+  if (decoratorName === "OneToMany") {
+    return "ONE_TO_MANY";
+  }
+
+  if (decoratorName === "ManyToOne") {
+    return "MANY_TO_ONE";
+  }
+
+  return "MANY_TO_MANY";
 }
 
 function findRepositoryContext(source, offset) {

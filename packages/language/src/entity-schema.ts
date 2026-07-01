@@ -1,5 +1,6 @@
 import {
   NPALanguageEntityPropertyKind,
+  NPALanguageEntityRelationKind,
   type NPALanguageEntityProperty,
   type NPALanguageEntitySchema,
   type NPALanguageWorkspaceSchema,
@@ -26,6 +27,14 @@ export function getRelationProperties(
   return entity.properties.filter((property) =>
     property.kind === NPALanguageEntityPropertyKind.RELATION,
   );
+}
+
+export function isManyToOneRelationProperty(
+  property: NPALanguageEntityProperty,
+): boolean {
+  return property.kind === NPALanguageEntityPropertyKind.RELATION &&
+    (property.relationKind === undefined ||
+      property.relationKind === NPALanguageEntityRelationKind.MANY_TO_ONE);
 }
 
 export function findEntitySchema(
@@ -57,6 +66,18 @@ export function resolveQueryProperty(
   }
 
   for (const relation of getRelationProperties(entity)) {
+    if (methodProperty === relation.name) {
+      if (isManyToOneRelationProperty(relation)) {
+        return {
+          property: relation,
+          methodProperty,
+          path: [relation.name],
+        };
+      }
+
+      continue;
+    }
+
     if (!methodProperty.startsWith(relation.name)) {
       continue;
     }

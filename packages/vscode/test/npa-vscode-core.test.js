@@ -33,7 +33,7 @@ test("parses NPA entity source into language schemas", () => {
         { name: "id", kind: "ID", type: "number" },
         { name: "name", kind: "COLUMN", type: "string" },
         { name: "createdAt", kind: "COLUMN", type: "Date" },
-        { name: "team", kind: "RELATION", target: "Team" },
+        { name: "team", kind: "RELATION", type: "Team", target: "Team", relationKind: "MANY_TO_ONE" },
       ],
     },
   ]);

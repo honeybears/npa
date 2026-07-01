@@ -3,8 +3,11 @@ import {
   findEntitySchema,
   getDirectQueryProperties,
   getRelationProperties,
+  isManyToOneRelationProperty,
+  resolveQueryProperty,
   toMethodSegment,
 } from "./entity-schema";
+import { parseNPAQueryMethodName } from "./method-name";
 import {
   NPAQueryMethodCompletionKind,
   type GetNPAQueryMethodCompletionsOptions,
@@ -91,6 +94,7 @@ export function getNPAQueryMethodCompletions(
               actionRank: actionSubject.rank,
               entity: options.entity,
               name,
+              workspace: options.workspace,
               operator,
               predicateSuffixRank: predicateSuffix.rank,
               property,
@@ -103,6 +107,7 @@ export function getNPAQueryMethodCompletions(
                   actionRank: actionSubject.rank,
                   entity: options.entity,
                   name,
+                  workspace: options.workspace,
                   operator,
                   orderProperties,
                   predicateSuffixRank: predicateSuffix.rank,
@@ -110,6 +115,45 @@ export function getNPAQueryMethodCompletions(
                 }),
               );
             }
+          }
+        }
+      }
+    }
+  }
+
+  const compoundContext = getPredicateCompletionContext(options.prefix);
+  const compoundAction = compoundContext ? getActionFromPrefix(compoundContext.head) : undefined;
+
+  if (compoundContext && compoundAction && actions.includes(compoundAction)) {
+    for (const property of properties) {
+      for (const operator of getOperatorsForType(property.type)) {
+        for (const predicateSuffix of getPredicateSuffixes(property, operator)) {
+          const name = `${compoundContext.head}${property.methodSegment}${operator.suffix}${predicateSuffix.suffix}`;
+          completions.push(toCompletion({
+            action: compoundAction,
+            actionRank: getActionRank(compoundAction),
+            entity: options.entity,
+            name,
+            operator,
+            predicateSuffixRank: predicateSuffix.rank,
+            property,
+            workspace: options.workspace,
+          }));
+
+          if (options.includeOrderBy && canOrder(compoundAction)) {
+            completions.push(
+              ...getOrderByCompletions({
+                action: compoundAction,
+                actionRank: getActionRank(compoundAction),
+                entity: options.entity,
+                name,
+                operator,
+                orderProperties,
+                predicateSuffixRank: predicateSuffix.rank,
+                property,
+                workspace: options.workspace,
+              }),
+            );
           }
         }
       }
@@ -153,6 +197,89 @@ function getActionRank(action: QueryMethodAction): number {
   return DEFAULT_ACTIONS.indexOf(action) * 20;
 }
 
+function getActionFromPrefix(prefix: string): QueryMethodAction | undefined {
+  if (prefix.startsWith("findOne")) {
+    return "findOne";
+  }
+
+  if (prefix.startsWith("find")) {
+    return "find";
+  }
+
+  if (prefix.startsWith("exists")) {
+    return "exists";
+  }
+
+  if (prefix.startsWith("count")) {
+    return "count";
+  }
+
+  if (prefix.startsWith("delete")) {
+    return "delete";
+  }
+
+  return undefined;
+}
+
+function getPredicateCompletionContext(prefix: string): {
+  head: string;
+  currentSegment: string;
+} | undefined {
+  const byIndex = prefix.indexOf("By");
+
+  if (byIndex < 0) {
+    return undefined;
+  }
+
+  const predicateStart = byIndex + "By".length;
+  const predicateSource = prefix.slice(predicateStart);
+
+  if (predicateSource.includes("OrderBy")) {
+    return undefined;
+  }
+
+  let lastConnector: { index: number; text: "And" | "Or" } | undefined;
+
+  for (let index = predicateStart; index < prefix.length; index += 1) {
+    const connector = matchPredicateConnector(prefix, index);
+
+    if (connector) {
+      lastConnector = { index, text: connector };
+      index += connector.length - 1;
+    }
+  }
+
+  if (!lastConnector || lastConnector.index === predicateStart) {
+    return undefined;
+  }
+
+  const headEnd = lastConnector.index + lastConnector.text.length;
+  return {
+    head: prefix.slice(0, headEnd),
+    currentSegment: prefix.slice(headEnd),
+  };
+}
+
+function matchPredicateConnector(
+  source: string,
+  index: number,
+): "And" | "Or" | undefined {
+  if (source.startsWith("And", index) && isConnectorBoundary(source, index + 3)) {
+    return "And";
+  }
+
+  if (source.startsWith("Or", index) && isConnectorBoundary(source, index + 2)) {
+    return "Or";
+  }
+
+  return undefined;
+}
+
+function isConnectorBoundary(source: string, index: number): boolean {
+  const next = source[index];
+  return next === undefined || next === next.toUpperCase();
+}
+
 function getPredicateSuffixes(
   property: QueryableCompletionProperty,
   operator: CompletionOperator,
@@ -175,6 +302,7 @@ function getOrderByCompletions(options: {
   entity: NPALanguageEntitySchema;
   name: string;
   operator: CompletionOperator;
+  workspace?: GetNPAQueryMethodCompletionsOptions["workspace"];
   orderProperties: ReturnType<typeof getDirectQueryProperties>;
   predicateSuffixRank: number;
   property: QueryableCompletionProperty;
@@ -237,6 +365,15 @@ function getCompletionProperties(
     relation: false,
   }));
 
+  const relationObjects = getRelationProperties(entity)
+    .filter(isManyToOneRelationProperty)
+    .map((relation) => ({
+      methodSegment: toMethodSegment(relation.name),
+      label: relation.name,
+      type: relation.target,
+      relation: true,
+    }));
+
   const relationFields = getRelationProperties(entity).flatMap((relation) => {
     const target = findEntitySchema(workspace, relation.target);
 
@@ -252,7 +389,7 @@ function getCompletionProperties(
     }));
   });
 
-  return [...direct, ...relationFields];
+  return [...direct, ...relationObjects, ...relationFields];
 }
 
 function getOperatorsForType(type: string | undefined): CompletionOperator[] {
@@ -282,8 +419,10 @@ function toCompletion(options: {
   orderRank?: number;
   predicateSuffixRank: number;
   property: QueryableCompletionProperty;
+  workspace?: GetNPAQueryMethodCompletionsOptions["workspace"];
 }): NPAQueryMethodCompletion {
-  const parameters = getParameters(options.property, options.operator);
+  const parameters = getMethodParameters(options.name, options.entity, options.workspace) ??
+    getParameters(options.property, options.operator);
   const returnType = getReturnType(options.action, options.entity.className);
   const parameterText = parameters.map((parameter) => `${parameter.name}: ${parameter.type}`).join(", ");
   const snippetParameterText = parameters
@@ -314,32 +453,67 @@ function toCompletion(options: {
   };
 }
 
+function getMethodParameters(
+  methodName: string,
+  entity: NPALanguageEntitySchema,
+  workspace: GetNPAQueryMethodCompletionsOptions["workspace"],
+): NPAQueryMethodCompletionParameter[] | undefined {
+  try {
+    return parseNPAQueryMethodName(methodName).predicate.flatMap((part) => {
+      const resolved = resolveQueryProperty(entity, part.condition.property, workspace);
+      const type = resolved?.property.type;
+      const baseName = toParameterName(resolved?.path.join(".") ?? part.condition.property);
+      return getParametersForOperator(baseName, type, part.condition.operator);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 function getParameters(
   property: QueryableCompletionProperty,
   operator: CompletionOperator,
 ): NPAQueryMethodCompletionParameter[] {
-  if (operator.parameterCount === 0) {
+  return getParametersForOperator(
+    toParameterName(property.label),
+    property.type,
+    operator.operator,
+  );
+}
+
+function getParametersForOperator(
+  baseName: string,
+  typeSource: string | undefined,
+  operator: QueryOperator,
+): NPAQueryMethodCompletionParameter[] {
+  if (isParameterlessOperator(operator)) {
     return [];
   }
 
-  const type = getParameterType(property.type, operator.operator);
-  const baseName = toParameterName(property.label);
+  const type = getParameterType(typeSource);
 
-  if (operator.operator === "between") {
+  if (operator === "between") {
     return [
       { name: `min${toMethodSegment(baseName)}`, type },
       { name: `max${toMethodSegment(baseName)}`, type },
     ];
   }
 
-  if (operator.operator === "in" || operator.operator === "notIn") {
-    return [{ name: `${baseName}Values`, type: `ReadonlyArray<${getParameterType(property.type)}>` }];
+  if (operator === "in" || operator === "notIn") {
+    return [{ name: `${baseName}Values`, type: `ReadonlyArray<${getParameterType(typeSource)}>` }];
   }
 
   return [{ name: baseName, type }];
 }
 
-function getParameterType(type: string | undefined, operator?: QueryOperator): string {
+function isParameterlessOperator(operator: QueryOperator): boolean {
+  return operator === "isNull" ||
+    operator === "isNotNull" ||
+    operator === "true" ||
+    operator === "false";
+}
+
+function getParameterType(type: string | undefined): string {
   const normalized = normalizeType(type);
 
   if (normalized === "date") {
@@ -350,11 +524,26 @@ function getParameterType(type: string | undefined, operator?: QueryOperator): s
     return normalized;
   }
 
-  if (operator === "in" || operator === "notIn") {
-    return "unknown";
+  const explicitType = normalizeExplicitType(type);
+
+  if (explicitType) {
+    return explicitType;
   }
 
   return "unknown";
+}
+
+function normalizeExplicitType(type: string | undefined): string | undefined {
+  const explicitType = type
+    ?.replace(/\s*\|\s*undefined/g, "")
+    .replace(/\s*\|\s*null/g, "")
+    .replace(/\[\]/g, "")
+    .replace(/\?/g, "")
+    .trim();
+
+  return explicitType && /^[A-Za-z_$][\w$]*(?:<.*>)?$/.test(explicitType)
+    ? explicitType
+    : undefined;
 }
 
 function getReturnType(action: QueryMethodAction, entityName: string): string {

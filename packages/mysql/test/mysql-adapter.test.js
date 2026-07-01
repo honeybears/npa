@@ -140,6 +140,36 @@ test("compiles MySQL derived queries across relation fields", () => {
   assert.deepEqual(
     compileMysqlQuery(
       {
+        query: parseQueryMethod("findByTeam"),
+        args: [{ id: 7, label: "platform" }],
+      },
+      { entity: Member },
+    ),
+    {
+      text:
+        "SELECT * FROM `members` WHERE (`team_id` = ?)",
+      values: [7],
+    },
+  );
+
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
+        query: parseQueryMethod("findByTeamIn"),
+        args: [[{ id: 7, label: "platform" }, { id: 8, label: "infra" }]],
+      },
+      { entity: Member },
+    ),
+    {
+      text:
+        "SELECT * FROM `members` WHERE (`team_id` IN (?, ?))",
+      values: [7, 8],
+    },
+  );
+
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
         query: parseQueryMethod("findByTeamLabelAndNameOrderByTeamLabelDesc"),
         args: ["platform", "kim"],
       },

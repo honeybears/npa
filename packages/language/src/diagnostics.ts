@@ -3,6 +3,7 @@ import {
   getDirectQueryProperties,
   getRelationProperties,
   findEntitySchema,
+  isManyToOneRelationProperty,
   resolveQueryProperty,
   toMethodSegment,
 } from "./entity-schema";
@@ -76,7 +77,11 @@ export function validateNPAQueryMethod(
         continue;
       }
 
-      if (!isOperatorCompatible(part.condition.operator, resolved.property.type)) {
+      if (!isOperatorCompatible(
+        part.condition.operator,
+        resolved.property.type,
+        resolved.property.kind === "RELATION",
+      )) {
         const operatorSuffix = OPERATOR_SUFFIXES[part.condition.operator];
         diagnostics.push(error(
           NPAQueryMethodDiagnosticCode.UNSUPPORTED_OPERATOR,
@@ -222,6 +227,13 @@ function getQueryableProperties(
     methodSegment: toMethodSegment(property.name),
   }));
 
+  const relationObjects = getRelationProperties(entity)
+    .filter(isManyToOneRelationProperty)
+    .map((property) => ({
+      methodProperty: property.name,
+      methodSegment: toMethodSegment(property.name),
+    }));
+
   const relationFields = getRelationProperties(entity).flatMap((relation) => {
     const target = findEntitySchema(workspace, relation.target);
 
@@ -235,14 +247,19 @@ function getQueryableProperties(
     }));
   });
 
-  return [...direct, ...relationFields];
+  return [...direct, ...relationObjects, ...relationFields];
 }
 
 function isOperatorCompatible(
   operator: QueryOperator,
   type: string | undefined,
+  relation: boolean,
 ): boolean {
   const normalized = normalizeType(type);
+
+  if (relation) {
+    return isCommonOperator(operator);
+  }
 
   if (isCommonOperator(operator)) {
     return true;

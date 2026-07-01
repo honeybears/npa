@@ -9,6 +9,12 @@ export enum NPALanguageEntityPropertyKind {
   RELATION = "RELATION",
 }
 
+export enum NPALanguageEntityRelationKind {
+  ONE_TO_MANY = "ONE_TO_MANY",
+  MANY_TO_ONE = "MANY_TO_ONE",
+  MANY_TO_MANY = "MANY_TO_MANY",
+}
+
 export enum NPAQueryMethodCompletionKind {
   METHOD = "METHOD",
 }
@@ -31,6 +37,7 @@ export interface NPALanguageEntityProperty {
   kind: NPALanguageEntityPropertyKind;
   type?: string;
   target?: string;
+  relationKind?: NPALanguageEntityRelationKind;
   nullable?: boolean;
 }
 

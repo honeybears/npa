@@ -9,6 +9,7 @@ import {
   PostgresqlCompiledQuery,
   PostgresqlQueryCompilerOptions,
 } from "./types";
+import { normalizePropertyValue } from "./postgresql-identifiers";
 import { PostgresqlRelationQueryBuilder } from "./postgresql-relation-query";
 
 export function compilePostgresqlQuery(
@@ -110,8 +111,8 @@ class QueryCompiler {
         return `${column} >= ${this.value(condition)}`;
       case "between": {
         const index = requireParameterIndex(condition);
-        return `${column} BETWEEN ${this.push(this.arg(index))} AND ${this.push(
-          this.arg(index + 1),
+        return `${column} BETWEEN ${this.push(this.normalizeConditionValue(condition, this.arg(index)))} AND ${this.push(
+          this.normalizeConditionValue(condition, this.arg(index + 1)),
         )}`;
       }
       case "like":
@@ -183,7 +184,15 @@ class QueryCompiler {
     condition: QueryCondition,
     transform: (value: unknown) => unknown = (value) => value,
   ): string {
-    return this.push(transform(this.arg(requireParameterIndex(condition))));
+    const value = this.normalizeConditionValue(
+      condition,
+      this.arg(requireParameterIndex(condition)),
+    );
+    return this.push(transform(value));
+  }
+
+  private normalizeConditionValue(condition: QueryCondition, value: unknown): unknown {
+    return normalizePropertyValue(condition.property, value, this.options);
   }
 
   private arrayValue(condition: QueryCondition, ignoreCase: boolean): string {
@@ -195,7 +204,9 @@ class QueryCompiler {
       );
     }
 
-    return this.push(value.map((item) => normalizeCaseValue(item, ignoreCase)));
+    return this.push(value.map((item) =>
+      normalizeCaseValue(this.normalizeConditionValue(condition, item), ignoreCase),
+    ));
   }
 
   private column(property: string): string {

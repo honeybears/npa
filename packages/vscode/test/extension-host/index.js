@@ -23,8 +23,42 @@ async function run() {
 }
 
 async function assertCompletion(repositoryDocument) {
+  const baseCompletion = await getCompletion(repositoryDocument, "findByNa", "findByName");
+  assert.equal(
+    baseCompletion.insertText.value,
+    "findByName(${1:name}: string): Promise<User[]>;",
+  );
+  assert.equal(baseCompletion.detail, "findByName(name: string): Promise<User[]>;");
+  assert.ok(baseCompletion.documentation.value.includes("Runs a find query on name"));
+
+  const relationCompletion = await getCompletion(repositoryDocument, "findByTe", "findByTeam");
+  assert.equal(
+    relationCompletion.insertText.value,
+    "findByTeam(${1:team}: Team): Promise<User[]>;",
+  );
+  assert.equal(
+    relationCompletion.detail,
+    "findByTeam(team: Team): Promise<User[]>;",
+  );
+
+  const compoundCompletion = await getCompletion(
+    repositoryDocument,
+    "findByNameAndA",
+    "findByNameAndAge",
+  );
+  assert.equal(
+    compoundCompletion.insertText.value,
+    "findByNameAndAge(${1:name}: string, ${2:age}: number): Promise<User[]>;",
+  );
+  assert.equal(
+    compoundCompletion.detail,
+    "findByNameAndAge(name: string, age: number): Promise<User[]>;",
+  );
+}
+
+async function getCompletion(repositoryDocument, prefix, expectedLabel) {
   const source = repositoryDocument.getText();
-  const offset = source.indexOf("findByNa") + "findByNa".length;
+  const offset = source.indexOf(prefix) + prefix.length;
   const position = repositoryDocument.positionAt(offset);
   const completionList = await vscode.commands.executeCommand(
     "vscode.executeCompletionItemProvider",
@@ -32,15 +66,10 @@ async function assertCompletion(repositoryDocument) {
     position,
   );
 
-  const completion = completionList.items.find((item) => getLabel(item) === "findByName");
+  const completion = completionList.items.find((item) => getLabel(item) === expectedLabel);
   const labels = completionList.items.map(getLabel);
-  assert.ok(completion, `expected findByName completion in ${labels.join(", ")}`);
-  assert.equal(
-    completion.insertText.value,
-    "findByName(${1:name}: string): Promise<User[]>;",
-  );
-  assert.equal(completion.detail, "findByName(name: string): Promise<User[]>;");
-  assert.ok(completion.documentation.value.includes("Runs a find query on name"));
+  assert.ok(completion, `expected ${expectedLabel} completion in ${labels.join(", ")}`);
+  return completion;
 }
 
 async function assertDiagnosticsAndQuickFix(repositoryDocument) {

@@ -1,4 +1,4 @@
-import { Column, Entity, Id } from "@honeybeaers/npa";
+import { Column, Entity, Id, ManyToOne } from "@honeybeaers/npa";
 
 @Entity({ name: "users" })
 export class User {
@@ -10,4 +10,16 @@ export class User {
 
   @Column()
   age!: number;
+
+  @ManyToOne(() => Team)
+  team!: Team;
+}
+
+@Entity({ name: "teams" })
+export class Team {
+  @Id()
+  id!: number;
+
+  @Column()
+  name!: string;
 }

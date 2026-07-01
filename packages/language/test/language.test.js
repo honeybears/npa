@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   NPALanguageEntityPropertyKind,
+  NPALanguageEntityRelationKind,
   NPAQueryMethodDiagnosticCode,
   getNPAQueryMethodCompletions,
   parseNPAQueryMethodName,
@@ -97,6 +98,99 @@ test("adds signatures, snippets, return types, and ordered details to completion
   assert.deepEqual(exact.parameters, [{ name: "name", type: "string" }]);
   assert.ok(exact.documentation.includes("Runs a find query on name"));
   assert.ok(ordered.sortText > exact.sortText, "plain query should sort before OrderBy variants");
+});
+
+
+test("generates query method completions after And and Or connectors", () => {
+  const workspace = createWorkspace();
+  const user = workspace.entities.find((entity) => entity.className === "User");
+
+  const andCompletions = getNPAQueryMethodCompletions({
+    prefix: "findByNameAndA",
+    entity: user,
+    workspace,
+    includeOrderBy: true,
+    limit: 100,
+  });
+  const andCompletion = andCompletions.find((completion) =>
+    completion.name === "findByNameAndAge",
+  );
+
+  assert.ok(andCompletion, "expected findByNameAndAge completion");
+  assert.equal(
+    andCompletion.signature,
+    "findByNameAndAge(name: string, age: number): Promise<User[]>;",
+  );
+  assert.equal(
+    andCompletion.insertText,
+    "findByNameAndAge(${1:name}: string, ${2:age}: number): Promise<User[]>;",
+  );
+
+  const orNames = getNPAQueryMethodCompletions({
+    prefix: "findByNameOrTeamNa",
+    entity: user,
+    workspace,
+    includeOrderBy: true,
+    limit: 100,
+  }).map((completion) => completion.name);
+
+  assert.ok(orNames.includes("findByNameOrTeamName"));
+  assert.ok(orNames.includes("findByNameOrTeamNameContaining"));
+
+  const countCompletion = getNPAQueryMethodCompletions({
+    prefix: "countByNameOrA",
+    entity: user,
+    workspace,
+    limit: 100,
+  }).find((completion) => completion.name === "countByNameOrAgeGreaterThan");
+
+  assert.ok(countCompletion, "expected countByNameOrAgeGreaterThan completion");
+  assert.equal(
+    countCompletion.signature,
+    "countByNameOrAgeGreaterThan(name: string, age: number): Promise<number>;",
+  );
+});
+
+test("supports ManyToOne relation object query methods", () => {
+  const workspace = createWorkspace();
+  const user = workspace.entities.find((entity) => entity.className === "User");
+  const completions = getNPAQueryMethodCompletions({
+    prefix: "findByTe",
+    entity: user,
+    workspace,
+    limit: 100,
+  });
+  const exact = completions.find((completion) => completion.name === "findByTeam");
+  const inCompletion = completions.find((completion) => completion.name === "findByTeamIn");
+
+  assert.ok(exact, "expected findByTeam completion");
+  assert.equal(exact.signature, "findByTeam(team: Team): Promise<User[]>;");
+  assert.equal(exact.insertText, "findByTeam(${1:team}: Team): Promise<User[]>;");
+  assert.deepEqual(exact.parameters, [{ name: "team", type: "Team" }]);
+
+  assert.ok(inCompletion, "expected findByTeamIn completion");
+  assert.equal(
+    inCompletion.signature,
+    "findByTeamIn(teamValues: ReadonlyArray<Team>): Promise<User[]>;",
+  );
+
+  assert.deepEqual(
+    validateNPAQueryMethod({
+      methodName: "findByTeam",
+      entity: user,
+      workspace,
+    }).diagnostics,
+    [],
+  );
+
+  assert.deepEqual(
+    validateNPAQueryMethod({
+      methodName: "findByTeamContaining",
+      entity: user,
+      workspace,
+    }).diagnostics.map((diagnostic) => diagnostic.code),
+    [NPAQueryMethodDiagnosticCode.UNSUPPORTED_OPERATOR],
+  );
 });
 
 test("validates derived query methods against entity schema", () => {
@@ -222,7 +316,9 @@ test("converts migration entity schemas into language schemas", () => {
       {
         name: "team",
         kind: NPALanguageEntityPropertyKind.RELATION,
+        type: "Team",
         target: "Team",
+        relationKind: NPALanguageEntityRelationKind.MANY_TO_ONE,
       },
     ],
   });

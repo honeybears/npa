@@ -137,6 +137,36 @@ test("compiles PostgreSQL derived queries across relation fields", () => {
   assert.deepEqual(
     compilePostgresqlQuery(
       {
+        query: parseQueryMethod("findByTeam"),
+        args: [{ id: 7, label: "platform" }],
+      },
+      { entity: PgMember },
+    ),
+    {
+      text:
+        'SELECT * FROM "members" WHERE ("team_id" = $1)',
+      values: [7],
+    },
+  );
+
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod("findByTeamIn"),
+        args: [[{ id: 7, label: "platform" }, { id: 8, label: "infra" }]],
+      },
+      { entity: PgMember },
+    ),
+    {
+      text:
+        'SELECT * FROM "members" WHERE ("team_id" = ANY($1))',
+      values: [[7, 8]],
+    },
+  );
+
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
         query: parseQueryMethod("findByTeamLabelAndNameOrderByTeamLabelDesc"),
         args: ["platform", "kim"],
       },

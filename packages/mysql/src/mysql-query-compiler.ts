@@ -5,6 +5,7 @@ import {
   QueryPredicatePart,
 } from "@honeybeaers/npa";
 import { RepositoryMethodInvocation } from "@honeybeaers/npa";
+import { normalizeMysqlPropertyValue } from "./mysql-identifiers";
 import { MysqlRelationQueryBuilder } from "./mysql-relation-query";
 import { MysqlCompiledQuery, MysqlQueryCompilerOptions } from "./types";
 
@@ -97,8 +98,8 @@ class MysqlQueryCompiler {
         return `${column} >= ${this.value(condition)}`;
       case "between": {
         const index = requireParameterIndex(condition);
-        return `${column} BETWEEN ${this.push(this.arg(index))} AND ${this.push(
-          this.arg(index + 1),
+        return `${column} BETWEEN ${this.push(this.normalizeConditionValue(condition, this.arg(index)))} AND ${this.push(
+          this.normalizeConditionValue(condition, this.arg(index + 1)),
         )}`;
       }
       case "like":
@@ -147,7 +148,9 @@ class MysqlQueryCompiler {
     }
 
     const placeholders = value
-      .map((item) => this.push(normalizeCaseValue(item, ignoreCase)))
+      .map((item) => this.push(
+        normalizeCaseValue(this.normalizeConditionValue(condition, item), ignoreCase),
+      ))
       .join(", ");
     return `${column} ${operator} (${placeholders})`;
   }
@@ -196,7 +199,15 @@ class MysqlQueryCompiler {
     condition: QueryCondition,
     transform: (value: unknown) => unknown = (value) => value,
   ): string {
-    return this.push(transform(this.arg(requireParameterIndex(condition))));
+    const value = this.normalizeConditionValue(
+      condition,
+      this.arg(requireParameterIndex(condition)),
+    );
+    return this.push(transform(value));
+  }
+
+  private normalizeConditionValue(condition: QueryCondition, value: unknown): unknown {
+    return normalizeMysqlPropertyValue(condition.property, value, this.options);
   }
 
   private arg(index: number): unknown {
