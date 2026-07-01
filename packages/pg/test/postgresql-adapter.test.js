@@ -77,26 +77,44 @@ class TestTransactionManager extends AbstractTransactionManager {
 }
 
 test("compiles a derived query method into parameterized PostgreSQL SQL", () => {
-  const compiled = compilePostgresqlQuery(
-    {
-      query: parseQueryMethod(
-        "findTop2ByNameContainingAndAgeGreaterThanOrderByCreatedAtDesc",
-      ),
-      args: ["kim", 20],
-    },
-    {
-      tableName: "users",
-      columns: {
-        createdAt: "created_at",
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod(
+          "findTop2ByNameContainingAndAgeGreaterThanOrderByCreatedAtDesc",
+        ),
+        args: ["kim", 20],
       },
+      {
+        tableName: "users",
+        columns: {
+          createdAt: "created_at",
+        },
+      },
+    ),
+    {
+      text:
+        'SELECT * FROM "users" WHERE ("name" LIKE $1 AND "age" > $2) ORDER BY "created_at" DESC LIMIT 2',
+      values: ["%kim%", 20],
     },
   );
 
-  assert.deepEqual(compiled, {
-    text:
-      'SELECT * FROM "users" WHERE ("name" LIKE $1 AND "age" > $2) ORDER BY "created_at" DESC LIMIT 2',
-    values: ["%kim%", 20],
-  });
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod(
+          "findDistinctTop2ByNameContainingIgnoreCaseAndEmailAllIgnoreCaseOrderByNameAscAgeDesc",
+        ),
+        args: ["KIM", "A@EXAMPLE.COM"],
+      },
+      { tableName: "users" },
+    ),
+    {
+      text:
+        'SELECT DISTINCT * FROM "users" WHERE (LOWER("name") LIKE $1 AND LOWER("email") = $2) ORDER BY "name" ASC, "age" DESC LIMIT 2',
+      values: ["%kim%", "a@example.com"],
+    },
+  );
 });
 
 test("preserves AND precedence by grouping OR predicate parts", () => {
@@ -143,6 +161,21 @@ test("compiles PostgreSQL derived queries across relation fields", () => {
       text:
         'SELECT COUNT(*)::int AS "count" FROM "teams" AS "npa_0" JOIN "members" AS "npa_1" ON "npa_1"."team_id" = "npa_0"."team_id" WHERE ("npa_1"."name" = $1)',
       values: ["kim"],
+    },
+  );
+
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod("countDistinctByTeamLabelIgnoreCase"),
+        args: ["PLATFORM"],
+      },
+      { entity: PgMember },
+    ),
+    {
+      text:
+        'SELECT COUNT(DISTINCT "npa_0"."member_id")::int AS "count" FROM "members" AS "npa_0" JOIN "teams" AS "npa_1" ON "npa_0"."team_id" = "npa_1"."team_id" WHERE (LOWER("npa_1"."label") = $1)',
+      values: ["platform"],
     },
   );
 

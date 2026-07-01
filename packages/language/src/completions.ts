@@ -21,6 +21,12 @@ interface QueryableCompletionProperty {
 interface CompletionOperator {
   suffix: string;
   operator: QueryOperator;
+  parameterized: boolean;
+}
+
+interface CompletionActionSubject {
+  action: QueryMethodAction;
+  subject: string;
 }
 
 const DEFAULT_ACTIONS: QueryMethodAction[] = [
@@ -32,32 +38,32 @@ const DEFAULT_ACTIONS: QueryMethodAction[] = [
 ];
 
 const COMMON_OPERATORS: CompletionOperator[] = [
-  { suffix: "", operator: "equals" },
-  { suffix: "Not", operator: "not" },
-  { suffix: "In", operator: "in" },
-  { suffix: "NotIn", operator: "notIn" },
-  { suffix: "IsNull", operator: "isNull" },
-  { suffix: "IsNotNull", operator: "isNotNull" },
+  { suffix: "", operator: "equals", parameterized: true },
+  { suffix: "Not", operator: "not", parameterized: true },
+  { suffix: "In", operator: "in", parameterized: true },
+  { suffix: "NotIn", operator: "notIn", parameterized: true },
+  { suffix: "IsNull", operator: "isNull", parameterized: false },
+  { suffix: "IsNotNull", operator: "isNotNull", parameterized: false },
 ];
 
 const STRING_OPERATORS: CompletionOperator[] = [
-  { suffix: "Containing", operator: "containing" },
-  { suffix: "StartingWith", operator: "startingWith" },
-  { suffix: "EndingWith", operator: "endingWith" },
-  { suffix: "Like", operator: "like" },
+  { suffix: "Containing", operator: "containing", parameterized: true },
+  { suffix: "StartingWith", operator: "startingWith", parameterized: true },
+  { suffix: "EndingWith", operator: "endingWith", parameterized: true },
+  { suffix: "Like", operator: "like", parameterized: true },
 ];
 
 const RANGE_OPERATORS: CompletionOperator[] = [
-  { suffix: "LessThan", operator: "lessThan" },
-  { suffix: "LessThanEqual", operator: "lessThanEqual" },
-  { suffix: "GreaterThan", operator: "greaterThan" },
-  { suffix: "GreaterThanEqual", operator: "greaterThanEqual" },
-  { suffix: "Between", operator: "between" },
+  { suffix: "LessThan", operator: "lessThan", parameterized: true },
+  { suffix: "LessThanEqual", operator: "lessThanEqual", parameterized: true },
+  { suffix: "GreaterThan", operator: "greaterThan", parameterized: true },
+  { suffix: "GreaterThanEqual", operator: "greaterThanEqual", parameterized: true },
+  { suffix: "Between", operator: "between", parameterized: true },
 ];
 
 const BOOLEAN_OPERATORS: CompletionOperator[] = [
-  { suffix: "True", operator: "true" },
-  { suffix: "False", operator: "false" },
+  { suffix: "True", operator: "true", parameterized: false },
+  { suffix: "False", operator: "false", parameterized: false },
 ];
 
 export function getNPAQueryMethodCompletions(
@@ -69,35 +75,119 @@ export function getNPAQueryMethodCompletions(
   const completions: NPAQueryMethodCompletion[] = [];
 
   for (const action of actions) {
+    const actionSubjects = getActionSubjects(action);
+
     for (const property of properties) {
       for (const operator of getOperatorsForType(property.type)) {
-        const name = `${action}By${property.methodSegment}${operator.suffix}`;
-        completions.push(toCompletion(name, property, operator));
+        for (const actionSubject of actionSubjects) {
+          for (const predicateSuffix of getPredicateSuffixes(property, operator)) {
+            const name = `${actionSubject.subject}By${property.methodSegment}${operator.suffix}${predicateSuffix}`;
+            completions.push(toCompletion(name, property, operator));
 
-        if (options.includeOrderBy && canOrder(action)) {
-          completions.push(
-            ...orderProperties.flatMap((orderProperty) => [
-              toCompletion(
-                `${name}OrderBy${toMethodSegment(orderProperty.name)}Asc`,
-                property,
-                operator,
-              ),
-              toCompletion(
-                `${name}OrderBy${toMethodSegment(orderProperty.name)}Desc`,
-                property,
-                operator,
-              ),
-            ]),
-          );
+            if (options.includeOrderBy && canOrder(actionSubject.action)) {
+              completions.push(
+                ...getOrderByCompletions(name, property, operator, orderProperties),
+              );
+            }
+          }
         }
       }
     }
   }
 
-  return completions
+  return uniqueCompletions(completions)
     .filter((completion) => completion.name.startsWith(options.prefix))
     .sort((left, right) => left.name.localeCompare(right.name))
     .slice(0, options.limit ?? 100);
+}
+
+function getActionSubjects(action: QueryMethodAction): CompletionActionSubject[] {
+  const subjects: CompletionActionSubject[] = [{ action, subject: action }];
+
+  if (action === "find") {
+    subjects.push(
+      { action, subject: "findDistinct" },
+      { action, subject: "findFirst" },
+      { action, subject: "findTop" },
+      { action, subject: "findTop10" },
+    );
+  }
+
+  if (action === "findOne") {
+    subjects.push({ action, subject: "findOneDistinct" });
+  }
+
+  if (action === "count") {
+    subjects.push({ action, subject: "countDistinct" });
+  }
+
+  return subjects;
+}
+
+function getPredicateSuffixes(
+  property: QueryableCompletionProperty,
+  operator: CompletionOperator,
+): string[] {
+  const suffixes = [""];
+
+  if (operator.parameterized && normalizeType(property.type) === "string") {
+    suffixes.push("IgnoreCase", "AllIgnoreCase");
+  }
+
+  return suffixes;
+}
+
+function getOrderByCompletions(
+  name: string,
+  property: QueryableCompletionProperty,
+  operator: CompletionOperator,
+  orderProperties: ReturnType<typeof getDirectQueryProperties>,
+): NPAQueryMethodCompletion[] {
+  const completions: NPAQueryMethodCompletion[] = [];
+
+  for (const orderProperty of orderProperties) {
+    completions.push(
+      toCompletion(
+        `${name}OrderBy${toMethodSegment(orderProperty.name)}Asc`,
+        property,
+        operator,
+      ),
+      toCompletion(
+        `${name}OrderBy${toMethodSegment(orderProperty.name)}Desc`,
+        property,
+        operator,
+      ),
+    );
+  }
+
+  for (const left of orderProperties) {
+    for (const right of orderProperties) {
+      if (left.name === right.name) {
+        continue;
+      }
+
+      completions.push(
+        toCompletion(
+          `${name}OrderBy${toMethodSegment(left.name)}Asc${toMethodSegment(right.name)}Desc`,
+          property,
+          operator,
+        ),
+        toCompletion(
+          `${name}OrderBy${toMethodSegment(left.name)}Desc${toMethodSegment(right.name)}Asc`,
+          property,
+          operator,
+        ),
+      );
+    }
+  }
+
+  return completions;
+}
+
+function uniqueCompletions(
+  completions: NPAQueryMethodCompletion[],
+): NPAQueryMethodCompletion[] {
+  return [...new Map(completions.map((completion) => [completion.name, completion])).values()];
 }
 
 function getCompletionProperties(

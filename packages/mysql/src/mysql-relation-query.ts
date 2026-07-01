@@ -10,6 +10,7 @@ import {
 } from "@honeybeaers/npa";
 import { ParsedQueryMethod } from "@honeybeaers/npa";
 import {
+  mysqlPrimaryKeyProperty,
   mysqlPropertyToColumn,
   quoteMysqlIdentifier,
   quoteMysqlQualifiedIdentifier,
@@ -57,6 +58,11 @@ export class MysqlRelationQueryBuilder {
 
   selectTarget(): string {
     return this.hasJoins() ? `${this.baseAlias}.*` : "*";
+  }
+
+  countDistinctTarget(): string {
+    const primaryKey = mysqlPropertyToColumn(mysqlPrimaryKeyProperty(this.options), this.options);
+    return this.hasJoins() ? `${this.baseAlias}.${primaryKey}` : primaryKey;
   }
 
   selectFrom(): string {

@@ -10,15 +10,16 @@ export class InMemoryRepositoryExecutor<TEntity extends object> {
 
   execute = ({ query, args }: RepositoryMethodInvocation): unknown => {
     const matchedRows = this.rows.filter((row) =>
-      matchesPredicate(row, query.predicate, args),
+      matchesPredicate(row, query.predicate, args, query.allIgnoreCase === true),
     );
+    const resultRows = query.distinct === true ? distinctRows(matchedRows) : matchedRows;
 
     if (query.action === "delete") {
       return this.deleteRows(matchedRows);
     }
 
     const selectedRows = applyLimit(
-      sortRows(matchedRows, query.orderBy),
+      sortRows(resultRows, query.orderBy),
       query.limit,
     );
 
@@ -30,7 +31,7 @@ export class InMemoryRepositoryExecutor<TEntity extends object> {
       case "exists":
         return matchedRows.length > 0;
       case "count":
-        return matchedRows.length;
+        return resultRows.length;
     }
   };
 
@@ -55,11 +56,14 @@ function matchesPredicate<TEntity extends object>(
   row: TEntity,
   predicate: QueryPredicatePart[],
   args: unknown[],
+  allIgnoreCase: boolean,
 ): boolean {
   const groups = groupByOr(predicate);
 
   return groups.some((group) =>
-    group.every((part) => matchesCondition(row, part.condition, args)),
+    group.every((part) =>
+      matchesCondition(row, part.condition, args, allIgnoreCase),
+    ),
   );
 }
 
@@ -84,9 +88,11 @@ function matchesCondition<TEntity extends object>(
   row: TEntity,
   condition: QueryCondition,
   args: unknown[],
+  allIgnoreCase: boolean,
 ): boolean {
-  const actual = getProperty(row, condition.property);
-  const expected = readArgument(condition, args);
+  const ignoreCase = shouldUseIgnoreCase(condition, allIgnoreCase);
+  const actual = normalizeCaseValue(getProperty(row, condition.property), ignoreCase);
+  const expected = normalizeExpected(readArgument(condition, args), ignoreCase);
 
   switch (condition.operator) {
     case "equals":
@@ -179,6 +185,10 @@ function applyLimit<TEntity>(rows: TEntity[], limit: number | undefined) {
   return limit === undefined ? rows : rows.slice(0, limit);
 }
 
+function distinctRows<TEntity>(rows: TEntity[]): TEntity[] {
+  return [...new Set(rows)];
+}
+
 function getProperty<TEntity extends object>(
   row: TEntity,
   property: string,
@@ -207,4 +217,35 @@ function matchesLike(actual: unknown, pattern: unknown): boolean {
   const expression = escaped.replace(/%/g, ".*").replace(/_/g, ".");
 
   return new RegExp(`^${expression}$`).test(String(actual));
+}
+
+function shouldUseIgnoreCase(
+  condition: QueryCondition,
+  allIgnoreCase: boolean,
+): boolean {
+  return Boolean(
+    (condition.ignoreCase || allIgnoreCase) &&
+      [
+        "equals",
+        "not",
+        "like",
+        "startingWith",
+        "endingWith",
+        "containing",
+        "in",
+        "notIn",
+      ].includes(condition.operator),
+  );
+}
+
+function normalizeExpected(value: unknown, ignoreCase: boolean): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeCaseValue(item, ignoreCase));
+  }
+
+  return normalizeCaseValue(value, ignoreCase);
+}
+
+function normalizeCaseValue(value: unknown, ignoreCase: boolean): unknown {
+  return ignoreCase && typeof value === "string" ? value.toLowerCase() : value;
 }

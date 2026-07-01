@@ -53,6 +53,17 @@ export function validateNPAQueryMethod(
           methodProperty,
         ));
       }
+
+      if (
+        (part.condition.ignoreCase || parsed.allIgnoreCase) &&
+        !isIgnoreCaseCompatible(part.condition.operator, resolved.property.type)
+      ) {
+        diagnostics.push(error(
+          NPAQueryMethodDiagnosticCode.UNSUPPORTED_OPERATOR,
+          `IgnoreCase is only supported for string comparisons on property "${resolved.path.join(".")}".`,
+          methodProperty,
+        ));
+      }
     }
 
     for (const order of parsed.orderBy) {
@@ -136,6 +147,32 @@ function isRangeOperator(operator: QueryOperator): boolean {
     "greaterThan",
     "greaterThanEqual",
     "between",
+  ].includes(operator);
+}
+
+function isIgnoreCaseCompatible(
+  operator: QueryOperator,
+  type: string | undefined,
+): boolean {
+  const normalized = normalizeType(type);
+
+  if (normalized === "unknown") {
+    return true;
+  }
+
+  return normalized === "string" && isIgnoreCaseOperator(operator);
+}
+
+function isIgnoreCaseOperator(operator: QueryOperator): boolean {
+  return [
+    "equals",
+    "not",
+    "in",
+    "notIn",
+    "containing",
+    "startingWith",
+    "endingWith",
+    "like",
   ].includes(operator);
 }
 

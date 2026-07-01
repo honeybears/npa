@@ -32,54 +32,61 @@ class MysqlQueryCompiler {
 
     switch (query.action) {
       case "find": {
-        const where = this.compileWhere(query.predicate);
+        const where = this.compileWhere(query.predicate, query.allIgnoreCase === true);
         const orderBy = this.compileOrderBy(query.orderBy);
         const limit = this.compileLimit(query);
-        return this.toQuery(`SELECT ${this.relationQuery.selectTarget()} FROM ${from}${where}${orderBy}${limit}`);
+        return this.toQuery(`SELECT ${this.selectTarget(query)} FROM ${from}${where}${orderBy}${limit}`);
       }
       case "findOne": {
-        const where = this.compileWhere(query.predicate);
+        const where = this.compileWhere(query.predicate, query.allIgnoreCase === true);
         const orderBy = this.compileOrderBy(query.orderBy);
-        return this.toQuery(`SELECT ${this.relationQuery.selectTarget()} FROM ${from}${where}${orderBy} LIMIT 1`);
+        return this.toQuery(`SELECT ${this.selectTarget(query)} FROM ${from}${where}${orderBy} LIMIT 1`);
       }
       case "exists": {
-        const where = this.compileWhere(query.predicate);
+        const where = this.compileWhere(query.predicate, query.allIgnoreCase === true);
         return this.toQuery(
           `SELECT EXISTS(SELECT 1 FROM ${from}${where}) AS \`exists\``,
         );
       }
       case "count": {
-        const where = this.compileWhere(query.predicate);
+        const where = this.compileWhere(query.predicate, query.allIgnoreCase === true);
         return this.toQuery(
-          `SELECT COUNT(*) AS \`count\` FROM ${from}${where}`,
+          `SELECT COUNT(${this.countTarget(query)}) AS \`count\` FROM ${from}${where}`,
         );
       }
       case "delete":
         return this.toQuery(
-          `DELETE ${this.relationQuery.deleteTarget()}FROM ${from}${this.compileWhere(query.predicate)}`,
+          `DELETE ${this.relationQuery.deleteTarget()}FROM ${from}${this.compileWhere(query.predicate, query.allIgnoreCase === true)}`,
         );
     }
   }
 
-  private compileWhere(predicate: QueryPredicatePart[]): string {
+  private compileWhere(
+    predicate: QueryPredicatePart[],
+    allIgnoreCase = false,
+  ): string {
     const groups = groupByOr(predicate);
     const groupSql = groups.map((group) =>
       group
-        .map((part) => this.compileCondition(part.condition))
+        .map((part) => this.compileCondition(part.condition, allIgnoreCase))
         .join(" AND "),
     );
 
     return ` WHERE ${groupSql.map((sql) => `(${sql})`).join(" OR ")}`;
   }
 
-  private compileCondition(condition: QueryCondition): string {
-    const column = this.column(condition.property);
+  private compileCondition(
+    condition: QueryCondition,
+    allIgnoreCase: boolean,
+  ): string {
+    const ignoreCase = shouldUseIgnoreCase(condition, allIgnoreCase);
+    const column = this.conditionColumn(condition, ignoreCase);
 
     switch (condition.operator) {
       case "equals":
-        return `${column} = ${this.value(condition)}`;
+        return `${column} = ${this.value(condition, (value) => normalizeCaseValue(value, ignoreCase))}`;
       case "not":
-        return `${column} <> ${this.value(condition)}`;
+        return `${column} <> ${this.value(condition, (value) => normalizeCaseValue(value, ignoreCase))}`;
       case "lessThan":
         return `${column} < ${this.value(condition)}`;
       case "lessThanEqual":
@@ -95,20 +102,20 @@ class MysqlQueryCompiler {
         )}`;
       }
       case "like":
-        return `${column} LIKE ${this.value(condition)}`;
+        return `${column} LIKE ${this.value(condition, (value) => normalizeCaseValue(value, ignoreCase))}`;
       case "startingWith":
-        return `${column} LIKE ${this.value(condition, (value) => `${value}%`)}`;
+        return `${column} LIKE ${this.value(condition, (value) => normalizeCaseValue(`${value}%`, ignoreCase))}`;
       case "endingWith":
-        return `${column} LIKE ${this.value(condition, (value) => `%${value}`)}`;
+        return `${column} LIKE ${this.value(condition, (value) => normalizeCaseValue(`%${value}`, ignoreCase))}`;
       case "containing":
         return `${column} LIKE ${this.value(
           condition,
-          (value) => `%${value}%`,
+          (value) => normalizeCaseValue(`%${value}%`, ignoreCase),
         )}`;
       case "in":
-        return this.listCondition(column, condition, "IN", "0 = 1");
+        return this.listCondition(column, condition, "IN", "0 = 1", ignoreCase);
       case "notIn":
-        return this.listCondition(column, condition, "NOT IN", "1 = 1");
+        return this.listCondition(column, condition, "NOT IN", "1 = 1", ignoreCase);
       case "isNull":
         return `${column} IS NULL`;
       case "isNotNull":
@@ -125,6 +132,7 @@ class MysqlQueryCompiler {
     condition: QueryCondition,
     operator: "IN" | "NOT IN",
     emptySql: string,
+    ignoreCase: boolean,
   ): string {
     const value = this.arg(requireParameterIndex(condition));
 
@@ -138,7 +146,9 @@ class MysqlQueryCompiler {
       return emptySql;
     }
 
-    const placeholders = value.map((item) => this.push(item)).join(", ");
+    const placeholders = value
+      .map((item) => this.push(normalizeCaseValue(item, ignoreCase)))
+      .join(", ");
     return `${column} ${operator} (${placeholders})`;
   }
 
@@ -161,6 +171,25 @@ class MysqlQueryCompiler {
     }
 
     return ` LIMIT ${query.limit}`;
+  }
+
+  private selectTarget(query: ParsedQueryMethod): string {
+    const target = this.relationQuery.selectTarget();
+    return query.distinct === true ? `DISTINCT ${target}` : target;
+  }
+
+  private countTarget(query: ParsedQueryMethod): string {
+    return query.distinct === true
+      ? `DISTINCT ${this.relationQuery.countDistinctTarget()}`
+      : "*";
+  }
+
+  private conditionColumn(
+    condition: QueryCondition,
+    ignoreCase: boolean,
+  ): string {
+    const column = this.column(condition.property);
+    return ignoreCase ? `LOWER(${column})` : column;
   }
 
   private value(
@@ -209,4 +238,27 @@ function requireParameterIndex(condition: QueryCondition): number {
   }
 
   return condition.parameterIndex;
+}
+
+function shouldUseIgnoreCase(
+  condition: QueryCondition,
+  allIgnoreCase: boolean,
+): boolean {
+  return Boolean(
+    (condition.ignoreCase || allIgnoreCase) &&
+      [
+        "equals",
+        "not",
+        "like",
+        "startingWith",
+        "endingWith",
+        "containing",
+        "in",
+        "notIn",
+      ].includes(condition.operator),
+  );
+}
+
+function normalizeCaseValue(value: unknown, ignoreCase: boolean): unknown {
+  return ignoreCase && typeof value === "string" ? value.toLowerCase() : value;
 }

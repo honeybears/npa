@@ -106,6 +106,23 @@ test("compiles derived query methods into parameterized MySQL SQL", () => {
   assert.deepEqual(
     compileMysqlQuery(
       {
+        query: parseQueryMethod(
+          "findDistinctTop2ByNameContainingIgnoreCaseAndStatusAllIgnoreCaseOrderByNameAscPriceDesc",
+        ),
+        args: ["DESK", "ACTIVE"],
+      },
+      { entity: Product },
+    ),
+    {
+      text:
+        "SELECT DISTINCT * FROM `shop`.`products` WHERE (LOWER(`product_name`) LIKE ? AND LOWER(`status`) = ?) ORDER BY `product_name` ASC, `price` DESC LIMIT 2",
+      values: ["%desk%", "active"],
+    },
+  );
+
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
         query: parseQueryMethod("findByNameOrPriceGreaterThanAndActiveTrue"),
         args: ["desk", 100],
       },
@@ -147,6 +164,21 @@ test("compiles MySQL derived queries across relation fields", () => {
       text:
         "SELECT COUNT(*) AS `count` FROM `teams` AS `npa_0` JOIN `members` AS `npa_1` ON `npa_1`.`team_id` = `npa_0`.`team_id` WHERE (`npa_1`.`name` = ?)",
       values: ["kim"],
+    },
+  );
+
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
+        query: parseQueryMethod("countDistinctByTeamLabelIgnoreCase"),
+        args: ["PLATFORM"],
+      },
+      { entity: Member },
+    ),
+    {
+      text:
+        "SELECT COUNT(DISTINCT `npa_0`.`member_id`) AS `count` FROM `members` AS `npa_0` JOIN `teams` AS `npa_1` ON `npa_0`.`team_id` = `npa_1`.`team_id` WHERE (LOWER(`npa_1`.`label`) = ?)",
+      values: ["platform"],
     },
   );
 

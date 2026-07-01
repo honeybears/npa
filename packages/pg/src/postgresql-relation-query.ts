@@ -10,6 +10,7 @@ import {
 } from "@honeybeaers/npa";
 import { ParsedQueryMethod } from "@honeybeaers/npa";
 import {
+  primaryKeyProperty,
   propertyToColumn,
   quoteIdentifier,
   quoteQualifiedIdentifier,
@@ -59,6 +60,11 @@ export class PostgresqlRelationQueryBuilder {
 
   selectTarget(): string {
     return this.hasJoins() ? `${this.baseAlias}.*` : "*";
+  }
+
+  countDistinctTarget(): string {
+    const primaryKey = propertyToColumn(primaryKeyProperty(this.options), this.options);
+    return this.hasJoins() ? `${this.baseAlias}.${primaryKey}` : primaryKey;
   }
 
   selectFrom(): string {

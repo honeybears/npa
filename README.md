@@ -95,13 +95,17 @@ import { NPARepository, Repository } from '@honeybeaers/npa';
 
 @Repository(User)
 export abstract class UserRepository extends NPARepository<User, number> {
-  abstract findTop10ByNameContainingOrderByCreatedAtDesc(
+  abstract findDistinctTop10ByNameContainingIgnoreCaseOrderByCreatedAtDesc(
     name: string,
   ): Promise<User[]>;
+  abstract findFirstByEmailAllIgnoreCase(email: string): Promise<User[]>;
   abstract existsByName(name: string): Promise<boolean>;
   abstract deleteByNameContaining(name: string): Promise<number>;
 }
 ```
+
+Supported query modifiers include `Distinct`, `IgnoreCase`, `AllIgnoreCase`,
+`First`/`Top`, and compound order clauses such as `OrderByNameAscAgeDesc`.
 
 Load relations explicitly on base reads:
 
@@ -224,7 +228,7 @@ await users.count();
 await users.updateById(1, { name: 'park' });
 await users.deleteById(1);
 await users.deleteAll();
-await users.findTop10ByNameContainingOrderByCreatedAtDesc('ki');
+await users.findDistinctTop10ByNameContainingIgnoreCaseOrderByCreatedAtDesc('ki');
 ```
 
 ### MySQL
@@ -256,7 +260,7 @@ await users.count();
 await users.updateById(1, { name: 'park' });
 await users.deleteById(1);
 await users.deleteAll();
-await users.findTop10ByNameContainingOrderByCreatedAtDesc('ki');
+await users.findDistinctTop10ByNameContainingIgnoreCaseOrderByCreatedAtDesc('ki');
 ```
 
 

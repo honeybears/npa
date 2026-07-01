@@ -30,6 +30,7 @@ export interface QueryCondition {
   property: string;
   operator: QueryOperator;
   parameterIndex?: number;
+  ignoreCase?: boolean;
 }
 
 export interface QueryPredicatePart {
@@ -45,6 +46,8 @@ export interface QueryOrder {
 export interface ParsedQueryMethod {
   methodName: string;
   action: QueryMethodAction;
+  distinct?: boolean;
+  allIgnoreCase?: boolean;
   limit?: number;
   predicate: QueryPredicatePart[];
   orderBy: QueryOrder[];

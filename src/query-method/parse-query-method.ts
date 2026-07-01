@@ -14,6 +14,11 @@ interface ActionMatch {
   limit?: number;
 }
 
+interface SubjectMatch {
+  distinct?: boolean;
+  limit?: number;
+}
+
 interface OperatorDefinition {
   suffix: string;
   operator: QueryOperator;
@@ -65,9 +70,10 @@ export function parseQueryMethod(methodName: string): ParsedQueryMethod {
 
   const subject = actionMatch.rest.slice(0, byIndex);
   const predicateAndOrder = actionMatch.rest.slice(byIndex + 2);
-  const limit = actionMatch.limit ?? parseLimit(subject);
+  const subjectMatch = parseSubject(subject, actionMatch.limit);
   const { predicateSource, orderBySource } = splitOrderBy(predicateAndOrder);
-  const predicate = parsePredicate(predicateSource);
+  const predicateMatch = stripAllIgnoreCase(predicateSource);
+  const predicate = parsePredicate(predicateMatch.source);
   const orderBy = parseOrderBy(orderBySource);
   const parameterCount = predicate.reduce(
     (sum, part) => sum + getParameterCount(part.condition.operator),
@@ -77,7 +83,9 @@ export function parseQueryMethod(methodName: string): ParsedQueryMethod {
   return {
     methodName,
     action: actionMatch.action,
-    limit,
+    ...(subjectMatch.distinct ? { distinct: true } : {}),
+    ...(predicateMatch.allIgnoreCase ? { allIgnoreCase: true } : {}),
+    limit: subjectMatch.limit,
     predicate,
     orderBy,
     parameterCount,
@@ -111,13 +119,42 @@ function parseActionLimit(action: QueryMethodAction, rest: string): ActionMatch 
   };
 }
 
-function parseLimit(subject: string): number | undefined {
-  if (subject === "First" || subject === "Top") {
-    return 1;
+function parseSubject(
+  subject: string,
+  actionLimit: number | undefined,
+): SubjectMatch {
+  let rest = subject;
+  let distinct = false;
+  let limit = actionLimit;
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    if (rest.startsWith("Distinct")) {
+      distinct = true;
+      rest = rest.slice("Distinct".length);
+      changed = true;
+      continue;
+    }
+
+    if (rest.endsWith("Distinct")) {
+      distinct = true;
+      rest = rest.slice(0, -"Distinct".length);
+      changed = true;
+      continue;
+    }
+
+    const topOrFirst = /^(Top|First)(\d*)/.exec(rest);
+
+    if (topOrFirst) {
+      limit = topOrFirst[2] === "" ? 1 : Number(topOrFirst[2]);
+      rest = rest.slice(topOrFirst[0].length);
+      changed = true;
+    }
   }
 
-  const match = /^(First|Top)(\d+)$/.exec(subject);
-  return match ? Number(match[2]) : undefined;
+  return { distinct, limit };
 }
 
 function splitOrderBy(source: string): {
@@ -150,6 +187,20 @@ function parsePredicate(source: string): QueryPredicatePart[] {
 
     return connector ? { connector, condition } : { condition };
   });
+}
+
+function stripAllIgnoreCase(source: string): {
+  source: string;
+  allIgnoreCase: boolean;
+} {
+  if (!source.endsWith("AllIgnoreCase")) {
+    return { source, allIgnoreCase: false };
+  }
+
+  return {
+    source: source.slice(0, -"AllIgnoreCase".length),
+    allIgnoreCase: true,
+  };
 }
 
 function splitPredicateTokens(
@@ -204,12 +255,15 @@ function isBoundary(source: string, index: number): boolean {
 }
 
 function parseCondition(token: string, parameterIndex: number): QueryCondition {
+  const ignoreCase = token.endsWith("IgnoreCase");
+  const source = ignoreCase ? token.slice(0, -"IgnoreCase".length) : token;
+
   for (const definition of OPERATORS) {
-    if (!token.endsWith(definition.suffix)) {
+    if (!source.endsWith(definition.suffix)) {
       continue;
     }
 
-    const property = token.slice(0, -definition.suffix.length);
+    const property = source.slice(0, -definition.suffix.length);
 
     if (property.length === 0) {
       continue;
@@ -220,13 +274,15 @@ function parseCondition(token: string, parameterIndex: number): QueryCondition {
       operator: definition.operator,
       parameterIndex:
         definition.parameterCount === 0 ? undefined : parameterIndex,
+      ...(ignoreCase ? { ignoreCase: true } : {}),
     };
   }
 
   return {
-    property: toPropertyName(token),
+    property: toPropertyName(source),
     operator: "equals",
     parameterIndex,
+    ...(ignoreCase ? { ignoreCase: true } : {}),
   };
 }
 

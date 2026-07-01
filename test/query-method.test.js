@@ -41,6 +41,48 @@ test("parses a Spring Data JPA style method name into a query AST", () => {
   );
 });
 
+test("parses distinct, first/top, ignore-case, all-ignore-case, and multi-order query methods", () => {
+  assert.deepEqual(
+    parseQueryMethod(
+      "findDistinctTop5ByNameContainingIgnoreCaseAndEmailAllIgnoreCaseOrderByNameAscAgeDesc",
+    ),
+    {
+      methodName:
+        "findDistinctTop5ByNameContainingIgnoreCaseAndEmailAllIgnoreCaseOrderByNameAscAgeDesc",
+      action: "find",
+      distinct: true,
+      allIgnoreCase: true,
+      limit: 5,
+      predicate: [
+        {
+          condition: {
+            property: "name",
+            operator: "containing",
+            parameterIndex: 0,
+            ignoreCase: true,
+          },
+        },
+        {
+          connector: "and",
+          condition: {
+            property: "email",
+            operator: "equals",
+            parameterIndex: 1,
+          },
+        },
+      ],
+      orderBy: [
+        { property: "name", direction: "asc" },
+        { property: "age", direction: "desc" },
+      ],
+      parameterCount: 2,
+    },
+  );
+
+  assert.equal(parseQueryMethod("findFirstByName").limit, 1);
+  assert.equal(parseQueryMethod("findTopByName").limit, 1);
+});
+
 test("validates derived query parameter count before execution", () => {
   const repository = createQueryMethodProxy({}, () => []);
 
@@ -112,6 +154,10 @@ test("executes find, exists, count, and delete query methods in memory", () => {
   );
   assert.equal(repository.existsByActiveFalseAndNameStartingWith("park"), true);
   assert.equal(repository.countByAgeBetween(25, 35), 2);
+  assert.deepEqual(repository.findByNameContainingIgnoreCase("KIM"), [
+    rows[0],
+    rows[2],
+  ]);
   assert.equal(repository.deleteByStatusIn(["inactive", "blocked"]), 2);
   assert.deepEqual(rows, [
     {
