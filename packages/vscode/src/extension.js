@@ -15,6 +15,7 @@ const DOCUMENT_SELECTOR = [
   { language: "typescript", scheme: "file" },
   { language: "typescriptreact", scheme: "file" },
 ];
+const NPA_DIAGNOSTIC_SOURCE = "npa";
 
 async function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection("npa");
@@ -28,6 +29,15 @@ async function activate(context) {
           return provideCompletionItems(document, position);
         },
       },
+    ),
+    vscode.languages.registerCodeActionsProvider(
+      DOCUMENT_SELECTOR,
+      {
+        async provideCodeActions(document, range, context) {
+          return provideCodeActions(document, range, context);
+        },
+      },
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
     ),
     vscode.workspace.onDidOpenTextDocument((document) => {
       void refreshDiagnostics(document, diagnostics);
@@ -85,22 +95,41 @@ async function provideCompletionItems(document, position) {
     return undefined;
   }
 
+  const replacementRange = new vscode.Range(
+    document.positionAt(offset - prefix.length),
+    position,
+  );
+
   return getNPAQueryMethodCompletions({
     prefix,
     entity,
     workspace,
     includeOrderBy: true,
     limit: 80,
-  }).map((completion) => {
-    const item = new vscode.CompletionItem(
-      completion.name,
-      vscode.CompletionItemKind.Method,
-    );
-    item.insertText = completion.insertText;
-    item.detail = completion.detail;
-    item.sortText = completion.sortText;
-    return item;
-  });
+  }).map((completion) => toCompletionItem(completion, replacementRange));
+}
+
+function toCompletionItem(completion, replacementRange) {
+  const item = new vscode.CompletionItem(
+    completion.name,
+    vscode.CompletionItemKind.Method,
+  );
+  item.insertText = new vscode.SnippetString(completion.insertText);
+  item.range = replacementRange;
+  item.filterText = completion.filterText ?? completion.name;
+  item.detail = completion.signature ?? completion.detail;
+  item.sortText = completion.sortText;
+
+  const documentation = new vscode.MarkdownString();
+  documentation.appendCodeblock(completion.signature ?? completion.name, "typescript");
+
+  if (completion.documentation) {
+    documentation.appendMarkdown(`
+${completion.documentation}`);
+  }
+
+  item.documentation = documentation;
+  return item;
 }
 
 async function refreshDiagnostics(document, diagnostics) {
@@ -128,18 +157,72 @@ async function refreshDiagnostics(document, diagnostics) {
     });
 
     for (const diagnostic of result.diagnostics) {
-      vscodeDiagnostics.push(new vscode.Diagnostic(
-        new vscode.Range(
-          document.positionAt(method.start),
-          document.positionAt(method.end),
-        ),
+      const vscodeDiagnostic = new vscode.Diagnostic(
+        getDiagnosticRange(document, method, diagnostic),
         diagnostic.message,
-        vscode.DiagnosticSeverity.Error,
-      ));
+        getDiagnosticSeverity(diagnostic),
+      );
+      vscodeDiagnostic.source = NPA_DIAGNOSTIC_SOURCE;
+      vscodeDiagnostic.code = diagnostic.code;
+      vscodeDiagnostics.push(vscodeDiagnostic);
     }
   }
 
   diagnostics.set(document.uri, vscodeDiagnostics);
+}
+
+async function provideCodeActions(document, range, context) {
+  if (!isSupportedDocument(document) || !hasNPADiagnostic(context.diagnostics)) {
+    return undefined;
+  }
+
+  const workspace = await collectWorkspaceSchema(document);
+  const source = document.getText();
+  const actions = [];
+
+  for (const method of findRepositoryMethodDeclarations(source)) {
+    const entity = workspace.entities.find((item) =>
+      item.className === method.entityName,
+    );
+
+    if (!entity) {
+      continue;
+    }
+
+    const result = validateNPAQueryMethod({
+      methodName: method.methodName,
+      entity,
+      workspace,
+    });
+
+    for (const diagnostic of result.diagnostics) {
+      const diagnosticRange = getDiagnosticRange(document, method, diagnostic);
+
+      if (!rangesIntersect(range, diagnosticRange)) {
+        continue;
+      }
+
+      for (const suggestion of diagnostic.suggestions ?? []) {
+        actions.push(toCodeAction(document, method, diagnosticRange, suggestion));
+      }
+    }
+  }
+
+  return actions;
+}
+
+function toCodeAction(document, method, diagnosticRange, suggestion) {
+  const action = new vscode.CodeAction(suggestion.title, vscode.CodeActionKind.QuickFix);
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(
+    document.uri,
+    new vscode.Range(document.positionAt(method.start), document.positionAt(method.end)),
+    suggestion.replacementMethodName,
+  );
+  action.edit = edit;
+  action.isPreferred = true;
+  action.diagnostics = [new vscode.Diagnostic(diagnosticRange, suggestion.title)];
+  return action;
 }
 
 async function collectWorkspaceSchema(seedDocument) {
@@ -179,6 +262,42 @@ async function collectWorkspaceSchema(seedDocument) {
   return collectLanguageWorkspaceSchemaFromSources(sources);
 }
 
+function getDiagnosticRange(document, method, diagnostic) {
+  const rangeText = diagnostic.rangeText ??
+    (diagnostic.property ? toMethodSegment(diagnostic.property) : undefined);
+
+  if (rangeText) {
+    const offset = method.methodName.indexOf(rangeText);
+
+    if (offset >= 0) {
+      const start = method.start + offset;
+      return new vscode.Range(
+        document.positionAt(start),
+        document.positionAt(start + rangeText.length),
+      );
+    }
+  }
+
+  return new vscode.Range(
+    document.positionAt(method.start),
+    document.positionAt(method.end),
+  );
+}
+
+function getDiagnosticSeverity(diagnostic) {
+  return diagnostic.severity === "WARNING" ?
+    vscode.DiagnosticSeverity.Warning :
+    vscode.DiagnosticSeverity.Error;
+}
+
+function hasNPADiagnostic(diagnostics) {
+  return diagnostics.some((diagnostic) => diagnostic.source === NPA_DIAGNOSTIC_SOURCE);
+}
+
+function rangesIntersect(left, right) {
+  return left.start.isBeforeOrEqual(right.end) && right.start.isBeforeOrEqual(left.end);
+}
+
 function isSupportedDocument(document) {
   return document.languageId === "typescript" ||
     document.languageId === "typescriptreact";
@@ -186,6 +305,10 @@ function isSupportedDocument(document) {
 
 function isQueryPrefix(prefix) {
   return /^(find|findOne|exists|count|delete)/.test(prefix);
+}
+
+function toMethodSegment(propertyName) {
+  return propertyName.charAt(0).toUpperCase() + propertyName.slice(1);
 }
 
 module.exports = {

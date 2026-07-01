@@ -1,8 +1,8 @@
 import type { QueryMethodAction, QueryOperator } from "@honeybeaers/npa/query-method";
 import {
+  findEntitySchema,
   getDirectQueryProperties,
   getRelationProperties,
-  findEntitySchema,
   toMethodSegment,
 } from "./entity-schema";
 import {
@@ -10,23 +10,27 @@ import {
   type GetNPAQueryMethodCompletionsOptions,
   type NPALanguageEntitySchema,
   type NPAQueryMethodCompletion,
+  type NPAQueryMethodCompletionParameter,
 } from "./types";
 
 interface QueryableCompletionProperty {
   methodSegment: string;
   label: string;
   type?: string;
+  relation: boolean;
 }
 
 interface CompletionOperator {
   suffix: string;
   operator: QueryOperator;
-  parameterized: boolean;
+  parameterCount: number;
+  rank: number;
 }
 
 interface CompletionActionSubject {
   action: QueryMethodAction;
   subject: string;
+  rank: number;
 }
 
 const DEFAULT_ACTIONS: QueryMethodAction[] = [
@@ -38,32 +42,32 @@ const DEFAULT_ACTIONS: QueryMethodAction[] = [
 ];
 
 const COMMON_OPERATORS: CompletionOperator[] = [
-  { suffix: "", operator: "equals", parameterized: true },
-  { suffix: "Not", operator: "not", parameterized: true },
-  { suffix: "In", operator: "in", parameterized: true },
-  { suffix: "NotIn", operator: "notIn", parameterized: true },
-  { suffix: "IsNull", operator: "isNull", parameterized: false },
-  { suffix: "IsNotNull", operator: "isNotNull", parameterized: false },
+  { suffix: "", operator: "equals", parameterCount: 1, rank: 0 },
+  { suffix: "Not", operator: "not", parameterCount: 1, rank: 10 },
+  { suffix: "In", operator: "in", parameterCount: 1, rank: 20 },
+  { suffix: "NotIn", operator: "notIn", parameterCount: 1, rank: 21 },
+  { suffix: "IsNull", operator: "isNull", parameterCount: 0, rank: 30 },
+  { suffix: "IsNotNull", operator: "isNotNull", parameterCount: 0, rank: 31 },
 ];
 
 const STRING_OPERATORS: CompletionOperator[] = [
-  { suffix: "Containing", operator: "containing", parameterized: true },
-  { suffix: "StartingWith", operator: "startingWith", parameterized: true },
-  { suffix: "EndingWith", operator: "endingWith", parameterized: true },
-  { suffix: "Like", operator: "like", parameterized: true },
+  { suffix: "Containing", operator: "containing", parameterCount: 1, rank: 5 },
+  { suffix: "StartingWith", operator: "startingWith", parameterCount: 1, rank: 6 },
+  { suffix: "EndingWith", operator: "endingWith", parameterCount: 1, rank: 7 },
+  { suffix: "Like", operator: "like", parameterCount: 1, rank: 8 },
 ];
 
 const RANGE_OPERATORS: CompletionOperator[] = [
-  { suffix: "LessThan", operator: "lessThan", parameterized: true },
-  { suffix: "LessThanEqual", operator: "lessThanEqual", parameterized: true },
-  { suffix: "GreaterThan", operator: "greaterThan", parameterized: true },
-  { suffix: "GreaterThanEqual", operator: "greaterThanEqual", parameterized: true },
-  { suffix: "Between", operator: "between", parameterized: true },
+  { suffix: "GreaterThan", operator: "greaterThan", parameterCount: 1, rank: 5 },
+  { suffix: "GreaterThanEqual", operator: "greaterThanEqual", parameterCount: 1, rank: 6 },
+  { suffix: "LessThan", operator: "lessThan", parameterCount: 1, rank: 7 },
+  { suffix: "LessThanEqual", operator: "lessThanEqual", parameterCount: 1, rank: 8 },
+  { suffix: "Between", operator: "between", parameterCount: 2, rank: 9 },
 ];
 
 const BOOLEAN_OPERATORS: CompletionOperator[] = [
-  { suffix: "True", operator: "true", parameterized: false },
-  { suffix: "False", operator: "false", parameterized: false },
+  { suffix: "True", operator: "true", parameterCount: 0, rank: 5 },
+  { suffix: "False", operator: "false", parameterCount: 0, rank: 6 },
 ];
 
 export function getNPAQueryMethodCompletions(
@@ -81,12 +85,29 @@ export function getNPAQueryMethodCompletions(
       for (const operator of getOperatorsForType(property.type)) {
         for (const actionSubject of actionSubjects) {
           for (const predicateSuffix of getPredicateSuffixes(property, operator)) {
-            const name = `${actionSubject.subject}By${property.methodSegment}${operator.suffix}${predicateSuffix}`;
-            completions.push(toCompletion(name, property, operator));
+            const name = `${actionSubject.subject}By${property.methodSegment}${operator.suffix}${predicateSuffix.suffix}`;
+            completions.push(toCompletion({
+              action: actionSubject.action,
+              actionRank: actionSubject.rank,
+              entity: options.entity,
+              name,
+              operator,
+              predicateSuffixRank: predicateSuffix.rank,
+              property,
+            }));
 
             if (options.includeOrderBy && canOrder(actionSubject.action)) {
               completions.push(
-                ...getOrderByCompletions(name, property, operator, orderProperties),
+                ...getOrderByCompletions({
+                  action: actionSubject.action,
+                  actionRank: actionSubject.rank,
+                  entity: options.entity,
+                  name,
+                  operator,
+                  orderProperties,
+                  predicateSuffixRank: predicateSuffix.rank,
+                  property,
+                }),
               );
             }
           }
@@ -97,89 +118,101 @@ export function getNPAQueryMethodCompletions(
 
   return uniqueCompletions(completions)
     .filter((completion) => completion.name.startsWith(options.prefix))
-    .sort((left, right) => left.name.localeCompare(right.name))
+    .sort((left, right) => (left.sortText ?? left.name).localeCompare(right.sortText ?? right.name))
     .slice(0, options.limit ?? 100);
 }
 
 function getActionSubjects(action: QueryMethodAction): CompletionActionSubject[] {
-  const subjects: CompletionActionSubject[] = [{ action, subject: action }];
+  const baseRank = getActionRank(action);
+  const subjects: CompletionActionSubject[] = [{ action, subject: action, rank: baseRank }];
 
   if (action === "find") {
     subjects.push(
-      { action, subject: "findDistinct" },
-      { action, subject: "findDistinctFirst" },
-      { action, subject: "findDistinctTop" },
-      { action, subject: "findDistinctTop10" },
-      { action, subject: "findFirst" },
-      { action, subject: "findTop" },
-      { action, subject: "findTop10" },
+      { action, subject: "findFirst", rank: baseRank + 1 },
+      { action, subject: "findTop", rank: baseRank + 2 },
+      { action, subject: "findTop10", rank: baseRank + 3 },
+      { action, subject: "findDistinct", rank: baseRank + 4 },
+      { action, subject: "findDistinctFirst", rank: baseRank + 5 },
+      { action, subject: "findDistinctTop", rank: baseRank + 6 },
+      { action, subject: "findDistinctTop10", rank: baseRank + 7 },
     );
   }
 
   if (action === "findOne") {
-    subjects.push({ action, subject: "findOneDistinct" });
+    subjects.push({ action, subject: "findOneDistinct", rank: baseRank + 1 });
   }
 
   if (action === "count") {
-    subjects.push({ action, subject: "countDistinct" });
+    subjects.push({ action, subject: "countDistinct", rank: baseRank + 1 });
   }
 
   return subjects;
 }
 
+function getActionRank(action: QueryMethodAction): number {
+  return DEFAULT_ACTIONS.indexOf(action) * 20;
+}
+
 function getPredicateSuffixes(
   property: QueryableCompletionProperty,
   operator: CompletionOperator,
-): string[] {
-  const suffixes = [""];
+): Array<{ suffix: string; rank: number }> {
+  const suffixes = [{ suffix: "", rank: 0 }];
 
-  if (operator.parameterized && normalizeType(property.type) === "string") {
-    suffixes.push("IgnoreCase", "AllIgnoreCase");
+  if (operator.parameterCount > 0 && normalizeType(property.type) === "string") {
+    suffixes.push(
+      { suffix: "IgnoreCase", rank: 1 },
+      { suffix: "AllIgnoreCase", rank: 2 },
+    );
   }
 
   return suffixes;
 }
 
-function getOrderByCompletions(
-  name: string,
-  property: QueryableCompletionProperty,
-  operator: CompletionOperator,
-  orderProperties: ReturnType<typeof getDirectQueryProperties>,
-): NPAQueryMethodCompletion[] {
+function getOrderByCompletions(options: {
+  action: QueryMethodAction;
+  actionRank: number;
+  entity: NPALanguageEntitySchema;
+  name: string;
+  operator: CompletionOperator;
+  orderProperties: ReturnType<typeof getDirectQueryProperties>;
+  predicateSuffixRank: number;
+  property: QueryableCompletionProperty;
+}): NPAQueryMethodCompletion[] {
   const completions: NPAQueryMethodCompletion[] = [];
 
-  for (const orderProperty of orderProperties) {
+  for (const orderProperty of options.orderProperties) {
     completions.push(
-      toCompletion(
-        `${name}OrderBy${toMethodSegment(orderProperty.name)}Asc`,
-        property,
-        operator,
-      ),
-      toCompletion(
-        `${name}OrderBy${toMethodSegment(orderProperty.name)}Desc`,
-        property,
-        operator,
-      ),
+      toCompletion({
+        ...options,
+        name: `${options.name}OrderBy${toMethodSegment(orderProperty.name)}Asc`,
+        orderRank: 40,
+      }),
+      toCompletion({
+        ...options,
+        name: `${options.name}OrderBy${toMethodSegment(orderProperty.name)}Desc`,
+        orderRank: 41,
+      }),
     );
   }
 
-  for (const left of orderProperties) {
-    for (const right of orderProperties) {
+  for (const left of options.orderProperties) {
+    for (const right of options.orderProperties) {
       if (left.name === right.name) {
         continue;
       }
 
       completions.push(
-        toCompletion(
-          `${name}OrderBy${toMethodSegment(left.name)}Asc${toMethodSegment(right.name)}Desc`,
-          property,
-          operator,
-        ),
-        toCompletion(
-          `${name}OrderBy${toMethodSegment(left.name)}Desc${toMethodSegment(right.name)}Asc`,
-          property,
-          operator,
-        ),
+        toCompletion({
+          ...options,
+          name: `${options.name}OrderBy${toMethodSegment(left.name)}Asc${toMethodSegment(right.name)}Desc`,
+          orderRank: 50,
+        }),
+        toCompletion({
+          ...options,
+          name: `${options.name}OrderBy${toMethodSegment(left.name)}Desc${toMethodSegment(right.name)}Asc`,
+          orderRank: 51,
+        }),
       );
     }
   }
@@ -201,6 +234,7 @@ function getCompletionProperties(
     methodSegment: toMethodSegment(property.name),
     label: property.name,
     type: property.type,
+    relation: false,
   }));
 
   const relationFields = getRelationProperties(entity).flatMap((relation) => {
@@ -214,6 +248,7 @@ function getCompletionProperties(
       methodSegment: `${toMethodSegment(relation.name)}${toMethodSegment(property.name)}`,
       label: `${relation.name}.${property.name}`,
       type: property.type,
+      relation: true,
     }));
   });
 
@@ -238,22 +273,119 @@ function getOperatorsForType(type: string | undefined): CompletionOperator[] {
   return COMMON_OPERATORS;
 }
 
-function toCompletion(
-  name: string,
-  property: QueryableCompletionProperty,
-  operator: CompletionOperator,
-): NPAQueryMethodCompletion {
+function toCompletion(options: {
+  action: QueryMethodAction;
+  actionRank: number;
+  entity: NPALanguageEntitySchema;
+  name: string;
+  operator: CompletionOperator;
+  orderRank?: number;
+  predicateSuffixRank: number;
+  property: QueryableCompletionProperty;
+}): NPAQueryMethodCompletion {
+  const parameters = getParameters(options.property, options.operator);
+  const returnType = getReturnType(options.action, options.entity.className);
+  const parameterText = parameters.map((parameter) => `${parameter.name}: ${parameter.type}`).join(", ");
+  const snippetParameterText = parameters
+    .map((parameter, index) => `\${${index + 1}:${parameter.name}}: ${parameter.type}`)
+    .join(", ");
+  const signature = `${options.name}(${parameterText}): ${returnType};`;
+  const detail = `${returnType} - ${options.property.label} ${options.operator.operator}`;
+  const sortText = [
+    options.actionRank,
+    options.property.relation ? 1 : 0,
+    options.operator.rank,
+    options.predicateSuffixRank,
+    options.orderRank ?? 0,
+    options.name,
+  ].map((part) => typeof part === "number" ? String(part).padStart(3, "0") : part).join(":");
+
   return {
     kind: NPAQueryMethodCompletionKind.METHOD,
-    name,
-    insertText: name,
-    detail: `${property.label} ${operator.operator}`,
-    sortText: name,
+    name: options.name,
+    insertText: `${options.name}(${snippetParameterText}): ${returnType};`,
+    detail,
+    sortText,
+    filterText: options.name,
+    documentation: `Runs a ${options.action} query on ${options.property.label} using ${options.operator.operator}.`,
+    signature,
+    returnType,
+    parameters,
   };
+}
+
+function getParameters(
+  property: QueryableCompletionProperty,
+  operator: CompletionOperator,
+): NPAQueryMethodCompletionParameter[] {
+  if (operator.parameterCount === 0) {
+    return [];
+  }
+
+  const type = getParameterType(property.type, operator.operator);
+  const baseName = toParameterName(property.label);
+
+  if (operator.operator === "between") {
+    return [
+      { name: `min${toMethodSegment(baseName)}`, type },
+      { name: `max${toMethodSegment(baseName)}`, type },
+    ];
+  }
+
+  if (operator.operator === "in" || operator.operator === "notIn") {
+    return [{ name: `${baseName}Values`, type: `ReadonlyArray<${getParameterType(property.type)}>` }];
+  }
+
+  return [{ name: baseName, type }];
+}
+
+function getParameterType(type: string | undefined, operator?: QueryOperator): string {
+  const normalized = normalizeType(type);
+
+  if (normalized === "date") {
+    return "Date";
+  }
+
+  if (["string", "number", "boolean"].includes(normalized)) {
+    return normalized;
+  }
+
+  if (operator === "in" || operator === "notIn") {
+    return "unknown";
+  }
+
+  return "unknown";
+}
+
+function getReturnType(action: QueryMethodAction, entityName: string): string {
+  if (action === "findOne") {
+    return `Promise<${entityName} | null>`;
+  }
+
+  if (action === "exists") {
+    return "Promise<boolean>";
+  }
+
+  if (action === "count") {
+    return "Promise<number>";
+  }
+
+  if (action === "delete") {
+    return "Promise<number>";
+  }
+
+  return `Promise<${entityName}[]>`;
 }
 
 function canOrder(action: QueryMethodAction): boolean {
   return action === "find" || action === "findOne";
+}
+
+function toParameterName(label: string): string {
+  return label
+    .split(".")
+    .map((part, index) => index === 0 ? part : toMethodSegment(part))
+    .join("");
 }
 
 function normalizeType(type: string | undefined): string {

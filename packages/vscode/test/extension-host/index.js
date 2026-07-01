@@ -18,6 +18,11 @@ async function run() {
   assert.ok(extension, "expected NPA extension to be available");
   await extension.activate();
 
+  await assertCompletion(repositoryDocument);
+  await assertDiagnosticsAndQuickFix(repositoryDocument);
+}
+
+async function assertCompletion(repositoryDocument) {
   const source = repositoryDocument.getText();
   const offset = source.indexOf("findByNa") + "findByNa".length;
   const position = repositoryDocument.positionAt(offset);
@@ -27,23 +32,49 @@ async function run() {
     position,
   );
 
-  const labels = completionList.items.map((item) =>
-    typeof item.label === "string" ? item.label : item.label.label,
+  const completion = completionList.items.find((item) => getLabel(item) === "findByName");
+  const labels = completionList.items.map(getLabel);
+  assert.ok(completion, `expected findByName completion in ${labels.join(", ")}`);
+  assert.equal(
+    completion.insertText.value,
+    "findByName(${1:name}: string): Promise<User[]>;",
   );
-  assert.ok(labels.includes("findByName"), `expected findByName completion in ${labels.join(", ")}`);
+  assert.equal(completion.detail, "findByName(name: string): Promise<User[]>;");
+  assert.ok(completion.documentation.value.includes("Runs a find query on name"));
+}
 
-  const diagnostics = await waitForDiagnostics(repositoryDocument.uri);
+async function assertDiagnosticsAndQuickFix(repositoryDocument) {
+  const diagnostics = await waitForDiagnostics(repositoryDocument.uri, 2);
   assert.ok(
     diagnostics.some((diagnostic) => diagnostic.message.includes("IgnoreCase is only supported")),
     `expected IgnoreCase diagnostic, got ${diagnostics.map((item) => item.message).join(" | ")}`,
   );
+
+  const typoDiagnostic = diagnostics.find((diagnostic) =>
+    diagnostic.message.includes('Unknown query property "naem"'),
+  );
+  assert.ok(typoDiagnostic, "expected unknown property diagnostic for findByNaem");
+  assert.equal(repositoryDocument.getText(typoDiagnostic.range), "Naem");
+
+  const codeActions = await vscode.commands.executeCommand(
+    "vscode.executeCodeActionProvider",
+    repositoryDocument.uri,
+    typoDiagnostic.range,
+    vscode.CodeActionKind.QuickFix.value,
+  );
+  const action = codeActions.find((item) => item.title === "Change to findByName");
+  assert.ok(action, `expected Change to findByName quick fix in ${codeActions.map((item) => item.title).join(", ")}`);
 }
 
-async function waitForDiagnostics(uri) {
+function getLabel(item) {
+  return typeof item.label === "string" ? item.label : item.label.label;
+}
+
+async function waitForDiagnostics(uri, minimumCount) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const diagnostics = vscode.languages.getDiagnostics(uri);
 
-    if (diagnostics.length > 0) {
+    if (diagnostics.length >= minimumCount) {
       return diagnostics;
     }
 

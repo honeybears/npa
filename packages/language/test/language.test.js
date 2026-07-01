@@ -76,6 +76,29 @@ test("generates query method completions for distinct, top, ignore-case, and com
   }
 });
 
+
+test("adds signatures, snippets, return types, and ordered details to completions", () => {
+  const workspace = createWorkspace();
+  const user = workspace.entities.find((entity) => entity.className === "User");
+  const completions = getNPAQueryMethodCompletions({
+    prefix: "findByName",
+    entity: user,
+    workspace,
+    includeOrderBy: true,
+    limit: 10,
+  });
+  const exact = completions.find((completion) => completion.name === "findByName");
+  const ordered = completions.find((completion) => completion.name === "findByNameOrderByAgeDesc");
+
+  assert.ok(exact, "expected findByName completion");
+  assert.equal(exact.signature, "findByName(name: string): Promise<User[]>;");
+  assert.equal(exact.insertText, "findByName(${1:name}: string): Promise<User[]>;");
+  assert.equal(exact.returnType, "Promise<User[]>");
+  assert.deepEqual(exact.parameters, [{ name: "name", type: "string" }]);
+  assert.ok(exact.documentation.includes("Runs a find query on name"));
+  assert.ok(ordered.sortText > exact.sortText, "plain query should sort before OrderBy variants");
+});
+
 test("validates derived query methods against entity schema", () => {
   const workspace = createWorkspace();
   const user = workspace.entities.find((entity) => entity.className === "User");
@@ -93,32 +116,50 @@ test("reports unknown properties and unsupported operators", () => {
   const workspace = createWorkspace();
   const user = workspace.entities.find((entity) => entity.className === "User");
 
-  assert.deepEqual(
-    validateNPAQueryMethod({
-      methodName: "findByMissing",
-      entity: user,
-      workspace,
-    }).diagnostics.map((diagnostic) => diagnostic.code),
-    [NPAQueryMethodDiagnosticCode.UNKNOWN_PROPERTY],
-  );
+  const unknownProperty = validateNPAQueryMethod({
+    methodName: "findByNaem",
+    entity: user,
+    workspace,
+  }).diagnostics[0];
 
-  assert.deepEqual(
-    validateNPAQueryMethod({
-      methodName: "findByAgeContaining",
-      entity: user,
-      workspace,
-    }).diagnostics.map((diagnostic) => diagnostic.code),
-    [NPAQueryMethodDiagnosticCode.UNSUPPORTED_OPERATOR],
-  );
+  assert.equal(unknownProperty.code, NPAQueryMethodDiagnosticCode.UNKNOWN_PROPERTY);
+  assert.equal(unknownProperty.rangeText, "Naem");
+  assert.deepEqual(unknownProperty.suggestions, [
+    {
+      title: "Change to findByName",
+      replacementMethodName: "findByName",
+    },
+  ]);
 
-  assert.deepEqual(
-    validateNPAQueryMethod({
-      methodName: "findByAgeIgnoreCase",
-      entity: user,
-      workspace,
-    }).diagnostics.map((diagnostic) => diagnostic.code),
-    [NPAQueryMethodDiagnosticCode.UNSUPPORTED_OPERATOR],
-  );
+  const unsupportedOperator = validateNPAQueryMethod({
+    methodName: "findByAgeContaining",
+    entity: user,
+    workspace,
+  }).diagnostics[0];
+
+  assert.equal(unsupportedOperator.code, NPAQueryMethodDiagnosticCode.UNSUPPORTED_OPERATOR);
+  assert.equal(unsupportedOperator.rangeText, "Containing");
+  assert.deepEqual(unsupportedOperator.suggestions, [
+    {
+      title: "Use equality query findByAge",
+      replacementMethodName: "findByAge",
+    },
+  ]);
+
+  const unsupportedIgnoreCase = validateNPAQueryMethod({
+    methodName: "findByAgeIgnoreCase",
+    entity: user,
+    workspace,
+  }).diagnostics[0];
+
+  assert.equal(unsupportedIgnoreCase.code, NPAQueryMethodDiagnosticCode.UNSUPPORTED_OPERATOR);
+  assert.equal(unsupportedIgnoreCase.rangeText, "IgnoreCase");
+  assert.deepEqual(unsupportedIgnoreCase.suggestions, [
+    {
+      title: "Remove IgnoreCase",
+      replacementMethodName: "findByAge",
+    },
+  ]);
 
   assert.deepEqual(
     validateNPAQueryMethod({

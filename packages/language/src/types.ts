@@ -43,12 +43,22 @@ export interface NPALanguageWorkspaceSchema {
   entities: NPALanguageEntitySchema[];
 }
 
+export interface NPAQueryMethodCompletionParameter {
+  name: string;
+  type: string;
+}
+
 export interface NPAQueryMethodCompletion {
   kind: NPAQueryMethodCompletionKind;
   name: string;
   insertText: string;
   detail: string;
   sortText?: string;
+  filterText?: string;
+  documentation?: string;
+  signature?: string;
+  returnType?: string;
+  parameters?: NPAQueryMethodCompletionParameter[];
 }
 
 export interface GetNPAQueryMethodCompletionsOptions {
@@ -66,11 +76,18 @@ export interface ValidateNPAQueryMethodOptions {
   workspace?: NPALanguageWorkspaceSchema;
 }
 
+export interface NPAQueryMethodDiagnosticSuggestion {
+  title: string;
+  replacementMethodName: string;
+}
+
 export interface NPAQueryMethodDiagnostic {
   code: NPAQueryMethodDiagnosticCode;
   severity: NPAQueryMethodDiagnosticSeverity;
   message: string;
   property?: string;
+  rangeText?: string;
+  suggestions?: NPAQueryMethodDiagnosticSuggestion[];
 }
 
 export interface NPAQueryMethodValidationResult {
