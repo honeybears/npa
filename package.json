@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js"
     },
+    "./query-method": {
+      "types": "./dist/query-method/index.d.ts",
+      "require": "./dist/query-method/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

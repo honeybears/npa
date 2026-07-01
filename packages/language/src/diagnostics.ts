@@ -1,4 +1,4 @@
-import type { QueryOperator } from "@honeybeaers/npa";
+import type { QueryOperator } from "@honeybeaers/npa/query-method";
 import {
   getDirectQueryProperties,
   resolveQueryProperty,

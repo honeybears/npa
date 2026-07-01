@@ -1,4 +1,4 @@
-import type { QueryMethodAction, QueryOperator } from "@honeybeaers/npa";
+import type { QueryMethodAction, QueryOperator } from "@honeybeaers/npa/query-method";
 import {
   getDirectQueryProperties,
   getRelationProperties,

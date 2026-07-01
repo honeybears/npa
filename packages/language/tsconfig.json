@@ -6,6 +6,9 @@
     "paths": {
       "@honeybeaers/npa": [
         "../../dist/index.d.ts"
+      ],
+      "@honeybeaers/npa/query-method": [
+        "../../dist/query-method/index.d.ts"
       ]
     }
   },

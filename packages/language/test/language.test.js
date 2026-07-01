@@ -5,10 +5,21 @@ const {
   NPALanguageEntityPropertyKind,
   NPAQueryMethodDiagnosticCode,
   getNPAQueryMethodCompletions,
+  parseNPAQueryMethodName,
   toNPALanguageEntitySchema,
   toNPALanguageWorkspaceSchema,
   validateNPAQueryMethod,
 } = require("../dist");
+const { parseQueryMethod } = require("@honeybeaers/npa/query-method");
+
+test("reuses the core query method parser", () => {
+  const methodName = "findTop5ByTeamNameAndAgeGreaterThanOrderByCreatedAtDesc";
+
+  assert.deepEqual(
+    parseNPAQueryMethodName(methodName),
+    parseQueryMethod(methodName),
+  );
+});
 
 test("generates query method completions for direct and relation fields", () => {
   const workspace = createWorkspace();

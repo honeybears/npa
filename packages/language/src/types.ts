@@ -1,7 +1,7 @@
 import type {
   ParsedQueryMethod,
   QueryMethodAction,
-} from "@honeybeaers/npa";
+} from "@honeybeaers/npa/query-method";
 
 export enum NPALanguageEntityPropertyKind {
   ID = "ID",
