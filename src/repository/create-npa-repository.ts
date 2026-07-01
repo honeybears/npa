@@ -27,7 +27,17 @@ export function createNPARepository<
     target,
   );
 
-  return createDerivedQueryRepository(repository, (invocation) =>
-    adapter.executeDerivedQuery(invocation),
+  return createDerivedQueryRepository(
+    repository,
+    (invocation) => adapter.executeDerivedQuery(invocation),
+    (invocation) => {
+      if (!adapter.executeRawQuery) {
+        throw new Error(
+          `Repository method "${invocation.methodName}" uses @Query, but the adapter does not support raw queries.`,
+        );
+      }
+
+      return adapter.executeRawQuery(invocation);
+    },
   ) as TRepository & NPARepository<TEntity, TId>;
 }

@@ -4,6 +4,7 @@ import {
   NPARepositoryAdapter,
   NPADirtyCheckAdapter,
   RepositoryMethodExecutor,
+  RepositoryRawQueryExecutor,
 } from "@node-persistence-api/core";
 import {
   compileMysqlCount,
@@ -18,6 +19,7 @@ import {
   getMysqlPrimaryKeyValue,
 } from "./mysql-crud-compiler";
 import { compileMysqlQuery } from "./mysql-query-compiler";
+import { compileMysqlRawQuery } from "./mysql-raw-query";
 import { loadMysqlRelations } from "./mysql-relation-loader";
 import { executeMysqlQuery } from "./mysql-result";
 import { MysqlRepositoryOptions } from "./types";
@@ -80,6 +82,27 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
         return deletedCount;
       }
     }
+  };
+
+  executeRawQuery: RepositoryRawQueryExecutor<Promise<unknown>> = async (
+    invocation,
+  ) => {
+    const query = compileMysqlRawQuery(
+      invocation.query.text,
+      invocation.args,
+      invocation.methodName,
+    );
+    const result = await executeMysqlQuery<TEntity>(
+      this.options,
+      query.text,
+      query.values,
+    );
+
+    return this.formatRawQueryResult(
+      invocation.query,
+      result.rows as TEntity[],
+      result.affectedRows ?? 0,
+    );
   };
 
   findById = async (id: TId, load?: { relations?: true | string[] }): Promise<TEntity | null> => {
@@ -197,6 +220,27 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return result.affectedRows ?? 0;
   };
 
+  private formatRawQueryResult(
+    query: { result: string; managed: boolean },
+    rows: TEntity[],
+    affectedRows: number,
+  ): unknown {
+    switch (query.result) {
+      case "many":
+        return query.managed ? this.manageMany(rows) : rows;
+      case "one": {
+        const row = rows[0] ?? null;
+        return query.managed ? this.manage(row) : row;
+      }
+      case "scalar":
+        return firstColumn(rows[0] ?? null);
+      case "execute":
+        return affectedRows;
+      default:
+        throw new Error(`Unsupported @Query result mode: ${query.result}`);
+    }
+  }
+
   private async findByIdRow(id: TId): Promise<TEntity | null> {
     const query = compileMysqlFindById(id, this.options);
     const result = await executeMysqlQuery<TEntity>(
@@ -286,4 +330,13 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
   private getEntityTarget(): EntityTarget<TEntity> | undefined {
     return this.options.entity as EntityTarget<TEntity> | undefined;
   }
+}
+
+function firstColumn(row: object | null): unknown {
+  if (!row) {
+    return null;
+  }
+
+  const [value] = Object.values(row);
+  return value ?? null;
 }

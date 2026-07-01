@@ -3,6 +3,7 @@ export * from "./mysql-adapter";
 export * from "./mysql-connection";
 export * from "./mysql-crud-compiler";
 export * from "./mysql-query-compiler";
+export * from "./mysql-raw-query";
 export * from "./mysql-relation-loader";
 export * from "./mysql-migration";
 export * from "./mysql-repository-executor";

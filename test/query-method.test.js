@@ -3,7 +3,9 @@ const test = require("node:test");
 
 const {
   InMemoryRepositoryExecutor,
+  Query,
   createDerivedQueryRepository,
+  createNPARepository,
   createQueryMethodProxy,
   parseQueryMethod,
 } = require("../dist");
@@ -107,6 +109,61 @@ test("validates derived query parameter count before execution", () => {
     () => repository.findByNameAndAge("kim"),
     /expects 2 parameter\(s\), received 1/,
   );
+});
+
+test("routes @Query repository methods through the raw query executor", async () => {
+  const calls = [];
+
+  class RawUserRepository {
+    findBySql() {
+      throw new Error("placeholder should not run");
+    }
+  }
+
+  Query("SELECT * FROM users WHERE name = ?", { result: "one" })(
+    RawUserRepository.prototype,
+    "findBySql",
+    Object.getOwnPropertyDescriptor(RawUserRepository.prototype, "findBySql"),
+  );
+
+  const adapter = {
+    findById() {},
+    findAll() {},
+    existsById() {},
+    count() {},
+    save() {},
+    insert() {},
+    update() {},
+    updateById() {},
+    delete() {},
+    deleteById() {},
+    deleteAll() {},
+    executeDerivedQuery() {
+      throw new Error("derived query should not run");
+    },
+    executeRawQuery(invocation) {
+      calls.push(invocation);
+      return { id: 1, name: invocation.args[0] };
+    },
+  };
+
+  const repository = createNPARepository(
+    Object.create(RawUserRepository.prototype),
+    adapter,
+  );
+
+  assert.deepEqual(await repository.findBySql("kim"), { id: 1, name: "kim" });
+  assert.deepEqual(calls, [
+    {
+      query: {
+        text: "SELECT * FROM users WHERE name = ?",
+        result: "one",
+        managed: false,
+      },
+      methodName: "findBySql",
+      args: ["kim"],
+    },
+  ]);
 });
 
 test("keeps concrete repository methods and derives missing query methods", () => {

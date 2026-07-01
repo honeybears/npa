@@ -4,6 +4,7 @@ import {
   NPARepositoryAdapter,
   NPADirtyCheckAdapter,
   RepositoryMethodExecutor,
+  RepositoryRawQueryExecutor,
 } from "@node-persistence-api/core";
 import {
   compilePostgresqlCount,
@@ -18,6 +19,7 @@ import {
   getPrimaryKeyValue,
 } from "./postgresql-crud-compiler";
 import { compilePostgresqlQuery } from "./postgresql-query-compiler";
+import { compilePostgresqlRawQuery } from "./postgresql-raw-query";
 import { loadPostgresqlRelations } from "./postgresql-relation-loader";
 import { PostgresqlRepositoryOptions } from "./types";
 
@@ -70,6 +72,23 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
         return deletedCount;
       }
     }
+  };
+
+  executeRawQuery: RepositoryRawQueryExecutor<Promise<unknown>> = async (
+    invocation,
+  ) => {
+    const query = compilePostgresqlRawQuery(
+      invocation.query.text,
+      invocation.args,
+      invocation.methodName,
+    );
+    const result = await this.options.queryable.query(query.text, query.values);
+
+    return this.formatRawQueryResult(
+      invocation.query,
+      result.rows as TEntity[],
+      result.rowCount ?? 0,
+    );
   };
 
   execute = this.executeDerivedQuery;
@@ -185,6 +204,27 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return result.rowCount ?? 0;
   };
 
+  private formatRawQueryResult(
+    query: { result: string; managed: boolean },
+    rows: TEntity[],
+    affectedRows: number,
+  ): unknown {
+    switch (query.result) {
+      case "many":
+        return query.managed ? this.manageMany(rows) : rows;
+      case "one": {
+        const row = rows[0] ?? null;
+        return query.managed ? this.manage(row) : row;
+      }
+      case "scalar":
+        return firstColumn(rows[0] ?? null);
+      case "execute":
+        return affectedRows;
+      default:
+        throw new Error(`Unsupported @Query result mode: ${query.result}`);
+    }
+  }
+
   private manage(entity: TEntity): TEntity;
   private manage(entity: null): null;
   private manage(entity: TEntity | null): TEntity | null;
@@ -262,4 +302,13 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
   private getEntityTarget(): EntityTarget<TEntity> | undefined {
     return this.options.entity as EntityTarget<TEntity> | undefined;
   }
+}
+
+function firstColumn(row: object | null): unknown {
+  if (!row) {
+    return null;
+  }
+
+  const [value] = Object.values(row);
+  return value ?? null;
 }

@@ -169,6 +169,36 @@ Supported relation predicates include `@ManyToOne`, `@OneToMany({ mappedBy })`,
 and `@ManyToMany({ joinTable })` target columns. Deeper paths such as
 `findByTeamCompanyName` are not inferred yet.
 
+## Custom SQL with `@Query`
+
+Use `@Query` for repository methods that should bypass method-name parsing and
+execute SQL directly. TypeScript decorators cannot be applied to abstract method
+signatures, so declare the method as a decorated property or provide a concrete
+placeholder method. Named placeholders such as `:email` are bound from repository method
+arguments in first-appearance order. Reusing the same placeholder name reuses the
+same argument. MySQL receives `?` placeholders; PostgreSQL receives `$1`, `$2`, ... .
+
+```ts
+import { NPARepository, Query, Repository } from '@node-persistence-api/core';
+
+@Repository(User)
+export abstract class UserRepository extends NPARepository<User, number> {
+  @Query('SELECT * FROM users WHERE email = :email', { result: 'one', managed: true })
+  declare findByEmailSql: (email: string) => Promise<User | null>;
+
+  @Query('SELECT COUNT(*) AS total FROM users WHERE active = :active', { result: 'scalar' })
+  declare countActiveSql: (active: boolean) => Promise<number>;
+
+  @Query('UPDATE users SET active = :active WHERE id = :id', { result: 'execute' })
+  declare updateActiveSql: (active: boolean, id: number) => Promise<number>;
+}
+```
+
+Result modes are `many` (default rows array), `one` (first row or `null`),
+`scalar` (first column of the first row), and `execute` (affected row count).
+Use `?` or `$1` placeholders only when you specifically want positional SQL.
+Raw query rows are not dirty-checked unless `managed: true` is set.
+
 ## Schema Push and Migrations
 
 Use `npa db push` for Prisma `db push`-style local synchronization: NPA reads
@@ -422,7 +452,7 @@ The current codebase is suitable for demos, but the following items are needed
 before treating NPA as a fuller ORM:
 
 - Query planning: cache parsed method names and compiled SQL templates per entity, adapter, and method name so repeat calls only bind values.
-- Query API: add pagination, runtime sort, projection/select clauses, aggregate/groupBy support, bulk update by condition, and an escape hatch such as custom SQL or @Query.
+- Query API: add pagination, runtime sort, projection/select clauses, aggregate/groupBy support, and bulk update by condition.
 - Batching: add findUnique-style same-tick batching and relation-loading batching inside transaction-aware scopes.
 - Relations: support deeper relation paths, cascade persist/remove, orphan removal, eager/lazy fetch strategies, and safer relation mutation helpers.
 - Entity mapping: add composite keys, default values, enum/json/array types, UUID/sequence generation, embedded value objects, column transformers, inheritance, and lifecycle hooks.

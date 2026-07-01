@@ -1,4 +1,5 @@
 import { ParsedQueryMethod } from "../query-method";
+import type { NPARawQueryMetadata } from "./query-decorator";
 
 export interface RepositoryMethodInvocation {
   query: ParsedQueryMethod;
@@ -7,6 +8,16 @@ export interface RepositoryMethodInvocation {
 
 export interface RepositoryMethodExecutor<TResult = unknown> {
   (invocation: RepositoryMethodInvocation): TResult;
+}
+
+export interface RepositoryRawQueryInvocation {
+  query: NPARawQueryMetadata;
+  methodName: string;
+  args: unknown[];
+}
+
+export interface RepositoryRawQueryExecutor<TResult = unknown> {
+  (invocation: RepositoryRawQueryInvocation): TResult;
 }
 
 export interface NPALoadOptions<TEntity extends object = object> {
@@ -36,4 +47,5 @@ export abstract class NPARepository<TEntity extends object, TId = unknown> {
 export interface NPARepositoryAdapter<TEntity extends object, TId = unknown>
   extends NPARepository<TEntity, TId> {
   executeDerivedQuery(invocation: RepositoryMethodInvocation): Promise<unknown>;
+  executeRawQuery?(invocation: RepositoryRawQueryInvocation): Promise<unknown>;
 }

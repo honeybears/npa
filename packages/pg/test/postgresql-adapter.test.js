@@ -24,6 +24,7 @@ const {
   ManyToOne,
   NPARepository,
   OneToMany,
+  Query,
   Repository,
   Version,
   createNPA,
@@ -415,6 +416,81 @@ test("compiles JPA-style PostgreSQL repository SQL", () => {
     text: 'DELETE FROM "users"',
     values: [],
   });
+});
+
+test("executes @Query raw PostgreSQL repository methods", async () => {
+  const calls = [];
+  const queryable = {
+    query(text, values = []) {
+      calls.push({ text, values });
+
+      if (text.startsWith("SELECT COUNT")) {
+        return { rows: [{ total: "2" }], rowCount: 1 };
+      }
+
+      if (text.startsWith("UPDATE")) {
+        return { rows: [], rowCount: 3 };
+      }
+
+      return {
+        rows: [{ product_id: values[0] ?? 1, product_name: "desk" }],
+        rowCount: 1,
+      };
+    },
+  };
+
+  class RawProductRepository extends NPARepository {}
+
+  Query('SELECT * FROM "products" WHERE "price" > :minPrice', { result: "many" })(
+    RawProductRepository.prototype,
+    "findExpensiveProducts",
+  );
+  Query('SELECT * FROM "products" WHERE "product_id" = :id', { result: "one" })(
+    RawProductRepository.prototype,
+    "findOneProductRaw",
+  );
+  Query('SELECT COUNT(*) AS total FROM "products" WHERE "price" > :minPrice', { result: "scalar" })(
+    RawProductRepository.prototype,
+    "countProductsRaw",
+  );
+  Query('UPDATE "products" SET "price" = "price" + :amount WHERE "price" < :amount', { result: "execute" })(
+    RawProductRepository.prototype,
+    "raisePricesRaw",
+  );
+
+  const repository = createPostgresqlDerivedQueryRepository(
+    Object.create(RawProductRepository.prototype),
+    { entity: PgProduct, queryable },
+  );
+
+  assert.deepEqual(await repository.findExpensiveProducts(100), [
+    { product_id: 100, product_name: "desk" },
+  ]);
+  assert.deepEqual(await repository.findOneProductRaw(7), {
+    product_id: 7,
+    product_name: "desk",
+  });
+  assert.equal(await repository.countProductsRaw(10), "2");
+  assert.equal(await repository.raisePricesRaw(5), 3);
+
+  assert.deepEqual(calls, [
+    {
+      text: 'SELECT * FROM "products" WHERE "price" > $1',
+      values: [100],
+    },
+    {
+      text: 'SELECT * FROM "products" WHERE "product_id" = $1',
+      values: [7],
+    },
+    {
+      text: 'SELECT COUNT(*) AS total FROM "products" WHERE "price" > $1',
+      values: [10],
+    },
+    {
+      text: 'UPDATE "products" SET "price" = "price" + $1 WHERE "price" < $1',
+      values: [5],
+    },
+  ]);
 });
 
 test("runs save, insert, updateById, and deleteById through a PostgreSQL queryable", async () => {
