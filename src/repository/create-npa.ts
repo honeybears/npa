@@ -46,6 +46,15 @@ export class NPA implements NPAApplication {
     const repositoryTargets =
       options.repositories ?? getRegisteredRepositoryTargets();
 
+    if (!options.repositories && repositoryTargets.length === 0) {
+      throw new Error(
+        [
+          "No @Repository metadata has been loaded.",
+          'Import repository modules before creating NPA, for example: import "./repositories";',
+        ].join(" "),
+      );
+    }
+
     for (const repository of repositoryTargets) {
       if (this.repositories.has(repository)) {
         throw new Error(

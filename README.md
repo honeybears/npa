@@ -108,6 +108,23 @@ you want to restrict an NPA instance to an explicit subset. NPA creates the
 concrete implementation at runtime with a `Proxy`, so only the methods you want
 autocomplete for need to be declared.
 
+Repository decorators run when their module is imported. In applications, keep a
+bootstrap barrel that imports or re-exports every repository module before
+constructing `NPA`:
+
+```ts
+// src/repositories.ts
+export { UserRepository } from './user.repository';
+export { TeamRepository } from './team.repository';
+
+// src/main.ts
+import './repositories';
+import { UserRepository } from './user.repository';
+
+const npa = new NPA({ adapter });
+const users = npa.get(UserRepository);
+```
+
 ```ts
 import { NPARepository, Repository } from '@honeybeaers/npa';
 
@@ -225,6 +242,7 @@ same runtime adapter contract used by `new NPA()`.
 import { Pool } from 'pg';
 import { NPA } from '@honeybeaers/npa';
 import { PostgresqlConnection, postgresql } from '@honeybeaers/npa-pg';
+import './repositories';
 import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -256,6 +274,7 @@ Wire the MySQL adapter with a `mysql2` pool or connection.
 import mysql from 'mysql2/promise';
 import { NPA } from '@honeybeaers/npa';
 import { MysqlConnection, mysql as npaMysql } from '@honeybeaers/npa-mysql';
+import './repositories';
 import { UserRepository } from './user.repository';
 
 const pool = mysql.createPool(process.env.DATABASE_URL);
@@ -299,6 +318,7 @@ import {
 } from '@honeybeaers/npa';
 import { PostgresqlTransactionManager, postgresql } from '@honeybeaers/npa-pg';
 import { Pool } from 'pg';
+import './repositories';
 import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

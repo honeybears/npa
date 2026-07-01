@@ -3,6 +3,9 @@
 This example wires `@honeybeaers/npa` to `@honeybeaers/npa-pg` with local
 workspace dependencies.
 
+The app imports `src/repositories.ts` before constructing `NPA`, so decorated
+repositories are registered without passing `repositories` manually.
+
 ```bash
 pnpm --filter npa-example-node-pg demo
 ```

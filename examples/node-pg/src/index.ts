@@ -1,4 +1,5 @@
 import { NPA } from "@honeybeaers/npa";
+import "./repositories";
 import {
   PostgresqlConnection,
   postgresql,

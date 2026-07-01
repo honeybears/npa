@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const test = require("node:test");
 
 const {
@@ -34,6 +35,32 @@ Entity({ name: "auto_users" })(AutoTokenUser);
 class AutoUserRepository extends NPARepository {}
 
 Repository(AutoTokenUser)(AutoUserRepository);
+
+test("reports missing repository bootstrap imports", () => {
+  const script = `
+const { NPA } = require("./dist");
+try {
+  new NPA({
+    adapter: {
+      createRepository() {
+        throw new Error("adapter should not be called");
+      },
+    },
+  });
+  process.exitCode = 1;
+} catch (error) {
+  console.log(error.message);
+}
+`;
+  const result = spawnSync(process.execPath, ["-e", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /No @Repository metadata has been loaded/);
+  assert.match(result.stdout, /import "\.\/repositories"/);
+});
 
 test("auto-registers imported @Repository tokens when repositories are omitted", async () => {
   const created = [];
