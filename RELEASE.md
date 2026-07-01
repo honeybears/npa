@@ -62,7 +62,7 @@ avoid presenting them as universal ORM rankings.
 ## VS Code Extension
 
 The VS Code package is `packages/vscode`, with Marketplace extension id
-`honeybeaers.npa-vscode`. It vendors the built language helper output into the
+`honeybeaers.npa` and display name `NPA`. It vendors the built language helper output into the
 VSIX, so publish it after the core build succeeds.
 
 For beta releases, publish the extension to the Marketplace pre-release channel:
@@ -91,8 +91,8 @@ VSCE_PAT=... pnpm run publish:vscode
 `vsce` also supports an interactive login flow:
 
 ```bash
-pnpm --filter npa-vscode exec vsce login honeybeaers
+pnpm --dir packages/vscode exec vsce login honeybeaers
 ```
 
 The generated VSIX path is version-derived from `packages/vscode/package.json`,
-for example `dist/npa-vscode-0.1.0.vsix`.
+for example `dist/npa-0.1.0.vsix`.

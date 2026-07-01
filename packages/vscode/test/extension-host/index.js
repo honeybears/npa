@@ -14,7 +14,7 @@ async function run() {
   const repositoryDocument = await vscode.workspace.openTextDocument(repositoryUri);
   await vscode.window.showTextDocument(repositoryDocument);
 
-  const extension = vscode.extensions.getExtension("honeybeaers.npa-vscode");
+  const extension = vscode.extensions.getExtension("honeybeaers.npa");
   assert.ok(extension, "expected NPA extension to be available");
   await extension.activate();
 

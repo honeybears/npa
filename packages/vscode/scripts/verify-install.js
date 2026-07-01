@@ -32,11 +32,11 @@ const installed = runCode([
   "--list-extensions",
 ]);
 
-if (!installed.stdout.split(/\r?\n/).includes("honeybeaers.npa-vscode")) {
+if (!installed.stdout.split(/\r?\n/).includes("honeybeaers.npa")) {
   fail(`Extension was not listed after install. Output:\n${installed.stdout}`);
 }
 
-console.log(`Installed honeybeaers.npa-vscode from ${vsixPath}`);
+console.log(`Installed honeybeaers.npa from ${vsixPath}`);
 
 function runCode(args) {
   const result = spawnSync(codeCommand, args, { encoding: "utf8" });

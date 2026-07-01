@@ -1,5 +1,5 @@
 {
-  "name": "npa-vscode",
+  "name": "npa",
   "displayName": "NPA",
   "description": "VS Code completion and diagnostics for Node Persistence API repositories",
   "version": "0.1.0",
@@ -27,7 +27,7 @@
     "build": "node scripts/prepare-vsix.js",
     "test": "pnpm run test:core",
     "test:core": "cd ../.. && npm run build && node --test packages/vscode/test/*.test.js",
-    "test:host": "cd ../.. && npm run build && pnpm --filter npa-vscode run build && node packages/vscode/test/run-extension-host.js",
+    "test:host": "cd ../.. && npm run build && pnpm --dir packages/vscode run build && node packages/vscode/test/run-extension-host.js",
     "package:vsix": "node scripts/package-vsix.js",
     "package:vsix:pre": "node scripts/package-vsix.js --pre-release",
     "publish:marketplace": "node scripts/publish-marketplace.js",
