@@ -34,3 +34,5 @@ pnpm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+!examples/vscode-demo/.vscode/
+!examples/vscode-demo/.vscode/settings.json

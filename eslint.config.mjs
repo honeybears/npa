@@ -7,6 +7,7 @@ export default [
     ignores: [
       "dist/**",
       "packages/*/dist/**",
+      "examples/*/dist/**",
       "node_modules/**",
       "coverage/**",
       "*.tgz",

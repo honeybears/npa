@@ -1,0 +1,23 @@
+{
+  "name": "npa-example-node-mysql",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Node MySQL demo for NPA repositories",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "demo": "npm run build && node dist/index.js",
+    "db:push": "npa db push --config npa.config.mjs",
+    "db:push:dry-run": "npa db push --config npa.config.mjs --dry-run"
+  },
+  "dependencies": {
+    "@honeybeaers/npa": "workspace:^",
+    "@honeybeaers/npa-mysql": "workspace:^",
+    "mysql2": "^3.22.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "typescript": "^5.9.3"
+  }
+}

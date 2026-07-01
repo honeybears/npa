@@ -107,6 +107,9 @@ function getActionSubjects(action: QueryMethodAction): CompletionActionSubject[]
   if (action === "find") {
     subjects.push(
       { action, subject: "findDistinct" },
+      { action, subject: "findDistinctFirst" },
+      { action, subject: "findDistinctTop" },
+      { action, subject: "findDistinctTop10" },
       { action, subject: "findFirst" },
       { action, subject: "findTop" },
       { action, subject: "findTop10" },

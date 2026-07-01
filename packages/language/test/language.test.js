@@ -54,6 +54,10 @@ test("generates query method completions for distinct, top, ignore-case, and com
 
   for (const expected of [
     ["findDistinctByNameContainingIg", "findDistinctByNameContainingIgnoreCase"],
+    [
+      "findDistinctTop10ByNameContainingIg",
+      "findDistinctTop10ByNameContainingIgnoreCase",
+    ],
     ["findFirstByNa", "findFirstByName"],
     ["findTopByNa", "findTopByName"],
     ["findTop10ByNa", "findTop10ByName"],

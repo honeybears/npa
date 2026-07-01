@@ -1,0 +1,20 @@
+{
+  "name": "npa-example-vscode-demo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "VS Code and language-helper demo for NPA query methods",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "demo": "npm run build && node dist/index.js"
+  },
+  "dependencies": {
+    "@honeybeaers/npa": "workspace:^",
+    "@honeybeaers/npa-language": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "typescript": "^5.9.3"
+  }
+}

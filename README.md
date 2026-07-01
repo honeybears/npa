@@ -22,6 +22,21 @@ MySQL:
 npm install @honeybeaers/npa-mysql
 ```
 
+## Examples
+
+The repository includes local workspace demos for PostgreSQL, MySQL, and editor
+language helpers.
+
+```bash
+pnpm --filter npa-example-node-pg demo
+pnpm --filter npa-example-node-mysql demo
+pnpm --filter npa-example-vscode-demo demo
+```
+
+The database demos run without `DATABASE_URL` by printing generated SQL through
+a mock queryable. Set `DATABASE_URL` and run `db:push` in the example package to
+exercise a real database.
+
 ## Entity Model
 
 ```ts
