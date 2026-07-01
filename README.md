@@ -355,6 +355,11 @@ const result = validateNPAQueryMethod({
 VS Code or IDEA plugins should handle editor integration only: collect TypeScript
 entity schemas, call this package, and render completions/diagnostics.
 
+The `packages/vscode` workspace contains the first VS Code MVP. It registers a
+completion provider and diagnostics for TypeScript repositories extending
+`NPARepository<Entity, Id>`, then delegates method suggestions and validation to
+`@honeybeaers/npa-language`.
+
 ## Develop
 
 ```bash

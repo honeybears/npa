@@ -1,0 +1,30 @@
+{
+  "name": "npa-vscode",
+  "displayName": "NPA",
+  "description": "VS Code completion and diagnostics for Node Persistence API repositories",
+  "version": "0.1.0",
+  "publisher": "honeybeaers",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
+  ],
+  "main": "./src/extension.js",
+  "files": [
+    "src",
+    "package.json",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "cd ../.. && npm run build && node --test packages/vscode/test/*.test.js"
+  },
+  "dependencies": {
+    "@honeybeaers/npa-language": "workspace:^"
+  }
+}

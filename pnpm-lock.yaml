@@ -63,6 +63,12 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
 
+  packages/vscode:
+    dependencies:
+      '@honeybeaers/npa-language':
+        specifier: workspace:^
+        version: link:../language
+
 packages:
 
   '@balena/dockerignore@1.0.2':
