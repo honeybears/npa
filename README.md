@@ -103,7 +103,7 @@ Application code extends only NPA, not a database-specific repository type.
 
 Declare repositories as abstract classes and bind them to entities with
 `@Repository`. Imported decorated repositories are auto-registered when
-`createNPA({ adapter })` runs. Pass `repositories: [UserRepository]` only when
+`new NPA({ adapter })` runs. Pass `repositories: [UserRepository]` only when
 you want to restrict an NPA instance to an explicit subset. NPA creates the
 concrete implementation at runtime with a `Proxy`, so only the methods you want
 autocomplete for need to be declared.
@@ -217,20 +217,20 @@ decorator expressions are rejected by migration parsing.
 ## Adapter Wiring
 
 Choose the adapter in composition code. PostgreSQL and MySQL both implement the
-same runtime adapter contract used by `createNPA`.
+same runtime adapter contract used by `new NPA()`.
 
 ### PostgreSQL
 
 ```ts
 import { Pool } from 'pg';
-import { createNPA } from '@honeybeaers/npa';
+import { NPA } from '@honeybeaers/npa';
 import { PostgresqlConnection, postgresql } from '@honeybeaers/npa-pg';
 import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const connection = new PostgresqlConnection(pool);
 
-const npa = createNPA({
+const npa = new NPA({
   adapter: postgresql({ queryable: connection }),
 });
 
@@ -254,14 +254,14 @@ Wire the MySQL adapter with a `mysql2` pool or connection.
 
 ```ts
 import mysql from 'mysql2/promise';
-import { createNPA } from '@honeybeaers/npa';
+import { NPA } from '@honeybeaers/npa';
 import { MysqlConnection, mysql as npaMysql } from '@honeybeaers/npa-mysql';
 import { UserRepository } from './user.repository';
 
 const pool = mysql.createPool(process.env.DATABASE_URL);
 const connection = new MysqlConnection(pool);
 
-const npa = createNPA({
+const npa = new NPA({
   adapter: npaMysql({ queryable: connection }),
 });
 
@@ -295,7 +295,7 @@ import {
   NPATransactionIsolation,
   NPATransactionPropagation,
   Transaction,
-  createNPA,
+  NPA,
 } from '@honeybeaers/npa';
 import { PostgresqlTransactionManager, postgresql } from '@honeybeaers/npa-pg';
 import { Pool } from 'pg';
@@ -303,7 +303,7 @@ import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const txManager = new PostgresqlTransactionManager(pool);
-const npa = createNPA({
+const npa = new NPA({
   adapter: postgresql({ queryable: txManager.queryable }),
 });
 

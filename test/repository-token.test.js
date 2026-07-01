@@ -5,6 +5,7 @@ const {
   Column,
   Entity,
   Id,
+  NPA,
   NPARepository,
   Repository,
   createNPA,
@@ -48,7 +49,7 @@ test("auto-registers imported @Repository tokens when repositories are omitted",
     },
   };
 
-  const npa = createNPA({ adapter });
+  const npa = new NPA({ adapter });
   const users = npa.get(AutoUserRepository);
 
   assert.equal(users instanceof AutoUserRepository, true);
@@ -71,7 +72,7 @@ test("creates repositories from @Repository abstract-class tokens", async () => 
     },
   };
 
-  const npa = createNPA({
+  const npa = new NPA({
     adapter,
     repositories: [UserRepository],
   });
@@ -88,7 +89,7 @@ test("rejects repositories without @Repository metadata", () => {
   class MissingRepository extends NPARepository {}
 
   assert.throws(
-    () => createNPA({ adapter: { createRepository() {} }, repositories: [MissingRepository] }),
+    () => new NPA({ adapter: { createRepository() {} }, repositories: [MissingRepository] }),
     /MissingRepository is missing @Repository\(Entity\)/,
   );
 });
@@ -97,7 +98,7 @@ test("keeps explicit repository lists scoped to the provided tokens", () => {
   class OtherRepository extends NPARepository {}
   Repository(TokenUser)(OtherRepository);
 
-  const npa = createNPA({
+  const npa = new NPA({
     adapter: {
       createRepository(options) {
         return Object.create(options.repository.prototype);
@@ -108,6 +109,19 @@ test("keeps explicit repository lists scoped to the provided tokens", () => {
 
   assert.throws(
     () => npa.get(OtherRepository),
-    /OtherRepository was not registered in createNPA\(\)/,
+    /OtherRepository was not registered in this NPA instance/,
   );
+});
+
+test("createNPA remains a compatibility wrapper", () => {
+  const npa = createNPA({
+    adapter: {
+      createRepository(options) {
+        return Object.create(options.repository.prototype);
+      },
+    },
+    repositories: [UserRepository],
+  });
+
+  assert.equal(npa.get(UserRepository) instanceof UserRepository, true);
 });

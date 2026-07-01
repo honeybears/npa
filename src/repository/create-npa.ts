@@ -26,10 +26,12 @@ export interface NPARuntimeAdapter {
   ): TRepository & NPARepository<TEntity, TId>;
 }
 
-export interface CreateNPAOptions {
+export interface NPAOptions {
   adapter: NPARuntimeAdapter;
   repositories?: NPARepositoryTarget[];
 }
+
+export type CreateNPAOptions = NPAOptions;
 
 export interface NPAApplication {
   get<TRepository extends object>(
@@ -37,41 +39,46 @@ export interface NPAApplication {
   ): TRepository;
 }
 
-export function createNPA(options: CreateNPAOptions): NPAApplication {
-  const repositories = new Map<NPARepositoryTarget, object>();
+export class NPA implements NPAApplication {
+  private readonly repositories = new Map<NPARepositoryTarget, object>();
 
-  const repositoryTargets = options.repositories ?? getRegisteredRepositoryTargets();
+  constructor(options: NPAOptions) {
+    const repositoryTargets =
+      options.repositories ?? getRegisteredRepositoryTargets();
 
-  for (const repository of repositoryTargets) {
-    if (repositories.has(repository)) {
-      throw new Error(
-        `Repository ${getRepositoryTargetName(repository)} is registered more than once.`,
-      );
-    }
-
-    const metadata = getRepositoryMetadata(repository);
-    repositories.set(
-      repository,
-      options.adapter.createRepository({
-        entity: metadata.entity,
-        repository,
-      }),
-    );
-  }
-
-  return {
-    get<TRepository extends object>(
-      repository: NPARepositoryTarget<TRepository>,
-    ): TRepository {
-      const instance = repositories.get(repository);
-
-      if (!instance) {
+    for (const repository of repositoryTargets) {
+      if (this.repositories.has(repository)) {
         throw new Error(
-          `Repository ${getRepositoryTargetName(repository)} was not registered in createNPA().`,
+          `Repository ${getRepositoryTargetName(repository)} is registered more than once.`,
         );
       }
 
-      return instance as TRepository;
-    },
-  };
+      const metadata = getRepositoryMetadata(repository);
+      this.repositories.set(
+        repository,
+        options.adapter.createRepository({
+          entity: metadata.entity,
+          repository,
+        }),
+      );
+    }
+  }
+
+  get<TRepository extends object>(
+    repository: NPARepositoryTarget<TRepository>,
+  ): TRepository {
+    const instance = this.repositories.get(repository);
+
+    if (!instance) {
+      throw new Error(
+        `Repository ${getRepositoryTargetName(repository)} was not registered in this NPA instance.`,
+      );
+    }
+
+    return instance as TRepository;
+  }
+}
+
+export function createNPA(options: CreateNPAOptions): NPAApplication {
+  return new NPA(options);
 }

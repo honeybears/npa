@@ -1,4 +1,4 @@
-import { createNPA } from "@honeybeaers/npa";
+import { NPA } from "@honeybeaers/npa";
 import {
   MysqlConnection,
   mysql,
@@ -14,7 +14,7 @@ interface CloseableMysqlQueryable extends MysqlQueryable {
 
 async function main(): Promise<void> {
   const connection = await createConnection();
-  const npa = createNPA({
+  const npa = new NPA({
     adapter: mysql({ queryable: connection, preferExecute: true }),
   });
   const users = npa.get(UserRepository);

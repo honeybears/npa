@@ -1,4 +1,4 @@
-import { createNPA } from "@honeybeaers/npa";
+import { NPA } from "@honeybeaers/npa";
 import {
   PostgresqlConnection,
   postgresql,
@@ -14,7 +14,7 @@ interface CloseablePostgresqlQueryable extends PostgresqlQueryable {
 
 async function main(): Promise<void> {
   const connection = await createConnection();
-  const npa = createNPA({
+  const npa = new NPA({
     adapter: postgresql({ queryable: connection }),
   });
   const users = npa.get(UserRepository);
