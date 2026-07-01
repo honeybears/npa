@@ -9,7 +9,7 @@ import {
   PostgresqlCompiledQuery,
   PostgresqlQueryCompilerOptions,
 } from "./types";
-import { propertyToColumn, quoteTable } from "./postgresql-identifiers";
+import { PostgresqlRelationQueryBuilder } from "./postgresql-relation-query";
 
 export function compilePostgresqlQuery(
   invocation: RepositoryMethodInvocation,
@@ -21,6 +21,7 @@ export function compilePostgresqlQuery(
 
 class QueryCompiler {
   private readonly values: unknown[] = [];
+  private readonly relationQuery = new PostgresqlRelationQueryBuilder(this.options);
 
   constructor(
     private readonly invocation: RepositoryMethodInvocation,
@@ -29,38 +30,61 @@ class QueryCompiler {
 
   compile(): PostgresqlCompiledQuery {
     const { query } = this.invocation;
-    const table = quoteTable(this.options);
-    const where = this.compileWhere(query.predicate);
-    const orderBy = this.compileOrderBy(query.orderBy);
-    const limit = this.compileLimit(query);
+    this.relationQuery.prepare(query);
+    const from = this.relationQuery.selectFrom();
 
     switch (query.action) {
-      case "find":
-        return this.toQuery(`SELECT * FROM ${table}${where}${orderBy}${limit}`);
-      case "findOne":
-        return this.toQuery(`SELECT * FROM ${table}${where}${orderBy} LIMIT 1`);
-      case "exists":
+      case "find": {
+        const where = this.compileWhere(query.predicate);
+        const orderBy = this.compileOrderBy(query.orderBy);
+        const limit = this.compileLimit(query);
+        return this.toQuery(`SELECT ${this.relationQuery.selectTarget()} FROM ${from}${where}${orderBy}${limit}`);
+      }
+      case "findOne": {
+        const where = this.compileWhere(query.predicate);
+        const orderBy = this.compileOrderBy(query.orderBy);
+        return this.toQuery(`SELECT ${this.relationQuery.selectTarget()} FROM ${from}${where}${orderBy} LIMIT 1`);
+      }
+      case "exists": {
+        const where = this.compileWhere(query.predicate);
         return this.toQuery(
-          `SELECT EXISTS(SELECT 1 FROM ${table}${where}) AS "exists"`,
+          `SELECT EXISTS(SELECT 1 FROM ${from}${where}) AS "exists"`,
         );
-      case "count":
+      }
+      case "count": {
+        const where = this.compileWhere(query.predicate);
         return this.toQuery(
-          `SELECT COUNT(*)::int AS "count" FROM ${table}${where}`,
+          `SELECT COUNT(*)::int AS "count" FROM ${from}${where}`,
         );
+      }
       case "delete":
-        return this.toQuery(`DELETE FROM ${table}${where}`);
+        return this.toQuery(
+          `DELETE FROM ${this.relationQuery.deleteTarget()}${this.relationQuery.deleteUsing()}${this.compileWhere(query.predicate, true)}`,
+        );
     }
   }
 
-  private compileWhere(predicate: QueryPredicatePart[]): string {
+  private compileWhere(
+    predicate: QueryPredicatePart[],
+    includeDeleteJoinPredicates = false,
+  ): string {
     const groups = groupByOr(predicate);
     const groupSql = groups.map((group) =>
       group
         .map((part) => this.compileCondition(part.condition))
         .join(" AND "),
     );
+    const predicateSql = groupSql.map((sql) => `(${sql})`).join(" OR ");
+    const joinPredicates = includeDeleteJoinPredicates
+      ? this.relationQuery.deleteJoinPredicates()
+      : [];
 
-    return ` WHERE ${groupSql.map((sql) => `(${sql})`).join(" OR ")}`;
+    if (joinPredicates.length > 0) {
+      const predicateWithPrecedence = groups.length > 1 ? `(${predicateSql})` : predicateSql;
+      return ` WHERE ${[...joinPredicates, predicateWithPrecedence].join(" AND ")}`;
+    }
+
+    return ` WHERE ${predicateSql}`;
   }
 
   private compileCondition(condition: QueryCondition): string {
@@ -151,7 +175,7 @@ class QueryCompiler {
   }
 
   private column(property: string): string {
-    return propertyToColumn(property, this.options);
+    return this.relationQuery.column(property);
   }
 
   private arg(index: number): unknown {

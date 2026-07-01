@@ -115,6 +115,68 @@ test("preserves AND precedence by grouping OR predicate parts", () => {
   });
 });
 
+test("compiles PostgreSQL derived queries across relation fields", () => {
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod("findByTeamLabelAndNameOrderByTeamLabelDesc"),
+        args: ["platform", "kim"],
+      },
+      { entity: PgMember },
+    ),
+    {
+      text:
+        'SELECT "npa_0".* FROM "members" AS "npa_0" JOIN "teams" AS "npa_1" ON "npa_0"."team_id" = "npa_1"."team_id" WHERE ("npa_1"."label" = $1 AND "npa_0"."name" = $2) ORDER BY "npa_1"."label" DESC',
+      values: ["platform", "kim"],
+    },
+  );
+
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod("countByMembersName"),
+        args: ["kim"],
+      },
+      { entity: PgTeam },
+    ),
+    {
+      text:
+        'SELECT COUNT(*)::int AS "count" FROM "teams" AS "npa_0" JOIN "members" AS "npa_1" ON "npa_1"."team_id" = "npa_0"."team_id" WHERE ("npa_1"."name" = $1)',
+      values: ["kim"],
+    },
+  );
+
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod("findByRolesName"),
+        args: ["admin"],
+      },
+      { entity: PgMember },
+    ),
+    {
+      text:
+        'SELECT "npa_0".* FROM "members" AS "npa_0" JOIN "member_roles" AS "npa_2" ON "npa_2"."pg_member_member_id" = "npa_0"."member_id" JOIN "roles" AS "npa_1" ON "npa_1"."role_id" = "npa_2"."pg_role_role_id" WHERE ("npa_1"."name" = $1)',
+      values: ["admin"],
+    },
+  );
+
+  assert.deepEqual(
+    compilePostgresqlQuery(
+      {
+        query: parseQueryMethod("deleteByTeamLabel"),
+        args: ["platform"],
+      },
+      { entity: PgMember },
+    ),
+    {
+      text:
+        'DELETE FROM "members" AS "npa_0" USING "teams" AS "npa_1" WHERE "npa_0"."team_id" = "npa_1"."team_id" AND ("npa_1"."label" = $1)',
+      values: ["platform"],
+    },
+  );
+});
+
 test("runs findOne, exists, count, and delete through a PostgreSQL queryable", async () => {
   const calls = [];
   const queryable = {

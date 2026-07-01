@@ -110,6 +110,22 @@ const user = await users.findById(1, { relations: ['team', 'roles'] });
 const teams = await teamRepository.findAll({ relations: ['members'] });
 ```
 
+Derived query methods can also filter on one-level relation fields. NPA joins
+the relation target when a method uses `relationProperty + TargetColumn`, while
+direct columns still take precedence if a matching column exists.
+
+```ts
+@Repository(User)
+export abstract class UserRepository extends NPARepository<User, number> {
+  abstract findByTeamNameAndName(teamName: string, name: string): Promise<User[]>;
+  abstract existsByRolesName(roleName: string): Promise<boolean>;
+}
+```
+
+Supported relation predicates include `@ManyToOne`, `@OneToMany({ mappedBy })`,
+and `@ManyToMany({ joinTable })` target columns. Deeper paths such as
+`findByTeamCompanyName` are not inferred yet.
+
 ## CLI Generate
 
 Run `npa generate` when you want NPA to create a typed client file and

@@ -5,10 +5,7 @@ import {
   QueryPredicatePart,
 } from "@honeybeaers/npa";
 import { RepositoryMethodInvocation } from "@honeybeaers/npa";
-import {
-  mysqlPropertyToColumn,
-  quoteMysqlTable,
-} from "./mysql-identifiers";
+import { MysqlRelationQueryBuilder } from "./mysql-relation-query";
 import { MysqlCompiledQuery, MysqlQueryCompilerOptions } from "./types";
 
 export function compileMysqlQuery(
@@ -21,6 +18,7 @@ export function compileMysqlQuery(
 
 class MysqlQueryCompiler {
   private readonly values: unknown[] = [];
+  private readonly relationQuery = new MysqlRelationQueryBuilder(this.options);
 
   constructor(
     private readonly invocation: RepositoryMethodInvocation,
@@ -29,26 +27,37 @@ class MysqlQueryCompiler {
 
   compile(): MysqlCompiledQuery {
     const { query } = this.invocation;
-    const table = quoteMysqlTable(this.options);
-    const where = this.compileWhere(query.predicate);
-    const orderBy = this.compileOrderBy(query.orderBy);
-    const limit = this.compileLimit(query);
+    this.relationQuery.prepare(query);
+    const from = this.relationQuery.selectFrom();
 
     switch (query.action) {
-      case "find":
-        return this.toQuery(`SELECT * FROM ${table}${where}${orderBy}${limit}`);
-      case "findOne":
-        return this.toQuery(`SELECT * FROM ${table}${where}${orderBy} LIMIT 1`);
-      case "exists":
+      case "find": {
+        const where = this.compileWhere(query.predicate);
+        const orderBy = this.compileOrderBy(query.orderBy);
+        const limit = this.compileLimit(query);
+        return this.toQuery(`SELECT ${this.relationQuery.selectTarget()} FROM ${from}${where}${orderBy}${limit}`);
+      }
+      case "findOne": {
+        const where = this.compileWhere(query.predicate);
+        const orderBy = this.compileOrderBy(query.orderBy);
+        return this.toQuery(`SELECT ${this.relationQuery.selectTarget()} FROM ${from}${where}${orderBy} LIMIT 1`);
+      }
+      case "exists": {
+        const where = this.compileWhere(query.predicate);
         return this.toQuery(
-          `SELECT EXISTS(SELECT 1 FROM ${table}${where}) AS \`exists\``,
+          `SELECT EXISTS(SELECT 1 FROM ${from}${where}) AS \`exists\``,
         );
-      case "count":
+      }
+      case "count": {
+        const where = this.compileWhere(query.predicate);
         return this.toQuery(
-          `SELECT COUNT(*) AS \`count\` FROM ${table}${where}`,
+          `SELECT COUNT(*) AS \`count\` FROM ${from}${where}`,
         );
+      }
       case "delete":
-        return this.toQuery(`DELETE FROM ${table}${where}`);
+        return this.toQuery(
+          `DELETE ${this.relationQuery.deleteTarget()}FROM ${from}${this.compileWhere(query.predicate)}`,
+        );
     }
   }
 
@@ -64,7 +73,7 @@ class MysqlQueryCompiler {
   }
 
   private compileCondition(condition: QueryCondition): string {
-    const column = mysqlPropertyToColumn(condition.property, this.options);
+    const column = this.column(condition.property);
 
     switch (condition.operator) {
       case "equals":
@@ -140,10 +149,7 @@ class MysqlQueryCompiler {
 
     const clauses = orderBy.map(
       (order) =>
-        `${mysqlPropertyToColumn(
-          order.property,
-          this.options,
-        )} ${order.direction.toUpperCase()}`,
+        `${this.column(order.property)} ${order.direction.toUpperCase()}`,
     );
 
     return ` ORDER BY ${clauses.join(", ")}`;
@@ -171,6 +177,10 @@ class MysqlQueryCompiler {
   private push(value: unknown): string {
     this.values.push(value);
     return "?";
+  }
+
+  private column(property: string): string {
+    return this.relationQuery.column(property);
   }
 
   private toQuery(text: string): MysqlCompiledQuery {

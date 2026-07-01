@@ -120,16 +120,24 @@ function getMetadata(
   return getOptionalEntityMetadata(options.entity);
 }
 
-function quoteQualifiedIdentifier(identifier: string): string {
+export function quoteMysqlQualifiedIdentifier(identifier: string): string {
   return identifier.split(".").map(quoteIdentifier).join(".");
 }
 
-function quoteIdentifier(identifier: string): string {
+export function quoteMysqlIdentifier(identifier: string): string {
   if (identifier.length === 0) {
     throw new Error("MySQL identifier must not be empty.");
   }
 
   return `\`${identifier.replace(/`/g, "``")}\``;
+}
+
+function quoteQualifiedIdentifier(identifier: string): string {
+  return quoteMysqlQualifiedIdentifier(identifier);
+}
+
+function quoteIdentifier(identifier: string): string {
+  return quoteMysqlIdentifier(identifier);
 }
 
 function toSnakeCase(value: string): string {

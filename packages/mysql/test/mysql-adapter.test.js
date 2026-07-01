@@ -119,6 +119,68 @@ test("compiles derived query methods into parameterized MySQL SQL", () => {
   );
 });
 
+test("compiles MySQL derived queries across relation fields", () => {
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
+        query: parseQueryMethod("findByTeamLabelAndNameOrderByTeamLabelDesc"),
+        args: ["platform", "kim"],
+      },
+      { entity: Member },
+    ),
+    {
+      text:
+        "SELECT `npa_0`.* FROM `members` AS `npa_0` JOIN `teams` AS `npa_1` ON `npa_0`.`team_id` = `npa_1`.`team_id` WHERE (`npa_1`.`label` = ? AND `npa_0`.`name` = ?) ORDER BY `npa_1`.`label` DESC",
+      values: ["platform", "kim"],
+    },
+  );
+
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
+        query: parseQueryMethod("countByMembersName"),
+        args: ["kim"],
+      },
+      { entity: Team },
+    ),
+    {
+      text:
+        "SELECT COUNT(*) AS `count` FROM `teams` AS `npa_0` JOIN `members` AS `npa_1` ON `npa_1`.`team_id` = `npa_0`.`team_id` WHERE (`npa_1`.`name` = ?)",
+      values: ["kim"],
+    },
+  );
+
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
+        query: parseQueryMethod("findByRolesName"),
+        args: ["admin"],
+      },
+      { entity: Member },
+    ),
+    {
+      text:
+        "SELECT `npa_0`.* FROM `members` AS `npa_0` JOIN `member_roles` AS `npa_2` ON `npa_2`.`member_id` = `npa_0`.`member_id` JOIN `roles` AS `npa_1` ON `npa_1`.`role_id` = `npa_2`.`role_id` WHERE (`npa_1`.`name` = ?)",
+      values: ["admin"],
+    },
+  );
+
+  assert.deepEqual(
+    compileMysqlQuery(
+      {
+        query: parseQueryMethod("deleteByTeamLabel"),
+        args: ["platform"],
+      },
+      { entity: Member },
+    ),
+    {
+      text:
+        "DELETE `npa_0` FROM `members` AS `npa_0` JOIN `teams` AS `npa_1` ON `npa_0`.`team_id` = `npa_1`.`team_id` WHERE (`npa_1`.`label` = ?)",
+      values: ["platform"],
+    },
+  );
+});
+
 test("compiles insert, update, and deleteById MySQL CRUD SQL", () => {
   assert.deepEqual(
     compileMysqlInsert(
