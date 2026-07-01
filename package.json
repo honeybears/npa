@@ -35,9 +35,9 @@
     "prepack": "npm run clean && npm run build",
     "test:packages": "npm run clean && npm run build && node --test packages/*/test/*.test.js",
     "test:vscode": "pnpm --filter npa-vscode test:host",
-    "bench": "npm run build && node benchmarks/benchmark.js",
-    "bench:json": "npm run build && node benchmarks/benchmark.js --json",
-    "bench:live": "npm run build && node benchmarks/benchmark.js --live",
+    "bench": "pnpm build && node benchmarks/benchmark.js",
+    "bench:json": "pnpm build && node benchmarks/benchmark.js --json",
+    "bench:live": "pnpm build && node benchmarks/benchmark.js --live",
     "package:vscode": "pnpm --filter npa-vscode package:vsix",
     "verify:vscode-install": "pnpm --filter npa-vscode verify:install"
   },

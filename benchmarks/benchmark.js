@@ -389,6 +389,10 @@ function parseArgs(args) {
   const validIncludes = new Set(["npa", "postgresql", "mysql", "prisma", "typeorm"]);
 
   for (const arg of args) {
+    if (arg === "--") {
+      continue;
+    }
+
     if (arg === "--live") {
       options.live = true;
     } else if (arg === "--json") {
