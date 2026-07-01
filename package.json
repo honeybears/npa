@@ -33,7 +33,10 @@
     "test": "npm run clean && npm run build && node --test test/*.test.js packages/*/test/*.test.js",
     "test:e2e": "npm run clean && npm run build && node --test --test-concurrency=1 test/e2e/*.test.js",
     "prepack": "npm run clean && npm run build",
-    "test:packages": "npm run clean && npm run build && node --test packages/*/test/*.test.js"
+    "test:packages": "npm run clean && npm run build && node --test packages/*/test/*.test.js",
+    "test:vscode": "pnpm --filter npa-vscode test:host",
+    "package:vscode": "pnpm --filter npa-vscode package:vsix",
+    "verify:vscode-install": "pnpm --filter npa-vscode verify:install"
   },
   "keywords": [
     "node",

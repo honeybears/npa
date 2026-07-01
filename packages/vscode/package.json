@@ -18,13 +18,28 @@
   "main": "./src/extension.js",
   "files": [
     "src",
+    "vendor",
     "package.json",
-    "README.md"
+    "README.md",
+    "LICENSE.txt"
   ],
   "scripts": {
-    "test": "cd ../.. && npm run build && node --test packages/vscode/test/*.test.js"
+    "build": "node scripts/prepare-vsix.js",
+    "test": "pnpm run test:core",
+    "test:core": "cd ../.. && npm run build && node --test packages/vscode/test/*.test.js",
+    "test:host": "cd ../.. && npm run build && pnpm --filter npa-vscode run build && node packages/vscode/test/run-extension-host.js",
+    "package:vsix": "cd ../.. && npm run build && pnpm --filter npa-vscode run build && pnpm --filter npa-vscode exec vsce package --no-dependencies --allow-missing-repository --out ../../dist/npa-vscode-0.1.0.vsix",
+    "verify:install": "node scripts/verify-install.js ../../dist/npa-vscode-0.1.0.vsix",
+    "package:check": "pnpm run package:vsix && pnpm run verify:install"
   },
-  "dependencies": {
-    "@honeybeaers/npa-language": "workspace:^"
+  "devDependencies": {
+    "@honeybeaers/npa-language": "workspace:^",
+    "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.9.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/honeybears/npa.git",
+    "directory": "packages/vscode"
   }
 }

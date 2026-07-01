@@ -9,6 +9,7 @@ dist/
 # Test and coverage output
 coverage/
 .nyc_output/
+.vscode-test/
 
 # Runtime and local tool state
 .omx/
@@ -36,3 +37,6 @@ pnpm-debug.log*
 .vscode/
 !examples/vscode-demo/.vscode/
 !examples/vscode-demo/.vscode/settings.json
+packages/vscode/vendor/
+packages/vscode/.tmp/
+.vscode-test

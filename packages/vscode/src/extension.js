@@ -2,7 +2,7 @@ const vscode = require("vscode");
 const {
   getNPAQueryMethodCompletions,
   validateNPAQueryMethod,
-} = require("@honeybeaers/npa-language");
+} = loadNPALanguage();
 const {
   collectLanguageWorkspaceSchemaFromSources,
   findRepositoryContext,
@@ -48,6 +48,19 @@ async function activate(context) {
 }
 
 function deactivate() {}
+
+function loadNPALanguage() {
+  try {
+    return require("@honeybeaers/npa-language");
+  } catch (error) {
+    if (error?.code !== "MODULE_NOT_FOUND" ||
+      !String(error.message).includes("@honeybeaers/npa-language")) {
+      throw error;
+    }
+
+    return require("../vendor/node_modules/@honeybeaers/npa-language");
+  }
+}
 
 async function provideCompletionItems(document, position) {
   if (!isSupportedDocument(document)) {
