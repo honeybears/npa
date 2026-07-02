@@ -1,12 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-  NPAMigrationColumnSchema,
-  NPAMigrationEntitySchema,
-  NPAMigrationIndexSchema,
-  NPAMigrationReferentialAction,
-  NPAMigrationRelationKind,
-  NPAMigrationRelationSchema,
+  MigrationGenerationStrategy,
+  MigrationColumnSchema,
+  MigrationEntitySchema,
+  MigrationIndexSchema,
+  MigrationReferentialAction,
+  MigrationRelationKind,
+  MigrationRelationSchema,
 } from "./types";
 
 interface DecoratorOptions {
@@ -14,6 +15,8 @@ interface DecoratorOptions {
   schema?: string;
   type?: string;
   defaultValue?: string | number | boolean | null;
+  generationStrategy?: MigrationGenerationStrategy;
+  sequenceName?: string;
   nullable?: boolean;
   index?: boolean | string;
   unique?: boolean | string;
@@ -22,8 +25,8 @@ interface DecoratorOptions {
   joinColumn?: string;
   joinTable?: string;
   foreignKeyName?: string;
-  onDelete?: NPAMigrationReferentialAction;
-  onUpdate?: NPAMigrationReferentialAction;
+  onDelete?: MigrationReferentialAction;
+  onUpdate?: MigrationReferentialAction;
 }
 
 type FieldDecoratorName = "Id" | "Column" | "Version" | "CreatedAt" | "UpdatedAt";
@@ -31,7 +34,7 @@ type FieldDecoratorName = "Id" | "Column" | "Version" | "CreatedAt" | "UpdatedAt
 export function discoverEntitySchemas(
   cwd: string,
   patterns: string[],
-): NPAMigrationEntitySchema[] {
+): MigrationEntitySchema[] {
   const files = collectFiles(cwd).filter((file) =>
     patterns.some((pattern) => matchesGlob(file, path.resolve(cwd, pattern))),
   );
@@ -39,9 +42,9 @@ export function discoverEntitySchemas(
   return files.flatMap((file) => parseEntitySchemas(file));
 }
 
-export function parseEntitySchemas(filePath: string): NPAMigrationEntitySchema[] {
+export function parseEntitySchemas(filePath: string): MigrationEntitySchema[] {
   const source = fs.readFileSync(filePath, "utf8");
-  const entities: NPAMigrationEntitySchema[] = [];
+  const entities: MigrationEntitySchema[] = [];
   const entityPattern = /@Entity(?:\(([\s\S]*?)\))?\s*(?:export\s+)?class\s+([A-Za-z_]\w*)/g;
   let match: RegExpExecArray | null;
 
@@ -83,8 +86,8 @@ export function parseEntitySchemas(filePath: string): NPAMigrationEntitySchema[]
 function parseColumns(
   classBody: string,
   className: string,
-): NPAMigrationColumnSchema[] {
-  const columns: NPAMigrationColumnSchema[] = [];
+): MigrationColumnSchema[] {
+  const columns: MigrationColumnSchema[] = [];
   const fieldPattern = createFieldPattern();
   let match: RegExpExecArray | null;
 
@@ -114,7 +117,16 @@ function parseColumns(
     const options = parseDecoratorOptions(
       rawOptions,
       `@${decoratorName} for ${className}.${propertyName}`,
-      ["name", "type", "default", "nullable", "index", "unique"],
+      [
+        "name",
+        "type",
+        "default",
+        "nullable",
+        "index",
+        "unique",
+        "generationStrategy",
+        "sequenceName",
+      ],
     );
 
     columns.push({
@@ -128,6 +140,10 @@ function parseColumns(
       ...((createdAt || updatedAt) && options.defaultValue === undefined
         ? { defaultCurrentTimestamp: true }
         : {}),
+      ...(options.generationStrategy
+        ? { generationStrategy: options.generationStrategy }
+        : {}),
+      ...(options.sequenceName ? { sequenceName: options.sequenceName } : {}),
       nullable: primary || version ? false : options.nullable ?? false,
       primary,
       version,
@@ -152,8 +168,8 @@ function parseIndexes(
   entityDecoratorIndex: number,
   classBody: string,
   className: string,
-  columns: NPAMigrationColumnSchema[],
-): NPAMigrationIndexSchema[] {
+  columns: MigrationColumnSchema[],
+): MigrationIndexSchema[] {
   const columnByProperty = new Map(columns.map((column) => [column.propertyName, column]));
   const classDecorators = readLeadingClassDecorators(source, entityDecoratorIndex);
   rejectUniqueDecorator(classDecorators, className);
@@ -172,7 +188,7 @@ function parseIndexes(
     (index) => index.columns.join(","),
   );
 
-  const indexes = new Map<string, NPAMigrationIndexSchema>();
+  const indexes = new Map<string, MigrationIndexSchema>();
 
   for (const index of parsedIndexes) {
     indexes.set(indexKey(index), index);
@@ -184,8 +200,8 @@ function parseIndexes(
 function parseClassIndexes(
   decorators: string,
   className: string,
-  columnByProperty: Map<string, NPAMigrationColumnSchema>,
-): NPAMigrationIndexSchema[] {
+  columnByProperty: Map<string, MigrationColumnSchema>,
+): MigrationIndexSchema[] {
   return parseNamedDecoratorOptions(decorators, "Index", `@Index for ${className}`)
     .map((options) => classIndex(options, className, columnByProperty));
 }
@@ -193,9 +209,9 @@ function parseClassIndexes(
 function parsePropertyIndexes(
   classBody: string,
   className: string,
-  columnByProperty: Map<string, NPAMigrationColumnSchema>,
-): NPAMigrationIndexSchema[] {
-  const indexes: NPAMigrationIndexSchema[] = [];
+  columnByProperty: Map<string, MigrationColumnSchema>,
+): MigrationIndexSchema[] {
+  const indexes: MigrationIndexSchema[] = [];
   const fieldPattern = createFieldPattern();
   let match: RegExpExecArray | null;
 
@@ -246,8 +262,8 @@ function parsePropertyIndexes(
 function classIndex(
   options: DecoratorOptions,
   className: string,
-  columnByProperty: Map<string, NPAMigrationColumnSchema>,
-): NPAMigrationIndexSchema {
+  columnByProperty: Map<string, MigrationColumnSchema>,
+): MigrationIndexSchema {
   if (!options.columns?.length) {
     throw new Error(`Class-level @Index for ${className} requires columns.`);
   }
@@ -268,10 +284,10 @@ function classIndex(
 }
 
 function columnIndex(
-  column: NPAMigrationColumnSchema,
+  column: MigrationColumnSchema,
   value: boolean | string,
   unique: boolean,
-): NPAMigrationIndexSchema {
+): MigrationIndexSchema {
   return {
     name: typeof value === "string" ? value : undefined,
     columns: [column.columnName],
@@ -282,8 +298,8 @@ function columnIndex(
 function parseRelations(
   classBody: string,
   className: string,
-): NPAMigrationRelationSchema[] {
-  const relations: NPAMigrationRelationSchema[] = [];
+): MigrationRelationSchema[] {
+  const relations: MigrationRelationSchema[] = [];
   let cursor = 0;
 
   while (cursor < classBody.length) {
@@ -356,21 +372,21 @@ function parseRelations(
 function findNextRelationDecorator(
   source: string,
   cursor: number,
-): { decoratorName: string; kind: NPAMigrationRelationKind; index: number } | undefined {
-  const candidates: Array<{ decoratorName: string; kind: NPAMigrationRelationKind; index: number }> = [
+): { decoratorName: string; kind: MigrationRelationKind; index: number } | undefined {
+  const candidates: Array<{ decoratorName: string; kind: MigrationRelationKind; index: number }> = [
     {
       decoratorName: "OneToMany",
-      kind: NPAMigrationRelationKind.ONE_TO_MANY,
+      kind: MigrationRelationKind.ONE_TO_MANY,
       index: source.indexOf("@OneToMany", cursor),
     },
     {
       decoratorName: "ManyToOne",
-      kind: NPAMigrationRelationKind.MANY_TO_ONE,
+      kind: MigrationRelationKind.MANY_TO_ONE,
       index: source.indexOf("@ManyToOne", cursor),
     },
     {
       decoratorName: "ManyToMany",
-      kind: NPAMigrationRelationKind.MANY_TO_MANY,
+      kind: MigrationRelationKind.MANY_TO_MANY,
       index: source.indexOf("@ManyToMany", cursor),
     },
   ].filter((candidate) => candidate.index >= 0);
@@ -509,6 +525,14 @@ function parseDecoratorOptions(
       continue;
     }
 
+    if (key === "generationStrategy") {
+      options.generationStrategy = readGenerationStrategyOption(
+        rawPropertyValue,
+        `${context}.${key}`,
+      );
+      continue;
+    }
+
     if (!isStringLiteral(rawPropertyValue)) {
       throw new Error(`${context}.${key} must be a string literal.`);
     }
@@ -529,10 +553,48 @@ function parseDecoratorOptions(
       options.mappedBy = stringValue;
     } else if (key === "foreignKeyName") {
       options.foreignKeyName = stringValue;
+    } else if (key === "sequenceName") {
+      options.sequenceName = stringValue;
     }
   }
 
   return options;
+}
+
+function readGenerationStrategyOption(
+  rawValue: string,
+  context: string,
+): MigrationGenerationStrategy {
+  if (isStringLiteral(rawValue)) {
+    return readGenerationStrategy(readStringLiteral(rawValue, context), context);
+  }
+
+  const enumMatch = /^(?:GenerationStrategy|MigrationGenerationStrategy)\.(AUTO_INCREMENT|SEQUENCE|UUID|NONE)$/.exec(
+    rawValue,
+  );
+
+  if (enumMatch) {
+    return readGenerationStrategy(enumMatch[1], context);
+  }
+
+  throw new Error(
+    `${context} must be a string literal or GenerationStrategy enum member.`,
+  );
+}
+
+function readGenerationStrategy(
+  value: string,
+  context: string,
+): MigrationGenerationStrategy {
+  switch (value) {
+    case "AUTO_INCREMENT":
+    case "SEQUENCE":
+    case "UUID":
+    case "NONE":
+      return value;
+    default:
+      throw new Error(`${context} must be AUTO_INCREMENT, SEQUENCE, UUID, or NONE.`);
+  }
 }
 
 function readDefaultLiteral(
@@ -563,12 +625,12 @@ function readDefaultLiteral(
 function readReferentialActionOption(
   rawValue: string,
   context: string,
-): NPAMigrationReferentialAction {
+): MigrationReferentialAction {
   if (isStringLiteral(rawValue)) {
     return readReferentialAction(readStringLiteral(rawValue, context), context);
   }
 
-  const enumMatch = /^(?:ReferentialAction|NPAMigrationReferentialAction)\.(CASCADE|SET_NULL|RESTRICT|NO_ACTION)$/.exec(
+  const enumMatch = /^(?:ReferentialAction|MigrationReferentialAction)\.(CASCADE|SET_NULL|RESTRICT|NO_ACTION)$/.exec(
     rawValue,
   );
 
@@ -584,16 +646,16 @@ function readReferentialActionOption(
 function readReferentialActionEnumMember(
   memberName: string,
   context: string,
-): NPAMigrationReferentialAction {
+): MigrationReferentialAction {
   switch (memberName) {
     case "CASCADE":
-      return NPAMigrationReferentialAction.CASCADE;
+      return MigrationReferentialAction.CASCADE;
     case "SET_NULL":
-      return NPAMigrationReferentialAction.SET_NULL;
+      return MigrationReferentialAction.SET_NULL;
     case "RESTRICT":
-      return NPAMigrationReferentialAction.RESTRICT;
+      return MigrationReferentialAction.RESTRICT;
     case "NO_ACTION":
-      return NPAMigrationReferentialAction.NO_ACTION;
+      return MigrationReferentialAction.NO_ACTION;
     default:
       throw new Error(`${context} must be CASCADE, SET_NULL, RESTRICT, or NO_ACTION.`);
   }
@@ -602,16 +664,16 @@ function readReferentialActionEnumMember(
 function readReferentialAction(
   value: string,
   context: string,
-): NPAMigrationReferentialAction {
+): MigrationReferentialAction {
   switch (value) {
-    case NPAMigrationReferentialAction.CASCADE:
-      return NPAMigrationReferentialAction.CASCADE;
-    case NPAMigrationReferentialAction.SET_NULL:
-      return NPAMigrationReferentialAction.SET_NULL;
-    case NPAMigrationReferentialAction.RESTRICT:
-      return NPAMigrationReferentialAction.RESTRICT;
-    case NPAMigrationReferentialAction.NO_ACTION:
-      return NPAMigrationReferentialAction.NO_ACTION;
+    case MigrationReferentialAction.CASCADE:
+      return MigrationReferentialAction.CASCADE;
+    case MigrationReferentialAction.SET_NULL:
+      return MigrationReferentialAction.SET_NULL;
+    case MigrationReferentialAction.RESTRICT:
+      return MigrationReferentialAction.RESTRICT;
+    case MigrationReferentialAction.NO_ACTION:
+      return MigrationReferentialAction.NO_ACTION;
     default:
       throw new Error(`${context} must be CASCADE, SET NULL, RESTRICT, or NO ACTION.`);
   }
@@ -849,11 +911,11 @@ function readStringArrayLiteral(value: string, context: string): string[] {
   return splitTopLevel(body).map((entry) => readStringLiteral(entry, context));
 }
 
-function indexKey(index: NPAMigrationIndexSchema): string {
+function indexKey(index: MigrationIndexSchema): string {
   return `${index.unique ? "unique" : "index"}:${index.name ?? index.columns.join(",")}`;
 }
 
-function compareIndexes(left: NPAMigrationIndexSchema, right: NPAMigrationIndexSchema): number {
+function compareIndexes(left: MigrationIndexSchema, right: MigrationIndexSchema): number {
   return indexKey(left).localeCompare(indexKey(right));
 }
 

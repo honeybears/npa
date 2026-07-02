@@ -49,7 +49,7 @@ describe("migration CLI", () => {
       /CREATE TABLE IF NOT EXISTS "_npa_migrations"/,
     );
     expect(result.stdout).toMatch(/CREATE TABLE IF NOT EXISTS "products"/);
-    expect(result.stdout).toMatch(/"product_id" SERIAL PRIMARY KEY/);
+    expect(result.stdout).toMatch(/"product_id" INTEGER PRIMARY KEY/);
   });
 
   test("prints db push dry-run SQL", () => {
@@ -137,7 +137,7 @@ describe("migration CLI", () => {
       /CREATE TABLE IF NOT EXISTS `_npa_migrations`/,
     );
     expect(result.stdout).toMatch(
-      /`product_id` INT AUTO_INCREMENT PRIMARY KEY/,
+      /`product_id` INT PRIMARY KEY/,
     );
   });
 

@@ -1,5 +1,5 @@
 import { NPALanguageEntityPropertyKind, NPALanguageEntityRelationKind, NPAQueryMethodDiagnosticCode, getNPAQueryMethodCompletions, parseNPAQueryMethodName, toNPALanguageEntitySchema, toNPALanguageWorkspaceSchema, validateNPAQueryMethod } from "../src";
-import { NPAMigrationRelationKind } from "@node-persistence-api/core";
+import { MigrationRelationKind } from "@node-persistence-api/core";
 import { parseQueryMethod } from "@node-persistence-api/core/query-method";
 import { describe, expect, test } from "@jest/globals";
 
@@ -296,7 +296,7 @@ describe("language helpers", () => {
       relations: [
         {
           propertyName: "team",
-          kind: NPAMigrationRelationKind.MANY_TO_ONE,
+          kind: MigrationRelationKind.MANY_TO_ONE,
           targetClassName: "Team",
         },
       ],
@@ -345,7 +345,7 @@ function createWorkspace() {
       relations: [
         {
           propertyName: "team",
-          kind: NPAMigrationRelationKind.MANY_TO_ONE,
+          kind: MigrationRelationKind.MANY_TO_ONE,
           targetClassName: "Team",
         },
       ],

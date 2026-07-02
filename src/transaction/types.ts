@@ -1,25 +1,25 @@
-export enum NPATransactionPropagation {
+export enum TransactionPropagation {
   REQUIRED = "REQUIRED",
   REQUIRES_NEW = "REQUIRES_NEW",
 }
 
-export enum NPATransactionIsolation {
+export enum TransactionIsolation {
   READ_UNCOMMITTED = "READ_UNCOMMITTED",
   READ_COMMITTED = "READ_COMMITTED",
   REPEATABLE_READ = "REPEATABLE_READ",
   SERIALIZABLE = "SERIALIZABLE",
 }
 
-export interface NPATransactionOptions {
-  propagation?: NPATransactionPropagation;
-  isolation?: NPATransactionIsolation;
+export interface TransactionOptions {
+  propagation?: TransactionPropagation;
+  isolation?: TransactionIsolation;
   readOnly?: boolean;
 }
 
-export interface NPATransactionManager {
+export interface TransactionManager {
   transactional<T>(
     work: () => Promise<T> | T,
-    options?: NPATransactionOptions,
+    options?: TransactionOptions,
   ): Promise<T>;
   isTransactionActive(): boolean;
 }

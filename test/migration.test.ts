@@ -3,13 +3,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  NPAMigrationRelationKind,
+  MigrationRelationKind,
   createMigrationChecksum,
   createMigrationChecksumFromSql,
   discoverEntitySchemas,
   formatMigrationSql,
   loadMigrationFiles,
-  loadNPAMigrationConfig,
+  loadMigrationConfig,
   parseEntitySchemas,
   writeMigrationFile,
 } from "../src";
@@ -51,7 +51,7 @@ describe("migration metadata", () => {
     expect(product.relations).toEqual([
       {
         propertyName: "primaryCategory",
-        kind: NPAMigrationRelationKind.MANY_TO_ONE,
+        kind: MigrationRelationKind.MANY_TO_ONE,
         targetClassName: "Category",
         mappedBy: undefined,
         joinColumn: "primary_category_id",
@@ -62,7 +62,7 @@ describe("migration metadata", () => {
       },
       {
         propertyName: "categories",
-        kind: NPAMigrationRelationKind.MANY_TO_MANY,
+        kind: MigrationRelationKind.MANY_TO_MANY,
         targetClassName: "Category",
         mappedBy: undefined,
         joinColumn: undefined,
@@ -257,6 +257,40 @@ describe("migration metadata", () => {
     });
   });
 
+  test("parses explicit id generation strategy metadata", () => {
+    const [schema] = parseEntitySource(`
+  @Entity({ name: "events" })
+  export class Event {
+    @Id({ generationStrategy: GenerationStrategy.SEQUENCE, sequenceName: "event_id_seq" })
+    id?: number;
+
+    @Column()
+    name!: string;
+  }
+  `);
+
+    expect(schema.columns.find((column) => column.propertyName === "id"))
+      .toMatchObject({
+        propertyName: "id",
+        columnName: "id",
+        primary: true,
+        generationStrategy: "SEQUENCE",
+        sequenceName: "event_id_seq",
+      });
+
+    const [uuidSchema] = parseEntitySource(`
+  @Entity()
+  export class ExternalEvent {
+    @Id({ generationStrategy: "UUID" })
+    id?: string;
+  }
+  `);
+
+    expect(uuidSchema.columns[0]).toMatchObject({
+      generationStrategy: "UUID",
+    });
+  });
+
   test("rejects dynamic decorator metadata for migrations", () => {
     const cases = [
       {
@@ -390,7 +424,7 @@ describe("migration metadata", () => {
         'CREATE SCHEMA IF NOT EXISTS "shop"',
         [
           'CREATE TABLE IF NOT EXISTS "shop"."categories" (',
-          '  "category_id" SERIAL PRIMARY KEY,',
+          '  "category_id" INTEGER PRIMARY KEY,',
           '  "label" TEXT NOT NULL',
           ")",
         ].join("\n"),
@@ -403,7 +437,7 @@ describe("migration metadata", () => {
         ].join("\n"),
         [
           'CREATE TABLE IF NOT EXISTS "shop"."products" (',
-          '  "product_id" SERIAL PRIMARY KEY,',
+          '  "product_id" INTEGER PRIMARY KEY,',
           '  "product_name" VARCHAR(80) NOT NULL,',
           '  "description" TEXT,',
           '  "active" BOOLEAN NOT NULL DEFAULT TRUE,',
@@ -436,7 +470,7 @@ describe("migration metadata", () => {
       "CREATE DATABASE IF NOT EXISTS `shop`",
       [
         "CREATE TABLE IF NOT EXISTS `shop`.`categories` (",
-        "  `category_id` INT AUTO_INCREMENT PRIMARY KEY,",
+        "  `category_id` INT PRIMARY KEY,",
         "  `label` VARCHAR(255) NOT NULL",
         ")",
       ].join("\n"),
@@ -449,7 +483,7 @@ describe("migration metadata", () => {
       ].join("\n"),
       [
         "CREATE TABLE IF NOT EXISTS `shop`.`products` (",
-        "  `product_id` INT AUTO_INCREMENT PRIMARY KEY,",
+        "  `product_id` INT PRIMARY KEY,",
         "  `product_name` VARCHAR(80) NOT NULL,",
         "  `description` VARCHAR(255),",
         "  `active` BOOLEAN NOT NULL DEFAULT TRUE,",
@@ -501,7 +535,7 @@ describe("migration metadata", () => {
       "utf8",
     );
 
-    expect(await loadNPAMigrationConfig({ cwd: root })).toEqual({
+    expect(await loadMigrationConfig({ cwd: root })).toEqual({
       adapter: "postgresql",
       url: "postgresql://localhost/db",
       entities: ["models/**/*.entity.ts"],
@@ -509,7 +543,7 @@ describe("migration metadata", () => {
     });
 
     expect(
-      await loadNPAMigrationConfig({
+      await loadMigrationConfig({
         cwd: root,
         adapter: "mysql",
         url: "mysql://localhost/db",

@@ -54,7 +54,7 @@ describe("PostgreSQL migration compiler", () => {
         ].join("\n"),
         [
           'CREATE TABLE IF NOT EXISTS "users" (',
-          '  "id" SERIAL PRIMARY KEY,',
+          '  "id" INTEGER PRIMARY KEY,',
           '  "email" TEXT NOT NULL,',
           '  "status" TEXT NOT NULL',
           ")",
@@ -63,4 +63,62 @@ describe("PostgreSQL migration compiler", () => {
         'CREATE UNIQUE INDEX IF NOT EXISTS "uidx_users_email" ON "users" ("email")',
       ]);
   });
+
+  test("compiles explicit PostgreSQL id generation strategies", () => {
+    const statements = compilePostgresqlMigrationStatements({
+      entities: [
+        generatedSchema("AutoUser", "auto_users", {
+          columnName: "id",
+          tsType: "number",
+          generationStrategy: "AUTO_INCREMENT",
+        }),
+        generatedSchema("UuidUser", "uuid_users", {
+          columnName: "external_id",
+          tsType: "string",
+          generationStrategy: "UUID",
+        }),
+        generatedSchema("SequenceUser", "sequence_users", {
+          columnName: "ticket_id",
+          tsType: "number",
+          generationStrategy: "SEQUENCE",
+          sequenceName: "user_ticket_seq",
+        }),
+      ],
+      historyTable: "_npa_migrations",
+    });
+
+    expect(statements).toContain([
+      'CREATE TABLE IF NOT EXISTS "auto_users" (',
+      '  "id" SERIAL PRIMARY KEY',
+      ")",
+    ].join("\n"));
+    expect(statements).toContain([
+      'CREATE TABLE IF NOT EXISTS "uuid_users" (',
+      '  "external_id" UUID PRIMARY KEY DEFAULT gen_random_uuid()',
+      ")",
+    ].join("\n"));
+    expect(statements).toContain('CREATE SEQUENCE IF NOT EXISTS "user_ticket_seq"');
+    expect(statements).toContain([
+      'CREATE TABLE IF NOT EXISTS "sequence_users" (',
+      '  "ticket_id" INTEGER PRIMARY KEY DEFAULT nextval(\'"user_ticket_seq"\')',
+      ")",
+    ].join("\n"));
+  });
 });
+
+function generatedSchema(className, tableName, column) {
+  return {
+    className,
+    filePath: `src/${tableName}.entity.ts`,
+    tableName,
+    columns: [{
+      propertyName: "id",
+      nullable: false,
+      primary: true,
+      version: false,
+      ...column,
+    }],
+    indexes: [],
+    relations: [],
+  };
+}

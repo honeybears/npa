@@ -1,22 +1,22 @@
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import {
-  NPAMigrationAdapter,
-  NPAMigrationAdapterName,
-  NPAMigrationAdapterRunner,
+  MigrationAdapter,
+  MigrationAdapterName,
+  MigrationAdapterRunner,
 } from "./types";
 
 export function loadMigrationAdapterRunner(
-  adapter: NPAMigrationAdapterName,
+  adapter: MigrationAdapterName,
   cwd: string,
-): NPAMigrationAdapterRunner {
+): MigrationAdapterRunner {
   return loadMigrationAdapter(adapter, cwd).push;
 }
 
 export function loadMigrationAdapter(
-  adapter: NPAMigrationAdapterName,
+  adapter: MigrationAdapterName,
   cwd: string,
-): NPAMigrationAdapter {
+): MigrationAdapter {
   const moduleValue = loadAdapterModule(adapter, cwd);
   const exports = moduleValue as Record<string, unknown>;
   const pushName = adapter === "mysql" ? "migrateMysql" : "migratePostgresql";
@@ -40,13 +40,13 @@ export function loadMigrationAdapter(
   }
 
   return {
-    plan: plan as NPAMigrationAdapter["plan"],
-    push: push as NPAMigrationAdapter["push"],
-    deploy: deploy as NPAMigrationAdapter["deploy"],
+    plan: plan as MigrationAdapter["plan"],
+    push: push as MigrationAdapter["push"],
+    deploy: deploy as MigrationAdapter["deploy"],
   };
 }
 
-function loadAdapterModule(adapter: NPAMigrationAdapterName, cwd: string): unknown {
+function loadAdapterModule(adapter: MigrationAdapterName, cwd: string): unknown {
   const packageName =
     adapter === "mysql"
       ? "@node-persistence-api/connector-mysql"

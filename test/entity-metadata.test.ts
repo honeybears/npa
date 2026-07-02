@@ -3,6 +3,7 @@ import {
   Column,
   CreatedAt,
   Entity,
+  GenerationStrategy,
   Id,
   Index,
   ManyToMany,
@@ -76,6 +77,12 @@ class User {
 
   @ManyToMany(() => Role, { joinTable: "user_roles" })
   roles?: Role[];
+}
+
+@Entity()
+class GeneratedIdUser {
+  @Id({ generationStrategy: GenerationStrategy.UUID })
+  id!: string;
 }
 
 describe("entity metadata", () => {
@@ -189,6 +196,13 @@ describe("entity metadata", () => {
           joinTable: "user_roles",
         },
       ]);
+    });
+
+    test("registers explicit id generation strategy metadata", () => {
+      expect(getEntityMetadata(GeneratedIdUser).primaryColumn).toMatchObject({
+        propertyName: "id",
+        generationStrategy: GenerationStrategy.UUID,
+      });
     });
   });
 

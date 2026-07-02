@@ -1,9 +1,9 @@
 import { describe, expect, test } from "@jest/globals";
-import { AbstractTransactionManager, Column, Entity, getCurrentPersistenceContext, Id, NPATransactionIsolation, NPATransactionOptions, NPATransactionPropagation, RollbackOnlyError, Transaction } from "../src";
+import { AbstractTransactionManager, Column, Entity, getCurrentPersistenceContext, Id, TransactionIsolation, TransactionOptions, TransactionPropagation, RollbackOnlyError, Transaction } from "../src";
 
 interface RecordingResource {
   id: number;
-  options: NPATransactionOptions;
+  options: TransactionOptions;
 }
 
 class RecordingTransactionManager extends AbstractTransactionManager<RecordingResource> {
@@ -14,12 +14,12 @@ class RecordingTransactionManager extends AbstractTransactionManager<RecordingRe
     return this.getCurrentTransactionResource()?.id;
   }
 
-  currentOptions(): NPATransactionOptions | undefined {
+  currentOptions(): TransactionOptions | undefined {
     return this.getCurrentTransactionResource()?.options;
   }
 
   protected acquireTransactionResource(
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): RecordingResource {
     const resource = { id: ++this.nextId, options };
     this.calls.push(`acquire:${resource.id}`);
@@ -28,7 +28,7 @@ class RecordingTransactionManager extends AbstractTransactionManager<RecordingRe
 
   protected beginTransaction(
     resource: RecordingResource,
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): void {
     this.calls.push(`begin:${resource.id}:${options.isolation ?? "none"}`);
   }
@@ -61,7 +61,7 @@ describe("transaction manager", () => {
         expect(manager.currentId()).toEqual(1);
         return "created";
       },
-      { isolation: NPATransactionIsolation.SERIALIZABLE },
+      { isolation: TransactionIsolation.SERIALIZABLE },
     );
 
     expect(result).toEqual("created");
@@ -145,7 +145,7 @@ describe("transaction manager", () => {
         async () => {
           expect(manager.currentId()).toEqual(2);
         },
-        { propagation: NPATransactionPropagation.REQUIRES_NEW },
+        { propagation: TransactionPropagation.REQUIRES_NEW },
       );
 
       expect(manager.currentId()).toEqual(1);
@@ -169,26 +169,26 @@ describe("transaction manager", () => {
     await manager.transactional(
       async () => {
         expect(manager.currentOptions()).toEqual({
-          isolation: NPATransactionIsolation.READ_COMMITTED,
+          isolation: TransactionIsolation.READ_COMMITTED,
         });
 
         await manager.transactional(
           async () => {
             expect(manager.currentOptions()).toEqual({
-              isolation: NPATransactionIsolation.READ_COMMITTED,
+              isolation: TransactionIsolation.READ_COMMITTED,
             });
           },
           {
-            isolation: NPATransactionIsolation.SERIALIZABLE,
+            isolation: TransactionIsolation.SERIALIZABLE,
             readOnly: true,
           },
         );
 
         expect(manager.currentOptions()).toEqual({
-          isolation: NPATransactionIsolation.READ_COMMITTED,
+          isolation: TransactionIsolation.READ_COMMITTED,
         });
       },
-      { isolation: NPATransactionIsolation.READ_COMMITTED },
+      { isolation: TransactionIsolation.READ_COMMITTED },
     );
 
     expect(manager.calls).toEqual([
@@ -231,7 +231,7 @@ describe("transaction manager", () => {
           async () => {
             throw new Error("inner failure");
           },
-          { propagation: NPATransactionPropagation.REQUIRES_NEW },
+          { propagation: TransactionPropagation.REQUIRES_NEW },
         ),
       ).rejects.toThrow(/inner failure/);
     });

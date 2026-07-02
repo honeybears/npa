@@ -2,10 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  LoadNPAMigrationConfigOptions,
-  NPAMigrationAdapterName,
-  NPAMigrationConfigFile,
-  ResolvedNPAMigrationConfig,
+  LoadMigrationConfigOptions,
+  MigrationAdapterName,
+  MigrationConfigFile,
+  ResolvedMigrationConfig,
 } from "./types";
 
 const DEFAULT_CONFIG_FILE = "npa.config.mjs";
@@ -13,9 +13,9 @@ const DEFAULT_ENTITIES = ["src/**/*.entity.ts"];
 const DEFAULT_MIGRATIONS_DIR = "npa/migrations";
 const DEFAULT_MIGRATIONS_TABLE = "_npa_migrations";
 
-export async function loadNPAMigrationConfig(
-  options: LoadNPAMigrationConfigOptions,
-): Promise<ResolvedNPAMigrationConfig> {
+export async function loadMigrationConfig(
+  options: LoadMigrationConfigOptions,
+): Promise<ResolvedMigrationConfig> {
   const config = await loadConfigFile(options.cwd, options.config);
   const url = options.url ?? config.url;
   const adapter = resolveAdapter(options.adapter ?? config.adapter, url);
@@ -35,7 +35,7 @@ export async function loadNPAMigrationConfig(
 
 export function inferAdapterFromUrl(
   url: string | undefined,
-): NPAMigrationAdapterName | undefined {
+): MigrationAdapterName | undefined {
   if (!url) {
     return undefined;
   }
@@ -56,7 +56,7 @@ export function inferAdapterFromUrl(
 async function loadConfigFile(
   cwd: string,
   configPath: string | undefined,
-): Promise<NPAMigrationConfigFile> {
+): Promise<MigrationConfigFile> {
   const resolvedPath = configPath
     ? path.resolve(cwd, configPath)
     : path.resolve(cwd, DEFAULT_CONFIG_FILE);
@@ -76,13 +76,13 @@ async function loadConfigFile(
     throw new Error("NPA config must export an object.");
   }
 
-  return config as NPAMigrationConfigFile;
+  return config as MigrationConfigFile;
 }
 
 function resolveAdapter(
   value: string | undefined,
   url: string | undefined,
-): NPAMigrationAdapterName {
+): MigrationAdapterName {
   const inferredAdapter = inferAdapterFromUrl(url);
 
   if (!value && url && !inferredAdapter) {
@@ -102,7 +102,7 @@ function resolveAdapter(
 
 function assertUrlMatchesAdapter(
   url: string | undefined,
-  adapter: NPAMigrationAdapterName,
+  adapter: MigrationAdapterName,
 ): void {
   const inferredAdapter = inferAdapterFromUrl(url);
 

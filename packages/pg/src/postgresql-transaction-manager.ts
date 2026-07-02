@@ -1,7 +1,7 @@
 import {
   AbstractTransactionManager,
-  NPATransactionIsolation,
-  NPATransactionOptions,
+  TransactionIsolation,
+  TransactionOptions,
 } from "@node-persistence-api/core";
 import { PostgresqlDriverConnection } from "./postgresql-connection";
 import { PostgresqlQueryable, PostgresqlQueryResult } from "./types";
@@ -30,7 +30,7 @@ export class PostgresqlTransactionManager extends AbstractTransactionManager<Pos
 
   protected beginTransaction(
     resource: PostgresqlTransactionConnection,
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): Promise<void> | void {
     return voidQuery(resource.query(renderBeginStatement(options)));
   }
@@ -60,7 +60,7 @@ export class PostgresqlTransactionManager extends AbstractTransactionManager<Pos
   }
 }
 
-function renderBeginStatement(options: NPATransactionOptions): string {
+function renderBeginStatement(options: TransactionOptions): string {
   const modes = [
     options.isolation ? `ISOLATION LEVEL ${renderIsolation(options.isolation)}` : undefined,
     options.readOnly ? "READ ONLY" : undefined,
@@ -69,15 +69,15 @@ function renderBeginStatement(options: NPATransactionOptions): string {
   return modes.length ? `BEGIN ${modes.join(", ")}` : "BEGIN";
 }
 
-function renderIsolation(isolation: NPATransactionIsolation): string {
+function renderIsolation(isolation: TransactionIsolation): string {
   switch (isolation) {
-    case NPATransactionIsolation.READ_UNCOMMITTED:
+    case TransactionIsolation.READ_UNCOMMITTED:
       return "READ UNCOMMITTED";
-    case NPATransactionIsolation.READ_COMMITTED:
+    case TransactionIsolation.READ_COMMITTED:
       return "READ COMMITTED";
-    case NPATransactionIsolation.REPEATABLE_READ:
+    case TransactionIsolation.REPEATABLE_READ:
       return "REPEATABLE READ";
-    case NPATransactionIsolation.SERIALIZABLE:
+    case TransactionIsolation.SERIALIZABLE:
       return "SERIALIZABLE";
   }
 }

@@ -1,4 +1,4 @@
-import { NPATransactionIsolation } from "../../../src";
+import { TransactionIsolation } from "../../../src";
 import { PostgresqlTransactionManager, type PostgresqlTransactionConnection } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
@@ -58,7 +58,7 @@ describe("PostgreSQL transaction manager", () => {
           await manager.queryable.query("UPDATE inside", [3]);
           throw new Error("fail");
         },
-        { isolation: NPATransactionIsolation.SERIALIZABLE, readOnly: true },
+        { isolation: TransactionIsolation.SERIALIZABLE, readOnly: true },
       ),
     ).rejects.toThrow(/fail/);
 

@@ -1,7 +1,7 @@
 import {
   AbstractTransactionManager,
-  NPATransactionIsolation,
-  NPATransactionOptions,
+  TransactionIsolation,
+  TransactionOptions,
 } from "@node-persistence-api/core";
 import { MysqlDriverConnection } from "./mysql-connection";
 import { MysqlQueryable, MysqlRawQueryResult } from "./types";
@@ -37,7 +37,7 @@ export class MysqlTransactionManager extends AbstractTransactionManager<MysqlTra
 
   async beginTransaction(
     resource: MysqlTransactionConnection,
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): Promise<void> {
     if (options.isolation) {
       await query(resource, `SET TRANSACTION ISOLATION LEVEL ${renderIsolation(options.isolation)}`);
@@ -65,19 +65,19 @@ export class MysqlTransactionManager extends AbstractTransactionManager<MysqlTra
   }
 }
 
-function renderStartTransactionStatement(options: NPATransactionOptions): string {
+function renderStartTransactionStatement(options: TransactionOptions): string {
   return options.readOnly ? "START TRANSACTION READ ONLY" : "START TRANSACTION";
 }
 
-function renderIsolation(isolation: NPATransactionIsolation): string {
+function renderIsolation(isolation: TransactionIsolation): string {
   switch (isolation) {
-    case NPATransactionIsolation.READ_UNCOMMITTED:
+    case TransactionIsolation.READ_UNCOMMITTED:
       return "READ UNCOMMITTED";
-    case NPATransactionIsolation.READ_COMMITTED:
+    case TransactionIsolation.READ_COMMITTED:
       return "READ COMMITTED";
-    case NPATransactionIsolation.REPEATABLE_READ:
+    case TransactionIsolation.REPEATABLE_READ:
       return "REPEATABLE READ";
-    case NPATransactionIsolation.SERIALIZABLE:
+    case TransactionIsolation.SERIALIZABLE:
       return "SERIALIZABLE";
   }
 }

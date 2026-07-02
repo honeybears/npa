@@ -1,13 +1,13 @@
 import * as path from "node:path";
 import { loadMigrationAdapter, loadMigrationAdapterRunner } from "./adapter-loader";
 import { createMigrationChecksum } from "./checksum";
-import { loadNPAMigrationConfig } from "./config";
+import { loadMigrationConfig } from "./config";
 import { discoverEntitySchemas } from "./entity-schema";
 import { loadMigrationFiles, writeMigrationFile } from "./files";
 import {
-  NPAMigrationDeployResult,
-  NPAMigrationFile,
-  NPAMigrationResult,
+  MigrationDeployResult,
+  MigrationFile,
+  MigrationResult,
 } from "./types";
 
 export async function runMigrateCommand(args: string[], cwd: string): Promise<void> {
@@ -182,7 +182,7 @@ async function runMigrateDeployCommand(args: string[], cwd: string): Promise<voi
 }
 
 function writePushResult(
-  result: NPAMigrationResult,
+  result: MigrationResult,
   adapter: string,
   legacy: boolean,
 ): void {
@@ -210,7 +210,7 @@ function writePushResult(
 }
 
 function writeMigrateDevDryRun(
-  result: NPAMigrationResult,
+  result: MigrationResult,
   adapter: string,
   name: string | undefined,
 ): void {
@@ -225,8 +225,8 @@ function writeMigrateDevDryRun(
 }
 
 function writeDeployResult(
-  result: NPAMigrationDeployResult,
-  migrations: NPAMigrationFile[],
+  result: MigrationDeployResult,
+  migrations: MigrationFile[],
   dryRun: boolean,
 ): void {
   if (dryRun) {
@@ -252,7 +252,7 @@ function writeDeployResult(
 }
 
 function loadConfig(cwd: string, values: Record<string, string>) {
-  return loadNPAMigrationConfig({
+  return loadMigrationConfig({
     cwd,
     config: values.config,
     adapter: values.adapter,

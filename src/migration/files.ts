@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { NPAMigrationFile } from "./types";
+import { MigrationFile } from "./types";
 
 const MIGRATION_FILE_NAME = "migration.sql";
 
@@ -32,7 +32,7 @@ export function splitMigrationSql(sql: string): string[] {
 export function loadMigrationFiles(
   cwd: string,
   migrationsDir: string,
-): NPAMigrationFile[] {
+): MigrationFile[] {
   const root = path.resolve(cwd, migrationsDir);
 
   if (!fs.existsSync(root)) {
@@ -51,7 +51,7 @@ export function loadMigrationFiles(
 
       return readMigrationFile(entry.name, filePath);
     })
-    .filter((migration): migration is NPAMigrationFile => !!migration)
+    .filter((migration): migration is MigrationFile => !!migration)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -60,7 +60,7 @@ export function writeMigrationFile(
   migrationsDir: string,
   migrationName: string | undefined,
   statements: string[],
-): NPAMigrationFile {
+): MigrationFile {
   const root = path.resolve(cwd, migrationsDir);
   const directoryName = createMigrationDirectoryName(root, migrationName);
   const directoryPath = path.join(root, directoryName);
@@ -80,7 +80,7 @@ export function writeMigrationFile(
   };
 }
 
-function readMigrationFile(name: string, filePath: string): NPAMigrationFile {
+function readMigrationFile(name: string, filePath: string): MigrationFile {
   const sql = fs.readFileSync(filePath, "utf8");
   const statements = splitMigrationSql(sql);
 

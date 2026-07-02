@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { NPAMigrationAdapterName, NPAMigrationEntitySchema } from "./types";
+import { MigrationAdapterName, MigrationEntitySchema } from "./types";
 
-export const NPA_MIGRATION_FORMAT_VERSION = "npa-migration-v5";
+export const MIGRATION_FORMAT_VERSION = "npa-migration-v5";
 
 export function createMigrationChecksum(
-  adapter: NPAMigrationAdapterName,
-  entities: NPAMigrationEntitySchema[],
+  adapter: MigrationAdapterName,
+  entities: MigrationEntitySchema[],
 ): string {
   return createHash("sha256")
     .update(JSON.stringify(createMigrationSnapshot(adapter, entities)))
@@ -13,11 +13,11 @@ export function createMigrationChecksum(
 }
 
 export function createMigrationSnapshot(
-  adapter: NPAMigrationAdapterName,
-  entities: NPAMigrationEntitySchema[],
+  adapter: MigrationAdapterName,
+  entities: MigrationEntitySchema[],
 ): unknown {
   return {
-    version: NPA_MIGRATION_FORMAT_VERSION,
+    version: MIGRATION_FORMAT_VERSION,
     adapter,
     entities: entities
       .map((entity) => ({
@@ -32,6 +32,8 @@ export function createMigrationSnapshot(
             dbType: column.dbType,
             defaultValue: column.defaultValue,
             defaultCurrentTimestamp: column.defaultCurrentTimestamp,
+            generationStrategy: column.generationStrategy,
+            sequenceName: column.sequenceName,
             nullable: column.nullable,
             primary: column.primary,
             version: column.version,

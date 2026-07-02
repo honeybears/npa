@@ -1,4 +1,4 @@
-import { Column, Entity, Id, ManyToOne, ManyToMany, NPARepository, NPATransactionIsolation, NPATransactionPropagation, OneToMany, RollbackOnlyError, Transaction } from "../../src";
+import { Column, Entity, Id, ManyToOne, ManyToMany, NPARepository, TransactionIsolation, TransactionPropagation, OneToMany, RollbackOnlyError, Transaction } from "../../src";
 import { assertRepositoryContract, createProductEntity, databaseAdapters, runDatabaseFlow, startContainerOrSkip, uniqueTableName } from "./database-flow";
 import { describe, expect, test } from "@jest/globals";
 
@@ -250,7 +250,7 @@ decorateMethod(ProductService, "createThenFail", Transaction());
 decorateMethod(
   ProductService,
   "createTwo",
-  Transaction({ isolation: NPATransactionIsolation.READ_COMMITTED }),
+  Transaction({ isolation: TransactionIsolation.READ_COMMITTED }),
 );
 decorateMethod(ProductService, "requiredInnerFailure", Transaction());
 decorateMethod(ProductService, "innerRequiredFailure", Transaction());
@@ -258,7 +258,7 @@ decorateMethod(ProductService, "requiresNewInnerFailure", Transaction());
 decorateMethod(
   ProductService,
   "innerRequiresNewFailure",
-  Transaction({ propagation: NPATransactionPropagation.REQUIRES_NEW }),
+  Transaction({ propagation: TransactionPropagation.REQUIRES_NEW }),
 );
 decorateMethod(ProductService, "renameManagedProduct", Transaction());
 
@@ -333,14 +333,14 @@ async function assertTransactionIsolation(
 function transactionIsolationProbe(adapter) {
   if (adapter.adapterName === "postgresql") {
     return {
-      isolation: NPATransactionIsolation.REPEATABLE_READ,
+      isolation: TransactionIsolation.REPEATABLE_READ,
       expectedAfterCount: 0,
       expectedIsolation: "repeatable read",
     };
   }
 
   return {
-    isolation: NPATransactionIsolation.READ_COMMITTED,
+    isolation: TransactionIsolation.READ_COMMITTED,
     expectedAfterCount: 1,
   };
 }

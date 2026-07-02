@@ -1,12 +1,19 @@
-export type NPAMigrationAdapterName = "postgresql" | "mysql";
+export type MigrationAdapterName = "postgresql" | "mysql";
+export type MigrationGenerationStrategy =
+  | "AUTO_INCREMENT"
+  | "SEQUENCE"
+  | "UUID"
+  | "NONE";
 
-export interface NPAMigrationColumnSchema {
+export interface MigrationColumnSchema {
   propertyName: string;
   columnName: string;
   tsType: string;
   dbType?: string;
   defaultValue?: string | number | boolean | null;
   defaultCurrentTimestamp?: boolean;
+  generationStrategy?: MigrationGenerationStrategy;
+  sequenceName?: string;
   nullable: boolean;
   primary: boolean;
   version: boolean;
@@ -14,49 +21,49 @@ export interface NPAMigrationColumnSchema {
   updatedAt?: boolean;
 }
 
-export interface NPAMigrationIndexSchema {
+export interface MigrationIndexSchema {
   name?: string;
   columns: string[];
   unique: boolean;
 }
 
-export enum NPAMigrationRelationKind {
+export enum MigrationRelationKind {
   ONE_TO_MANY = "ONE_TO_MANY",
   MANY_TO_ONE = "MANY_TO_ONE",
   MANY_TO_MANY = "MANY_TO_MANY",
 }
 
-export enum NPAMigrationReferentialAction {
+export enum MigrationReferentialAction {
   CASCADE = "CASCADE",
   SET_NULL = "SET NULL",
   RESTRICT = "RESTRICT",
   NO_ACTION = "NO ACTION",
 }
 
-export interface NPAMigrationRelationSchema {
+export interface MigrationRelationSchema {
   propertyName: string;
-  kind: NPAMigrationRelationKind;
+  kind: MigrationRelationKind;
   targetClassName: string;
   mappedBy?: string;
   joinColumn?: string;
   joinTable?: string;
   foreignKeyName?: string;
-  onDelete?: NPAMigrationReferentialAction;
-  onUpdate?: NPAMigrationReferentialAction;
+  onDelete?: MigrationReferentialAction;
+  onUpdate?: MigrationReferentialAction;
 }
 
-export interface NPAMigrationEntitySchema {
+export interface MigrationEntitySchema {
   className: string;
   filePath: string;
   tableName: string;
   schema?: string;
-  columns: NPAMigrationColumnSchema[];
-  indexes: NPAMigrationIndexSchema[];
-  relations: NPAMigrationRelationSchema[];
+  columns: MigrationColumnSchema[];
+  indexes: MigrationIndexSchema[];
+  relations: MigrationRelationSchema[];
 }
 
-export interface NPAMigrationConfigFile {
-  adapter?: NPAMigrationAdapterName;
+export interface MigrationConfigFile {
+  adapter?: MigrationAdapterName;
   url?: string;
   entities?: string | string[];
   migrations?: {
@@ -65,8 +72,8 @@ export interface NPAMigrationConfigFile {
   };
 }
 
-export interface ResolvedNPAMigrationConfig {
-  adapter: NPAMigrationAdapterName;
+export interface ResolvedMigrationConfig {
+  adapter: MigrationAdapterName;
   url?: string;
   entities: string[];
   migrations: {
@@ -75,7 +82,7 @@ export interface ResolvedNPAMigrationConfig {
   };
 }
 
-export interface LoadNPAMigrationConfigOptions {
+export interface LoadMigrationConfigOptions {
   cwd: string;
   config?: string;
   adapter?: string;
@@ -83,16 +90,16 @@ export interface LoadNPAMigrationConfigOptions {
   entities?: string[];
 }
 
-export interface NPAMigrationRunOptions {
-  adapter: NPAMigrationAdapterName;
+export interface MigrationRunOptions {
+  adapter: MigrationAdapterName;
   url?: string;
-  entities: NPAMigrationEntitySchema[];
+  entities: MigrationEntitySchema[];
   checksum: string;
   historyTable: string;
   dryRun?: boolean;
 }
 
-export interface NPAMigrationResult {
+export interface MigrationResult {
   status: "applied" | "noop" | "dry-run";
   checksum: string;
   statements: string[];
@@ -100,11 +107,11 @@ export interface NPAMigrationResult {
   previousChecksum?: string;
 }
 
-export interface NPAMigrationAdapterRunner {
-  (options: NPAMigrationRunOptions): Promise<NPAMigrationResult>;
+export interface MigrationAdapterRunner {
+  (options: MigrationRunOptions): Promise<MigrationResult>;
 }
 
-export interface NPAMigrationFile {
+export interface MigrationFile {
   name: string;
   checksum: string;
   statements: string[];
@@ -112,29 +119,29 @@ export interface NPAMigrationFile {
   filePath?: string;
 }
 
-export interface NPAMigrationDeployOptions {
-  adapter: NPAMigrationAdapterName;
+export interface MigrationDeployOptions {
+  adapter: MigrationAdapterName;
   url?: string;
   historyTable: string;
-  migrations: NPAMigrationFile[];
+  migrations: MigrationFile[];
   dryRun?: boolean;
 }
 
-export interface NPAMigrationDeployItemResult {
+export interface MigrationDeployItemResult {
   name: string;
   checksum: string;
   statementCount: number;
   status: "applied" | "pending" | "skipped";
 }
 
-export interface NPAMigrationDeployResult {
+export interface MigrationDeployResult {
   status: "applied" | "noop" | "dry-run";
-  migrations: NPAMigrationDeployItemResult[];
+  migrations: MigrationDeployItemResult[];
   statementCount: number;
 }
 
-export interface NPAMigrationAdapter {
-  plan(options: NPAMigrationRunOptions): Promise<NPAMigrationResult>;
-  push(options: NPAMigrationRunOptions): Promise<NPAMigrationResult>;
-  deploy(options: NPAMigrationDeployOptions): Promise<NPAMigrationDeployResult>;
+export interface MigrationAdapter {
+  plan(options: MigrationRunOptions): Promise<MigrationResult>;
+  push(options: MigrationRunOptions): Promise<MigrationResult>;
+  deploy(options: MigrationDeployOptions): Promise<MigrationDeployResult>;
 }

@@ -1,14 +1,14 @@
 import type {
-  NPAMigrationColumnSchema,
-  NPAMigrationDeployOptions,
-  NPAMigrationDeployResult,
-  NPAMigrationEntitySchema,
-  NPAMigrationFile,
-  NPAMigrationIndexSchema,
-  NPAMigrationResult,
-  NPAMigrationRunOptions,
+  MigrationColumnSchema,
+  MigrationDeployOptions,
+  MigrationDeployResult,
+  MigrationEntitySchema,
+  MigrationFile,
+  MigrationIndexSchema,
+  MigrationResult,
+  MigrationRunOptions,
 } from "@node-persistence-api/core";
-import { NPAMigrationRelationKind } from "@node-persistence-api/core";
+import { MigrationRelationKind } from "@node-persistence-api/core";
 import { createHash } from "node:crypto";
 import { PostgresqlConnection, PostgresqlDriverConnection } from "./postgresql-connection";
 
@@ -19,8 +19,8 @@ const MAX_FOREIGN_KEY_IDENTIFIER_LENGTH = 63;
 interface MigrationTableSchema {
   tableName: string;
   schema?: string;
-  columns: NPAMigrationColumnSchema[];
-  indexes: NPAMigrationIndexSchema[];
+  columns: MigrationColumnSchema[];
+  indexes: MigrationIndexSchema[];
   foreignKeys: MigrationForeignKeySchema[];
   primaryKey?: string[];
 }
@@ -92,7 +92,7 @@ interface PostgresqlHistoryRow {
 }
 
 export interface PostgresqlMigrationCompileOptions {
-  entities: NPAMigrationEntitySchema[];
+  entities: MigrationEntitySchema[];
   historyTable?: string;
   checksum?: string;
 }
@@ -107,7 +107,7 @@ export function compilePostgresqlMigrationStatements(
 }
 
 export function compilePostgresqlSchemaStatements(
-  entities: NPAMigrationEntitySchema[],
+  entities: MigrationEntitySchema[],
 ): string[] {
   const desiredTables = buildDesiredTables(entities);
 
@@ -131,8 +131,8 @@ export function compilePostgresqlHistoryTable(historyTable: string): string {
 }
 
 export async function planPostgresqlMigration(
-  options: NPAMigrationRunOptions,
-): Promise<NPAMigrationResult> {
+  options: MigrationRunOptions,
+): Promise<MigrationResult> {
   if (!options.url) {
     const statements = compilePostgresqlSchemaStatements(options.entities);
 
@@ -167,8 +167,8 @@ export async function planPostgresqlMigration(
 }
 
 export async function migratePostgresql(
-  options: NPAMigrationRunOptions,
-): Promise<NPAMigrationResult> {
+  options: MigrationRunOptions,
+): Promise<MigrationResult> {
   if (options.dryRun && !options.url) {
     const plan = await planPostgresqlMigration(options);
     const statements = [
@@ -268,8 +268,8 @@ export async function migratePostgresql(
 }
 
 export async function deployPostgresqlMigrations(
-  options: NPAMigrationDeployOptions,
-): Promise<NPAMigrationDeployResult> {
+  options: MigrationDeployOptions,
+): Promise<MigrationDeployResult> {
   if (!options.url) {
     throw new Error("PostgreSQL migration deploy requires a database url.");
   }
@@ -282,7 +282,7 @@ export async function deployPostgresqlMigrations(
 
     try {
       await connection.query(compilePostgresqlHistoryTable(options.historyTable));
-      const results: NPAMigrationDeployResult["migrations"] = [];
+      const results: MigrationDeployResult["migrations"] = [];
       let statementCount = 0;
       let pendingCount = 0;
 
@@ -344,7 +344,7 @@ export async function deployPostgresqlMigrations(
 }
 
 function compilePostgresqlNamespaceStatements(
-  entities: NPAMigrationEntitySchema[],
+  entities: MigrationEntitySchema[],
 ): string[] {
   const schemas = new Set(
     buildDesiredTables(entities)
@@ -380,7 +380,8 @@ function compilePostgresqlTableDiffStatements(
 
       if (!currentColumn) {
         statements.push(
-          `ALTER TABLE ${qualifiedTable(table)} ADD COLUMN ${quoteQualifiedIdentifier(column.columnName)} ${columnDefinition(column, { inlinePrimary: column.primary })}`,
+          ...compilePostgresqlColumnSequenceStatements(table, column),
+          `ALTER TABLE ${qualifiedTable(table)} ADD COLUMN ${quoteQualifiedIdentifier(column.columnName)} ${columnDefinition(column, { inlinePrimary: column.primary, table })}`,
         );
         continue;
       }
@@ -435,9 +436,25 @@ function compilePostgresqlTableDiffStatements(
 
 function compilePostgresqlCreateTableStatements(table: MigrationTableSchema): string[] {
   return [
+    ...compilePostgresqlSequenceStatements(table),
     compilePostgresqlCreateTable(table),
     ...table.indexes.map((index) => compilePostgresqlCreateIndex(table, index)),
   ];
+}
+
+function compilePostgresqlSequenceStatements(table: MigrationTableSchema): string[] {
+  return table.columns.flatMap((column) =>
+    compilePostgresqlColumnSequenceStatements(table, column),
+  );
+}
+
+function compilePostgresqlColumnSequenceStatements(
+  table: MigrationTableSchema,
+  column: MigrationColumnSchema,
+): string[] {
+  return column.primary && column.generationStrategy === "SEQUENCE"
+    ? [`CREATE SEQUENCE IF NOT EXISTS ${postgresqlSequenceName(table, column)}`]
+    : [];
 }
 
 function compilePostgresqlForeignKeyDiffStatements(
@@ -499,7 +516,7 @@ function compilePostgresqlIndexDiffStatements(
 
 function compilePostgresqlCreateTable(table: MigrationTableSchema): string {
   const columnLines = table.columns.map(
-    (column) => `  ${quoteQualifiedIdentifier(column.columnName)} ${columnDefinition(column, { inlinePrimary: !table.primaryKey })}`,
+    (column) => `  ${quoteQualifiedIdentifier(column.columnName)} ${columnDefinition(column, { inlinePrimary: !table.primaryKey, table })}`,
   );
   const primaryKeyLines = table.primaryKey?.length
     ? [`  PRIMARY KEY (${table.primaryKey.map(quoteQualifiedIdentifier).join(", ")})`]
@@ -525,8 +542,8 @@ function compilePostgresqlForeignKeyConstraint(
 }
 
 function columnDefinition(
-  column: NPAMigrationColumnSchema,
-  options: { inlinePrimary: boolean },
+  column: MigrationColumnSchema,
+  options: { inlinePrimary: boolean; table?: MigrationTableSchema },
 ): string {
   const dbType = column.dbType ?? defaultType(column, { identity: options.inlinePrimary });
   const constraints = options.inlinePrimary && column.primary
@@ -534,18 +551,18 @@ function columnDefinition(
     : column.nullable
       ? ""
       : " NOT NULL";
-  const defaultClause = columnDefaultClause(column);
+  const defaultClause = columnDefaultClause(column, options.table);
 
   return `${dbType}${constraints}${defaultClause}`;
 }
 
-function columnAlterType(column: NPAMigrationColumnSchema): string {
+function columnAlterType(column: MigrationColumnSchema): string {
   return column.dbType ?? defaultType(column, { identity: false });
 }
 
 function postgresqlDefaultDiffStatement(
   table: MigrationTableSchema,
-  column: NPAMigrationColumnSchema,
+  column: MigrationColumnSchema,
   currentColumn: CurrentColumnSchema,
 ): string | undefined {
   const expectedDefault = normalizeDesiredDefault(column);
@@ -565,7 +582,7 @@ function postgresqlDefaultDiffStatement(
 }
 
 function normalizeDesiredDefault(
-  column: NPAMigrationColumnSchema,
+  column: MigrationColumnSchema,
 ): string | undefined {
   if (column.defaultCurrentTimestamp) {
     return "raw:current_timestamp";
@@ -620,7 +637,18 @@ function normalizePostgresqlDefault(value: string | undefined): string | undefin
   return `raw:${normalized}`;
 }
 
-function columnDefaultClause(column: NPAMigrationColumnSchema): string {
+function columnDefaultClause(
+  column: MigrationColumnSchema,
+  table?: MigrationTableSchema,
+): string {
+  if (column.primary && column.generationStrategy === "UUID") {
+    return " DEFAULT gen_random_uuid()";
+  }
+
+  if (column.primary && column.generationStrategy === "SEQUENCE") {
+    return ` DEFAULT nextval('${postgresqlSequenceName(table, column, { literal: true })}')`;
+  }
+
   if (column.defaultCurrentTimestamp) {
     return " DEFAULT CURRENT_TIMESTAMP";
   }
@@ -632,7 +660,7 @@ function columnDefaultClause(column: NPAMigrationColumnSchema): string {
   return ` DEFAULT ${renderColumnDefault(column)}`;
 }
 
-function renderColumnDefault(column: NPAMigrationColumnSchema): string {
+function renderColumnDefault(column: MigrationColumnSchema): string {
   if (column.defaultCurrentTimestamp) {
     return "CURRENT_TIMESTAMP";
   }
@@ -655,13 +683,22 @@ function renderColumnDefault(column: NPAMigrationColumnSchema): string {
 }
 
 function defaultType(
-  column: NPAMigrationColumnSchema,
+  column: MigrationColumnSchema,
   options: { identity: boolean },
 ): string {
   const normalized = normalizeType(column.tsType);
 
-  if (column.primary && normalized === "number" && options.identity) {
+  if (
+    column.primary &&
+    normalized === "number" &&
+    options.identity &&
+    column.generationStrategy === "AUTO_INCREMENT"
+  ) {
     return "SERIAL";
+  }
+
+  if (column.primary && column.generationStrategy === "UUID") {
+    return "UUID";
   }
 
   if (normalized === "string") {
@@ -685,7 +722,23 @@ function defaultType(
   );
 }
 
-function buildDesiredTables(entities: NPAMigrationEntitySchema[]): MigrationTableSchema[] {
+function postgresqlSequenceName(
+  table: MigrationTableSchema | undefined,
+  column: MigrationColumnSchema,
+  options: { literal?: boolean } = {},
+): string {
+  const name =
+    column.sequenceName ??
+    `${table?.tableName ?? "npa"}_${column.columnName}_seq`;
+  const qualified =
+    table?.schema && !name.includes(".")
+      ? `${quoteQualifiedIdentifier(table.schema)}.${quoteQualifiedIdentifier(name)}`
+      : quoteQualifiedIdentifier(name);
+
+  return options.literal ? qualified.replace(/'/g, "''") : qualified;
+}
+
+function buildDesiredTables(entities: MigrationEntitySchema[]): MigrationTableSchema[] {
   const tables = new Map<string, MigrationTableSchema>();
   const sortedEntities = [...entities].sort(compareEntities);
   const byClassName = new Map(sortedEntities.map((entity) => [entity.className, entity]));
@@ -703,14 +756,14 @@ function buildDesiredTables(entities: NPAMigrationEntitySchema[]): MigrationTabl
 }
 
 function entityTable(
-  entity: NPAMigrationEntitySchema,
-  byClassName: Map<string, NPAMigrationEntitySchema>,
+  entity: MigrationEntitySchema,
+  byClassName: Map<string, MigrationEntitySchema>,
 ): MigrationTableSchema {
   const columns = new Map(entity.columns.map((column) => [column.columnName, column]));
   const foreignKeys: MigrationForeignKeySchema[] = [];
 
   for (const relation of entity.relations ?? []) {
-    if (relation.kind !== NPAMigrationRelationKind.MANY_TO_ONE) {
+    if (relation.kind !== MigrationRelationKind.MANY_TO_ONE) {
       continue;
     }
 
@@ -750,13 +803,13 @@ function entityTable(
   };
 }
 
-function buildJoinTables(entities: NPAMigrationEntitySchema[]): MigrationTableSchema[] {
+function buildJoinTables(entities: MigrationEntitySchema[]): MigrationTableSchema[] {
   const byClassName = new Map(entities.map((entity) => [entity.className, entity]));
   const tables: MigrationTableSchema[] = [];
 
   for (const entity of entities) {
     for (const relation of entity.relations ?? []) {
-      if (relation.kind !== NPAMigrationRelationKind.MANY_TO_MANY) {
+      if (relation.kind !== MigrationRelationKind.MANY_TO_MANY) {
         continue;
       }
 
@@ -811,9 +864,9 @@ function buildJoinTables(entities: NPAMigrationEntitySchema[]): MigrationTableSc
 }
 
 function relationColumn(
-  source: NPAMigrationColumnSchema,
+  source: MigrationColumnSchema,
   columnName: string,
-): NPAMigrationColumnSchema {
+): MigrationColumnSchema {
   return {
     ...source,
     propertyName: columnName,
@@ -826,8 +879,8 @@ function relationColumn(
 }
 
 function resolveJoinTable(
-  source: NPAMigrationEntitySchema,
-  target: NPAMigrationEntitySchema,
+  source: MigrationEntitySchema,
+  target: MigrationEntitySchema,
   joinTable?: string,
 ): Pick<MigrationTableSchema, "schema" | "tableName"> {
   const fallbackTableName = `${source.tableName}_${target.tableName}`;
@@ -848,8 +901,8 @@ function resolveJoinTable(
 }
 
 function joinColumnName(
-  entity: NPAMigrationEntitySchema,
-  primary: NPAMigrationColumnSchema,
+  entity: MigrationEntitySchema,
+  primary: MigrationColumnSchema,
 ): string {
   const prefix = `${toSnakeCase(entity.className)}_`;
 
@@ -858,7 +911,7 @@ function joinColumnName(
     : `${prefix}${primary.columnName}`;
 }
 
-function primaryColumn(entity: NPAMigrationEntitySchema): NPAMigrationColumnSchema {
+function primaryColumn(entity: MigrationEntitySchema): MigrationColumnSchema {
   const primary = entity.columns.find((column) => column.primary);
 
   if (!primary) {
@@ -1026,7 +1079,7 @@ async function readHistoryRecord(
 
 async function upsertHistory(
   connection: PostgresqlConnection,
-  options: NPAMigrationRunOptions,
+  options: MigrationRunOptions,
   statementCount: number,
 ): Promise<void> {
   await connection.query(
@@ -1045,8 +1098,8 @@ async function upsertHistory(
 
 async function insertHistory(
   connection: PostgresqlConnection,
-  options: NPAMigrationDeployOptions,
-  migration: NPAMigrationFile,
+  options: MigrationDeployOptions,
+  migration: MigrationFile,
 ): Promise<void> {
   await connection.query(
     [
@@ -1058,9 +1111,9 @@ async function insertHistory(
 }
 
 function toDeployResult(
-  migration: NPAMigrationFile,
+  migration: MigrationFile,
   status: "applied" | "pending" | "skipped",
-): NPAMigrationDeployResult["migrations"][number] {
+): MigrationDeployResult["migrations"][number] {
   return {
     name: migration.name,
     checksum: migration.checksum,
@@ -1090,7 +1143,7 @@ function compileHistoryUpsertPreview(
 
 function compilePostgresqlCreateIndex(
   table: MigrationTableSchema,
-  index: NPAMigrationIndexSchema,
+  index: MigrationIndexSchema,
 ): string {
   const unique = index.unique ? "UNIQUE " : "";
 
@@ -1099,7 +1152,7 @@ function compilePostgresqlCreateIndex(
 
 function resolveIndexName(
   table: MigrationTableSchema,
-  index: NPAMigrationIndexSchema,
+  index: MigrationIndexSchema,
 ): string {
   if (index.name) {
     return index.name;
@@ -1144,7 +1197,7 @@ function compareCurrentIndexes(left: CurrentIndexSchema, right: CurrentIndexSche
   return left.name.localeCompare(right.name);
 }
 
-function compareIndexes(left: NPAMigrationIndexSchema, right: NPAMigrationIndexSchema): number {
+function compareIndexes(left: MigrationIndexSchema, right: MigrationIndexSchema): number {
   return `${left.name ?? ""}.${left.unique ? "unique" : "index"}.${left.columns.join(",")}`.localeCompare(
     `${right.name ?? ""}.${right.unique ? "unique" : "index"}.${right.columns.join(",")}`,
   );
@@ -1168,8 +1221,8 @@ function tableKey(table: Pick<MigrationTableSchema, "schema" | "tableName">): st
 }
 
 function compareEntities(
-  left: NPAMigrationEntitySchema,
-  right: NPAMigrationEntitySchema,
+  left: MigrationEntitySchema,
+  right: MigrationEntitySchema,
 ): number {
   return `${left.schema ?? ""}.${left.tableName}.${left.className}`.localeCompare(
     `${right.schema ?? ""}.${right.tableName}.${right.className}`,

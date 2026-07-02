@@ -54,7 +54,7 @@ describe("MySQL migration compiler", () => {
         ].join("\n"),
         [
           "CREATE TABLE IF NOT EXISTS `users` (",
-          "  `id` INT AUTO_INCREMENT PRIMARY KEY,",
+          "  `id` INT PRIMARY KEY,",
           "  `email` VARCHAR(255) NOT NULL,",
           "  `status` VARCHAR(255) NOT NULL",
           ")",
@@ -63,4 +63,58 @@ describe("MySQL migration compiler", () => {
         "CREATE UNIQUE INDEX `uidx_users_email` ON `users` (`email`)",
       ]);
   });
+
+  test("compiles explicit MySQL id generation strategies", () => {
+    const statements = compileMysqlMigrationStatements({
+      entities: [
+        generatedSchema("AutoUser", "auto_users", {
+          columnName: "id",
+          tsType: "number",
+          generationStrategy: "AUTO_INCREMENT",
+        }),
+        generatedSchema("UuidUser", "uuid_users", {
+          columnName: "external_id",
+          tsType: "string",
+          generationStrategy: "UUID",
+        }),
+      ],
+      historyTable: "_npa_migrations",
+    });
+
+    expect(statements).toContain([
+      "CREATE TABLE IF NOT EXISTS `auto_users` (",
+      "  `id` INT AUTO_INCREMENT PRIMARY KEY",
+      ")",
+    ].join("\n"));
+    expect(statements).toContain([
+      "CREATE TABLE IF NOT EXISTS `uuid_users` (",
+      "  `external_id` CHAR(36) DEFAULT (UUID()) PRIMARY KEY",
+      ")",
+    ].join("\n"));
+
+    expect(() => compileMysqlMigrationStatements({
+      entities: [generatedSchema("SequenceUser", "sequence_users", {
+        columnName: "id",
+        tsType: "number",
+        generationStrategy: "SEQUENCE",
+      })],
+    })).toThrow(/MySQL does not support GenerationStrategy\.SEQUENCE/);
+  });
 });
+
+function generatedSchema(className, tableName, column) {
+  return {
+    className,
+    filePath: `src/${tableName}.entity.ts`,
+    tableName,
+    columns: [{
+      propertyName: "id",
+      nullable: false,
+      primary: true,
+      version: false,
+      ...column,
+    }],
+    indexes: [],
+    relations: [],
+  };
+}

@@ -1,4 +1,4 @@
-import { NPATransactionIsolation } from "../../../src";
+import { TransactionIsolation } from "../../../src";
 import { MysqlTransactionManager, type MysqlTransactionConnection } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
@@ -58,7 +58,7 @@ describe("MySQL transaction manager", () => {
           await manager.queryable.query("UPDATE inside", [3]);
           throw new Error("fail");
         },
-        { isolation: NPATransactionIsolation.REPEATABLE_READ, readOnly: true },
+        { isolation: TransactionIsolation.REPEATABLE_READ, readOnly: true },
       ),
     ).rejects.toThrow(/fail/);
 

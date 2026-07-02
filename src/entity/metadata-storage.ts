@@ -214,6 +214,12 @@ function createColumnMetadata(
     nullable: options.nullable ?? false,
     type: options.type,
     ...(options.default !== undefined ? { default: options.default } : {}),
+    ...(options.generationStrategy !== undefined
+      ? { generationStrategy: options.generationStrategy }
+      : {}),
+    ...(options.sequenceName !== undefined
+      ? { sequenceName: options.sequenceName }
+      : {}),
     ...flags,
   };
 }

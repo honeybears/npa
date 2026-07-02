@@ -1,4 +1,4 @@
-import type { NPAMigrationEntitySchema } from "@node-persistence-api/core";
+import type { MigrationEntitySchema } from "@node-persistence-api/core";
 import {
   NPALanguageEntityPropertyKind,
   NPALanguageEntityRelationKind,
@@ -8,7 +8,7 @@ import {
 } from "./types";
 
 export function toNPALanguageEntitySchema(
-  entity: NPAMigrationEntitySchema,
+  entity: MigrationEntitySchema,
 ): NPALanguageEntitySchema {
   const properties: NPALanguageEntityProperty[] = [
     ...entity.columns.map((column) => ({
@@ -35,7 +35,7 @@ export function toNPALanguageEntitySchema(
 }
 
 export function toNPALanguageWorkspaceSchema(
-  entities: NPAMigrationEntitySchema[],
+  entities: MigrationEntitySchema[],
 ): NPALanguageWorkspaceSchema {
   return {
     entities: entities.map(toNPALanguageEntitySchema),

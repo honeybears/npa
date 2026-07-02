@@ -1,13 +1,13 @@
-import { NPATransactionManager, NPATransactionOptions } from "./types";
+import { TransactionManager, TransactionOptions } from "./types";
 
-export interface NPATransactionDecoratorOptions
-  extends NPATransactionOptions {
-  manager?: NPATransactionManager;
+export interface TransactionDecoratorOptions
+  extends TransactionOptions {
+  manager?: TransactionManager;
   managerProperty?: string;
 }
 
 export function Transaction(
-  options: NPATransactionDecoratorOptions = {},
+  options: TransactionDecoratorOptions = {},
 ): MethodDecorator {
   return (
     _target: object,
@@ -44,9 +44,9 @@ export const Transactional = Transaction;
 
 function resolveTransactionManager(
   target: unknown,
-  manager: NPATransactionManager | undefined,
+  manager: TransactionManager | undefined,
   managerProperty: string | undefined,
-): NPATransactionManager {
+): TransactionManager {
   if (manager) {
     return manager;
   }
@@ -63,10 +63,10 @@ function resolveTransactionManager(
   );
 }
 
-function isTransactionManager(value: unknown): value is NPATransactionManager {
+function isTransactionManager(value: unknown): value is TransactionManager {
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as NPATransactionManager).transactional === "function"
+    typeof (value as TransactionManager).transactional === "function"
   );
 }

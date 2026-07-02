@@ -48,6 +48,7 @@ import {
   Column,
   CreatedAt,
   Entity,
+  GenerationStrategy,
   Id,
   Index,
   ManyToMany,
@@ -64,7 +65,7 @@ import {
 ])
 @Entity({ name: 'users', schema: 'app' })
 class User {
-  @Id({ name: 'user_id' })
+  @Id({ name: 'user_id', generationStrategy: GenerationStrategy.AUTO_INCREMENT })
   id?: number;
 
   @Column({ name: 'full_name', unique: 'uidx_users_full_name' })
@@ -92,6 +93,12 @@ class User {
 ```
 
 `@Entity`, `@Id`, and `@Column` drive table, primary key, and column mapping.
+`@Id()` by itself creates a primary-key column without generated values. Pass
+`generationStrategy: GenerationStrategy.AUTO_INCREMENT`,
+`GenerationStrategy.SEQUENCE`, or `GenerationStrategy.UUID` when the database
+should generate ids. PostgreSQL supports all three strategies. MySQL supports
+`AUTO_INCREMENT` and `UUID`; `SEQUENCE` is rejected because MySQL does not
+provide normal sequence objects.
 Use `@CreatedAt` and `@UpdatedAt` for timestamp columns; migrations default them
 to the current timestamp, and updates refresh `@UpdatedAt`. Use `@Version` for
 an optimistic lock column. Inserts default it to `0`; managed
@@ -268,7 +275,8 @@ npa migrate dev \
 ```
 
 Default TypeScript-to-DB mapping is intentionally small: `string`, `number`,
-`boolean`, and `Date`, with numeric `@Id` mapped to auto-increment primary keys.
+`boolean`, and `Date`. Numeric `@Id` is a normal integer primary key unless
+`generationStrategy: GenerationStrategy.AUTO_INCREMENT` is specified.
 Use `@Column({ type: 'VARCHAR(80)' })` when you need an explicit database type.
 For many-to-many relations, NPA creates a join table with both primary-key
 columns, a composite primary key, and foreign keys back to each side, for
@@ -348,15 +356,15 @@ await users.findDistinctTop10ByNameContainingIgnoreCaseOrderByCreatedAtDesc('ki'
 Use a database transaction manager when multiple repository calls must commit or
 roll back as one unit. Pass the manager's context-aware `queryable` to the
 runtime adapter, then decorate service methods with `@Transaction()`. The
-default propagation is `NPATransactionPropagation.REQUIRED`, so nested
+default propagation is `TransactionPropagation.REQUIRED`, so nested
 transactional calls reuse the active transaction. Use
-`{ propagation: NPATransactionPropagation.REQUIRES_NEW }` to force a separate
+`{ propagation: TransactionPropagation.REQUIRES_NEW }` to force a separate
 transaction.
 
 ```ts
 import {
-  NPATransactionIsolation,
-  NPATransactionPropagation,
+  TransactionIsolation,
+  TransactionPropagation,
   Transaction,
   NPA,
 } from '@node-persistence-api/core';
@@ -377,7 +385,7 @@ class UserService {
     private readonly transactionManager = txManager,
   ) {}
 
-  @Transaction({ isolation: NPATransactionIsolation.READ_COMMITTED })
+  @Transaction({ isolation: TransactionIsolation.READ_COMMITTED })
   async renameUser(id: number, name: string): Promise<void> {
     await this.users.updateById(id, { name });
     await this.users.findById(id);
@@ -389,8 +397,8 @@ const service = new UserService();
 
 MySQL uses the same core decorator with `MysqlTransactionManager` from
 `@node-persistence-api/connector-mysql`. Transaction options currently support `isolation`,
-`readOnly`, `NPATransactionPropagation.REQUIRED`, and
-`NPATransactionPropagation.REQUIRES_NEW`.
+`readOnly`, `TransactionPropagation.REQUIRED`, and
+`TransactionPropagation.REQUIRES_NEW`.
 
 ## Dirty Checking and Versioning
 
@@ -465,7 +473,7 @@ before treating NPA as a fuller ORM:
 - Query API: add pagination, runtime sort, projection/select clauses, aggregate/groupBy support, and bulk update by condition.
 - Batching: add findUnique-style same-tick batching and relation-loading batching inside transaction-aware scopes.
 - Relations: support deeper relation paths, cascade persist/remove, orphan removal, eager/lazy fetch strategies, and safer relation mutation helpers.
-- Entity mapping: add composite keys, default values, enum/json/array types, UUID/sequence generation, embedded value objects, column transformers, inheritance, and lifecycle hooks.
+- Entity mapping: add composite keys, enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
 - Migrations: add rename detection, down migrations, destructive-change guards, drift detection, data migration hooks, and richer DDL for defaults/generated columns/enums.
 - Transactions: add savepoint-backed nested transactions, more propagation modes, and stricter read-only/flush behavior.
 - Operations: add SQL logging, slow-query hooks, metrics/tracing, normalized driver errors, retry policy hooks, and clearer connection ownership docs.

@@ -14,6 +14,15 @@ export interface ColumnOptions {
   default?: string | number | boolean | null;
   index?: boolean | string;
   unique?: boolean | string;
+  generationStrategy?: GenerationStrategy | `${GenerationStrategy}`;
+  sequenceName?: string;
+}
+
+export enum GenerationStrategy {
+  AUTO_INCREMENT = "AUTO_INCREMENT",
+  SEQUENCE = "SEQUENCE",
+  UUID = "UUID",
+  NONE = "NONE",
 }
 
 export interface IndexOptions {
@@ -51,6 +60,8 @@ export interface ColumnMetadata {
   nullable: boolean;
   type?: string;
   default?: string | number | boolean | null;
+  generationStrategy?: GenerationStrategy | `${GenerationStrategy}`;
+  sequenceName?: string;
   primary: boolean;
   version: boolean;
   createdAt: boolean;

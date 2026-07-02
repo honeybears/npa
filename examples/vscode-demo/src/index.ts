@@ -1,4 +1,4 @@
-import { NPAMigrationRelationKind } from "@node-persistence-api/core";
+import { MigrationRelationKind } from "@node-persistence-api/core";
 import {
   getNPAQueryMethodCompletions,
   toNPALanguageWorkspaceSchema,
@@ -21,7 +21,7 @@ const workspace = toNPALanguageWorkspaceSchema([
     relations: [
       {
         propertyName: "team",
-        kind: NPAMigrationRelationKind.MANY_TO_ONE,
+        kind: MigrationRelationKind.MANY_TO_ONE,
         targetClassName: "Team",
       },
     ],

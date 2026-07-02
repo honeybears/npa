@@ -2,9 +2,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { PersistenceContext, runWithPersistenceContext } from "../persistence";
 import { RollbackOnlyError } from "./rollback-only-error";
 import {
-  NPATransactionManager,
-  NPATransactionOptions,
-  NPATransactionPropagation,
+  TransactionManager,
+  TransactionOptions,
+  TransactionPropagation,
 } from "./types";
 
 interface TransactionContext<TResource> {
@@ -13,19 +13,19 @@ interface TransactionContext<TResource> {
 }
 
 export abstract class AbstractTransactionManager<TResource>
-  implements NPATransactionManager
+  implements TransactionManager
 {
   private readonly storage = new AsyncLocalStorage<TransactionContext<TResource>>();
 
   async transactional<T>(
     work: () => Promise<T> | T,
-    options: NPATransactionOptions = {},
+    options: TransactionOptions = {},
   ): Promise<T> {
     const propagation = this.normalizePropagation(options.propagation);
 
     const currentContext = this.storage.getStore();
 
-    if (propagation === NPATransactionPropagation.REQUIRED && currentContext) {
+    if (propagation === TransactionPropagation.REQUIRED && currentContext) {
       try {
         return await Promise.resolve(work());
       } catch (error) {
@@ -86,38 +86,38 @@ export abstract class AbstractTransactionManager<TResource>
   }
 
   protected abstract acquireTransactionResource(
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): Promise<TResource> | TResource;
 
   protected abstract beginTransaction(
     resource: TResource,
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): Promise<void> | void;
 
   protected abstract commitTransaction(
     resource: TResource,
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): Promise<void> | void;
 
   protected abstract rollbackTransaction(
     resource: TResource,
-    options: NPATransactionOptions,
+    options: TransactionOptions,
   ): Promise<void> | void;
 
   protected releaseTransactionResource(
     _resource: TResource,
-    _options: NPATransactionOptions,
+    _options: TransactionOptions,
   ): Promise<void> | void {
     return undefined;
   }
 
-  private normalizePropagation(propagation: unknown): NPATransactionPropagation {
+  private normalizePropagation(propagation: unknown): TransactionPropagation {
     switch (propagation) {
       case undefined:
-      case NPATransactionPropagation.REQUIRED:
-        return NPATransactionPropagation.REQUIRED;
-      case NPATransactionPropagation.REQUIRES_NEW:
-        return NPATransactionPropagation.REQUIRES_NEW;
+      case TransactionPropagation.REQUIRED:
+        return TransactionPropagation.REQUIRED;
+      case TransactionPropagation.REQUIRES_NEW:
+        return TransactionPropagation.REQUIRES_NEW;
       default:
         throw new Error(`Unsupported transaction propagation: ${String(propagation)}`);
     }
