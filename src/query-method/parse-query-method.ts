@@ -43,6 +43,8 @@ const OPERATORS: OperatorDefinition[] = [
   ["Containing", "containing", 1],
   ["LessThan", "lessThan", 1],
   ["GreaterThan", "greaterThan", 1],
+  ["Before", "lessThan", 1],
+  ["After", "greaterThan", 1],
   ["Between", "between", 2],
   ["IsNull", "isNull", 0],
   ["NotIn", "notIn", 1],

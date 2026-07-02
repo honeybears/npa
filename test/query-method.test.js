@@ -85,6 +85,66 @@ test("parses distinct, first/top, ignore-case, all-ignore-case, and multi-order 
   assert.equal(parseQueryMethod("findTopByName").limit, 1);
 });
 
+test("parses null, not, comparison, and date alias query operators", () => {
+  const parsed = parseQueryMethod(
+    "findByDeletedAtIsNullAndUpdatedAtIsNotNullAndNameNotAndAgeLessThanEqualAndScoreGreaterThanEqualAndCreatedAtBeforeAndExpiresAtAfter",
+  );
+
+  assert.deepEqual(
+    parsed.predicate.map((part) => ({
+      connector: part.connector,
+      property: part.condition.property,
+      operator: part.condition.operator,
+      parameterIndex: part.condition.parameterIndex,
+    })),
+    [
+      {
+        connector: undefined,
+        property: "deletedAt",
+        operator: "isNull",
+        parameterIndex: undefined,
+      },
+      {
+        connector: "and",
+        property: "updatedAt",
+        operator: "isNotNull",
+        parameterIndex: undefined,
+      },
+      {
+        connector: "and",
+        property: "name",
+        operator: "not",
+        parameterIndex: 0,
+      },
+      {
+        connector: "and",
+        property: "age",
+        operator: "lessThanEqual",
+        parameterIndex: 1,
+      },
+      {
+        connector: "and",
+        property: "score",
+        operator: "greaterThanEqual",
+        parameterIndex: 2,
+      },
+      {
+        connector: "and",
+        property: "createdAt",
+        operator: "lessThan",
+        parameterIndex: 3,
+      },
+      {
+        connector: "and",
+        property: "expiresAt",
+        operator: "greaterThan",
+        parameterIndex: 4,
+      },
+    ],
+  );
+  assert.equal(parsed.parameterCount, 5);
+});
+
 test("rejects exact duplicate predicates before execution", () => {
   const repository = createQueryMethodProxy({}, () => "ok");
 
@@ -107,6 +167,14 @@ test("validates derived query parameter count before execution", () => {
 
   assert.throws(
     () => repository.findByNameAndAge("kim"),
+    /expects 2 parameter\(s\), received 1/,
+  );
+  assert.throws(
+    () => repository.findByName("kim", "extra"),
+    /expects 1 parameter\(s\), received 2/,
+  );
+  assert.throws(
+    () => repository.findByAgeBetween(1),
     /expects 2 parameter\(s\), received 1/,
   );
 });
@@ -257,8 +325,18 @@ test("handles null and empty list query parameters in memory", () => {
   assert.deepEqual(repository.findByStatus(null), [rows[0]]);
   assert.deepEqual(repository.findByNameIsNull(), [rows[2]]);
   assert.deepEqual(repository.findByStatusIsNotNull(), [rows[1], rows[2]]);
-  assert.deepEqual(repository.findByStatusIn([]), []);
-  assert.deepEqual(repository.findByStatusNotIn([]), rows);
+  assert.throws(
+    () => repository.findByStatusIn("active"),
+    /expects an array parameter/,
+  );
+  assert.throws(
+    () => repository.findByStatusIn([]),
+    /expects a non-empty array parameter/,
+  );
+  assert.throws(
+    () => repository.findByStatusNotIn([]),
+    /expects a non-empty array parameter/,
+  );
   assert.throws(
     () => repository.findByStatus(undefined),
     /must not be undefined/,

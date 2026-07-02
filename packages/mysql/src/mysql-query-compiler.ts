@@ -126,9 +126,9 @@ class MysqlQueryCompiler {
           (value) => normalizeCaseValue(`%${value}%`, ignoreCase),
         )}`;
       case "in":
-        return this.listCondition(column, condition, "IN", "0 = 1", ignoreCase);
+        return this.listCondition(column, condition, "IN", ignoreCase);
       case "notIn":
-        return this.listCondition(column, condition, "NOT IN", "1 = 1", ignoreCase);
+        return this.listCondition(column, condition, "NOT IN", ignoreCase);
       case "isNull":
         return `${column} IS NULL`;
       case "isNotNull":
@@ -144,7 +144,6 @@ class MysqlQueryCompiler {
     column: string,
     condition: QueryCondition,
     operator: "IN" | "NOT IN",
-    emptySql: string,
     ignoreCase: boolean,
   ): string {
     const value = this.arg(condition, requireParameterIndex(condition));
@@ -156,7 +155,9 @@ class MysqlQueryCompiler {
     }
 
     if (value.length === 0) {
-      return emptySql;
+      throw new Error(
+        `Query operator "${condition.operator}" expects a non-empty array parameter.`,
+      );
     }
 
     const placeholders = value

@@ -242,8 +242,14 @@ async function assertNullableStatusContract(repository) {
     (await repository.findByStatusIsNull()).map((row) => row.product_name),
     ["null status"],
   );
-  assert.deepEqual(await repository.findByStatusIn([]), []);
-  assert.equal((await repository.findByStatusNotIn([])).length, 2);
+  await assert.rejects(
+    () => repository.findByStatusIn([]),
+    /expects a non-empty array parameter/,
+  );
+  await assert.rejects(
+    () => repository.findByStatusNotIn([]),
+    /expects a non-empty array parameter/,
+  );
   await assert.rejects(
     () => repository.findByStatus(undefined),
     /must not be undefined/,

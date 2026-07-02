@@ -235,6 +235,12 @@ class QueryCompiler {
       );
     }
 
+    if (value.length === 0) {
+      throw new Error(
+        `Query operator "${condition.operator}" expects a non-empty array parameter.`,
+      );
+    }
+
     return this.push(value.map((item) =>
       normalizeCaseValue(this.normalizeConditionValue(condition, item), ignoreCase),
     ));

@@ -34,10 +34,26 @@ export function readRelationForeignKeyValue(
   const record = value as Record<string, unknown>;
 
   if (targetPrimaryColumn.propertyName in record) {
-    return record[targetPrimaryColumn.propertyName];
+    return requireRelationPrimaryValue(
+      relation,
+      targetMetadata,
+      targetPrimaryColumn.propertyName,
+      record[targetPrimaryColumn.propertyName],
+    );
   }
 
-  return record[targetPrimaryColumn.columnName];
+  if (targetPrimaryColumn.columnName in record) {
+    return requireRelationPrimaryValue(
+      relation,
+      targetMetadata,
+      targetPrimaryColumn.columnName,
+      record[targetPrimaryColumn.columnName],
+    );
+  }
+
+  throw new Error(
+    `Relation ${relation.propertyName} requires ${targetMetadata.target.name}.${targetPrimaryColumn.propertyName} or ${targetPrimaryColumn.columnName}.`,
+  );
 }
 
 export function readEntityPrimaryValue(
@@ -86,4 +102,19 @@ function toSnakeCase(value: string): string {
   return value.replace(/[A-Z]/g, (match, index) =>
     `${index === 0 ? "" : "_"}${match.toLowerCase()}`,
   );
+}
+
+function requireRelationPrimaryValue(
+  relation: RelationMetadata,
+  targetMetadata: EntityMetadata,
+  propertyName: string,
+  value: unknown,
+): unknown {
+  if (value === null || value === undefined) {
+    throw new Error(
+      `Relation ${relation.propertyName} requires ${targetMetadata.target.name}.${propertyName}.`,
+    );
+  }
+
+  return value;
 }

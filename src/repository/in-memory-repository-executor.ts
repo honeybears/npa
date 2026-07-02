@@ -140,11 +140,11 @@ function matchesCondition<TEntity extends object>(
       assertDefinedQueryParameter(condition, expected);
       return String(actual).includes(String(expected));
     case "in":
-      assertDefinedQueryParameter(condition, expected);
-      return Array.isArray(expected) && expected.includes(actual);
+      assertNonEmptyArrayQueryParameter(condition, expected);
+      return expected.includes(actual);
     case "notIn":
-      assertDefinedQueryParameter(condition, expected);
-      return Array.isArray(expected) && !expected.includes(actual);
+      assertNonEmptyArrayQueryParameter(condition, expected);
+      return !expected.includes(actual);
     case "isNull":
       return actual === null || actual === undefined;
     case "isNotNull":
@@ -182,6 +182,23 @@ function assertDefinedQueryParameter(
   if (value === undefined) {
     throw new Error(
       `Query parameter for "${condition.property}" must not be undefined.`,
+    );
+  }
+}
+
+function assertNonEmptyArrayQueryParameter(
+  condition: QueryCondition,
+  value: unknown,
+): asserts value is unknown[] {
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `Query operator "${condition.operator}" expects an array parameter.`,
+    );
+  }
+
+  if (value.length === 0) {
+    throw new Error(
+      `Query operator "${condition.operator}" expects a non-empty array parameter.`,
     );
   }
 }

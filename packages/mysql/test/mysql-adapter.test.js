@@ -167,32 +167,28 @@ test("compiles MySQL null and empty-list derived query parameters", () => {
     },
   );
 
-  assert.deepEqual(
-    compileMysqlQuery(
-      {
-        query: parseQueryMethod("findByStatusIn"),
-        args: [[]],
-      },
-      { entity: Product },
-    ),
-    {
-      text: "SELECT * FROM `shop`.`products` WHERE (0 = 1)",
-      values: [],
-    },
+  assert.throws(
+    () =>
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByStatusIn"),
+          args: [[]],
+        },
+        { entity: Product },
+      ),
+    /expects a non-empty array parameter/,
   );
 
-  assert.deepEqual(
-    compileMysqlQuery(
-      {
-        query: parseQueryMethod("findByStatusNotIn"),
-        args: [[]],
-      },
-      { entity: Product },
-    ),
-    {
-      text: "SELECT * FROM `shop`.`products` WHERE (1 = 1)",
-      values: [],
-    },
+  assert.throws(
+    () =>
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByStatusNotIn"),
+          args: [[]],
+        },
+        { entity: Product },
+      ),
+    /expects a non-empty array parameter/,
   );
 
   assert.throws(
@@ -237,6 +233,18 @@ test("compiles MySQL derived queries across relation fields", () => {
         "SELECT * FROM `members` WHERE (`team_id` IN (?, ?))",
       values: [7, 8],
     },
+  );
+
+  assert.throws(
+    () =>
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByTeam"),
+          args: [{ label: "platform" }],
+        },
+        { entity: Member },
+      ),
+    /Relation team requires Team.id or team_id/,
   );
 
   assert.deepEqual(

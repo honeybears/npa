@@ -164,32 +164,28 @@ test("compiles PostgreSQL null and empty-list derived query parameters", () => {
     },
   );
 
-  assert.deepEqual(
-    compilePostgresqlQuery(
-      {
-        query: parseQueryMethod("findByStatusIn"),
-        args: [[]],
-      },
-      { tableName: "users" },
-    ),
-    {
-      text: 'SELECT * FROM "users" WHERE ("status" = ANY($1))',
-      values: [[]],
-    },
+  assert.throws(
+    () =>
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByStatusIn"),
+          args: [[]],
+        },
+        { tableName: "users" },
+      ),
+    /expects a non-empty array parameter/,
   );
 
-  assert.deepEqual(
-    compilePostgresqlQuery(
-      {
-        query: parseQueryMethod("findByStatusNotIn"),
-        args: [[]],
-      },
-      { tableName: "users" },
-    ),
-    {
-      text: 'SELECT * FROM "users" WHERE ("status" <> ALL($1))',
-      values: [[]],
-    },
+  assert.throws(
+    () =>
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByStatusNotIn"),
+          args: [[]],
+        },
+        { tableName: "users" },
+      ),
+    /expects a non-empty array parameter/,
   );
 
   assert.throws(
@@ -234,6 +230,18 @@ test("compiles PostgreSQL derived queries across relation fields", () => {
         'SELECT * FROM "members" WHERE ("team_id" = ANY($1))',
       values: [[7, 8]],
     },
+  );
+
+  assert.throws(
+    () =>
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByTeam"),
+          args: [{ label: "platform" }],
+        },
+        { entity: PgMember },
+      ),
+    /Relation team requires PgTeam.id or team_id/,
   );
 
   assert.deepEqual(
