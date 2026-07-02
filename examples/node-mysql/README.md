@@ -10,8 +10,9 @@ repositories are registered without passing `repositories` manually.
 pnpm --filter npa-example-node-mysql demo
 ```
 
-Without `DATABASE_URL`, the demo uses a logging queryable and prints generated
-SQL. With `DATABASE_URL`, it uses `mysql2/promise` through `MysqlConnection`.
+Without `DATABASE_URL`, the demo starts a MySQL Testcontainer and seeds the
+`users` table. With `DATABASE_URL`, it uses `mysql2/promise` through
+`MysqlConnection`.
 
 ```bash
 export DATABASE_URL=mysql://root:root@localhost:3306/npa_demo

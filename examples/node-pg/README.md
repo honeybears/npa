@@ -10,8 +10,9 @@ repositories are registered without passing `repositories` manually.
 pnpm --filter npa-example-node-pg demo
 ```
 
-Without `DATABASE_URL`, the demo uses a logging queryable and prints generated
-SQL. With `DATABASE_URL`, it uses `pg.Pool` through `PostgresqlConnection`.
+Without `DATABASE_URL`, the demo starts a PostgreSQL Testcontainer and seeds
+the `users` table. With `DATABASE_URL`, it uses `pg.Pool` through
+`PostgresqlConnection`.
 
 ```bash
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/npa_demo

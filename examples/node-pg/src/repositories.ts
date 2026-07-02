@@ -1,1 +1,1 @@
-export { UserRepository } from "./user.entity";
+export { UserRepository } from "./user.repository";
