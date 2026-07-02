@@ -281,9 +281,12 @@ exported `@Entity` classes and applies the current schema directly to the
 database. It creates missing tables, adds missing columns, changes supported
 column types/nullability, drops columns removed from the entity, creates normal
 and unique indexes, creates `@ManyToOne` foreign keys, and creates
-`@ManyToMany({ joinTable })` tables with foreign keys. Rename detection is not
-inferred; a rename is treated as a drop plus add, so review dry-run SQL before
-applying it.
+`@ManyToMany({ joinTable })` tables with foreign keys. Destructive statements
+such as dropped columns and risky type/nullability changes require
+`--allow-destructive` before they can be applied. Rename detection is explicit:
+pass `--rename table:old_name=new_name` or
+`--rename column:users.old_name=new_name` when a change should be generated as
+a rename instead of drop plus add.
 
 Create `npa.config.mjs`:
 
@@ -320,16 +323,19 @@ npa migrate deploy
 
 `migrate dev` applies pending local migration files, creates a new
 `npa/migrations/<timestamp>_<name>/migration.sql` from the current entity diff,
-and applies it unless `--create-only` is passed. `migrate deploy` does not parse
-entities; it applies pending migration files in order and verifies their
-checksums against `_npa_migrations`. You can also pass flags directly:
+writes a best-effort `down.sql`, and applies it unless `--create-only` is
+passed. `migrate deploy` does not parse entities; it applies pending migration
+files in order, verifies their checksums against `_npa_migrations`, and fails
+when the database contains applied migration history that is missing locally
+unless `--allow-drift` is passed. You can also pass flags directly:
 
 ```bash
 npa migrate dev \
   --name add_users \
   --adapter mysql \
   --url "$DATABASE_URL" \
-  --entities "src/**/*.entity.ts"
+  --entities "src/**/*.entity.ts" \
+  --rename "column:users.full_name=name"
 ```
 
 Default TypeScript-to-DB mapping is intentionally small: `string`, `number`,
@@ -532,7 +538,7 @@ before treating NPA as a fuller ORM:
 - Batching: add findUnique-style same-tick batching and relation-loading batching inside transaction-aware scopes.
 - Relations: support cascade persist/remove, orphan removal, eager/lazy fetch strategies, and safer relation mutation helpers.
 - Entity mapping: add composite keys, enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
-- Migrations: add rename detection, down migrations, destructive-change guards, drift detection, data migration hooks, and richer DDL for defaults/generated columns/enums.
+- Migrations: add data migration hooks and richer DDL for defaults/generated columns/enums.
 - Transactions: add savepoint-backed nested transactions, more propagation modes, and stricter read-only/flush behavior.
 - Operations: add SQL logging, slow-query hooks, metrics/tracing, normalized driver errors, retry policy hooks, and clearer connection ownership docs.
 - Tooling: harden package publishing, keep examples current, and expand editor support beyond the VS Code MVP.

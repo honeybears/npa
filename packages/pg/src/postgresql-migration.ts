@@ -5,8 +5,13 @@ import type {
   MigrationEntitySchema,
   MigrationFile,
   MigrationIndexSchema,
+  MigrationRename,
   MigrationResult,
   MigrationRunOptions,
+} from "@node-persistence-api/core";
+import {
+  assertSafeMigrationStatements,
+  createDownMigrationStatements,
 } from "@node-persistence-api/core";
 import { MigrationRelationKind } from "@node-persistence-api/core";
 import { createHash } from "node:crypto";
@@ -88,6 +93,7 @@ interface PostgresqlForeignKeyRow {
 }
 
 interface PostgresqlHistoryRow {
+  name: string;
   checksum: string;
 }
 
@@ -134,13 +140,20 @@ export async function planPostgresqlMigration(
   options: MigrationRunOptions,
 ): Promise<MigrationResult> {
   if (!options.url) {
+    if (options.renames?.length) {
+      throw new Error("PostgreSQL migration renames require a database url.");
+    }
+
     const statements = compilePostgresqlSchemaStatements(options.entities);
+    const downStatements = createDownMigrationStatements(options.adapter, statements);
 
     return {
       status: "dry-run",
       checksum: options.checksum,
       statements,
       statementCount: statements.length,
+      downStatements,
+      downStatementCount: downStatements.length,
     };
   }
 
@@ -149,17 +162,28 @@ export async function planPostgresqlMigration(
   try {
     const namespaceStatements = compilePostgresqlNamespaceStatements(options.entities);
     const desiredTables = buildDesiredTables(options.entities);
-    const currentTables = await readCurrentTables(connection, desiredTables);
+    const currentTables = await readCurrentTables(
+      connection,
+      migrationReadTables(desiredTables, options.renames),
+    );
+    const renameStatements = compilePostgresqlRenameStatements(
+      currentTables,
+      options.renames ?? [],
+    );
     const statements = [
       ...namespaceStatements,
+      ...renameStatements,
       ...compilePostgresqlTableDiffStatements(desiredTables, currentTables),
     ];
+    const downStatements = createDownMigrationStatements(options.adapter, statements);
 
     return {
       status: "dry-run",
       checksum: options.checksum,
       statements,
       statementCount: statements.length,
+      downStatements,
+      downStatementCount: downStatements.length,
     };
   } finally {
     await connection.close();
@@ -182,6 +206,8 @@ export async function migratePostgresql(
       checksum: options.checksum,
       statements,
       statementCount: statements.length,
+      downStatements: plan.downStatements,
+      downStatementCount: plan.downStatementCount,
     };
   }
 
@@ -209,6 +235,8 @@ export async function migratePostgresql(
         checksum: options.checksum,
         statements,
         statementCount: statements.length,
+        downStatements: plan.downStatements,
+        downStatementCount: plan.downStatementCount,
       };
     }
 
@@ -237,9 +265,21 @@ export async function migratePostgresql(
       }
 
       const desiredTables = buildDesiredTables(options.entities);
-      const currentTables = await readCurrentTables(connection, desiredTables);
-      const tableStatements = compilePostgresqlTableDiffStatements(desiredTables, currentTables);
+      const currentTables = await readCurrentTables(
+        connection,
+        migrationReadTables(desiredTables, options.renames),
+      );
+      const renameStatements = compilePostgresqlRenameStatements(
+        currentTables,
+        options.renames ?? [],
+      );
+      const tableStatements = [
+        ...renameStatements,
+        ...compilePostgresqlTableDiffStatements(desiredTables, currentTables),
+      ];
       const migrationStatements = [...namespaceStatements, ...tableStatements];
+
+      assertSafeMigrationStatements(tableStatements, options);
 
       for (const statement of tableStatements) {
         await connection.query(statement);
@@ -282,6 +322,7 @@ export async function deployPostgresqlMigrations(
 
     try {
       await connection.query(compilePostgresqlHistoryTable(options.historyTable));
+      await assertNoPostgresqlHistoryDrift(connection, options);
       const results: MigrationDeployResult["migrations"] = [];
       let statementCount = 0;
       let pendingCount = 0;
@@ -312,6 +353,8 @@ export async function deployPostgresqlMigrations(
         if (options.dryRun) {
           continue;
         }
+
+        assertSafeMigrationStatements(migration.statements, options);
 
         for (const statement of migration.statements) {
           await connection.query(statement);
@@ -432,6 +475,81 @@ function compilePostgresqlTableDiffStatements(
   }
 
   return [...statements, ...foreignKeyStatements];
+}
+
+function migrationReadTables(
+  desiredTables: MigrationTableSchema[],
+  renames: MigrationRename[] | undefined,
+): MigrationTableSchema[] {
+  const tables = new Map(desiredTables.map((table) => [tableKey(table), table]));
+
+  for (const rename of renames ?? []) {
+    const table = rename.kind === "table" ? rename.from : rename.table;
+    const key = tableKey(table);
+
+    if (!tables.has(key)) {
+      tables.set(key, {
+        ...table,
+        columns: [],
+        indexes: [],
+        foreignKeys: [],
+      });
+    }
+  }
+
+  return [...tables.values()].sort(compareTables);
+}
+
+function compilePostgresqlRenameStatements(
+  currentTables: Map<string, CurrentTableSchema>,
+  renames: MigrationRename[],
+): string[] {
+  const statements: string[] = [];
+
+  for (const rename of renames) {
+    if (rename.kind === "table") {
+      if ((rename.from.schema ?? "public") !== (rename.to.schema ?? "public")) {
+        throw new Error("PostgreSQL table renames cannot move tables between schemas.");
+      }
+
+      const fromKey = tableKey(rename.from);
+      const toKey = tableKey(rename.to);
+      const fromTable = currentTables.get(fromKey);
+      const toTable = currentTables.get(toKey);
+
+      if (fromTable?.exists && !toTable?.exists) {
+        statements.push(
+          `ALTER TABLE ${qualifiedTable(rename.from)} RENAME TO ${quoteQualifiedIdentifier(rename.to.tableName)}`,
+        );
+        currentTables.set(toKey, fromTable);
+        currentTables.delete(fromKey);
+      }
+
+      continue;
+    }
+
+    const table = currentTables.get(tableKey(rename.table));
+
+    if (!table?.exists) {
+      continue;
+    }
+
+    const source = table.columns.get(rename.from);
+    const target = table.columns.get(rename.to);
+
+    if (source && !target) {
+      statements.push(
+        `ALTER TABLE ${qualifiedTable(rename.table)} RENAME COLUMN ${quoteQualifiedIdentifier(rename.from)} TO ${quoteQualifiedIdentifier(rename.to)}`,
+      );
+      table.columns.delete(rename.from);
+      table.columns.set(rename.to, {
+        ...source,
+        columnName: rename.to,
+      });
+    }
+  }
+
+  return statements;
 }
 
 function compilePostgresqlCreateTableStatements(table: MigrationTableSchema): string[] {
@@ -1070,11 +1188,46 @@ async function readHistoryRecord(
   name: string,
 ): Promise<PostgresqlHistoryRow | undefined> {
   const result = await connection.query<PostgresqlHistoryRow>(
-    `SELECT checksum FROM ${quoteQualifiedIdentifier(historyTable)} WHERE name = $1 LIMIT 1`,
+    `SELECT name, checksum FROM ${quoteQualifiedIdentifier(historyTable)} WHERE name = $1 LIMIT 1`,
     [name],
   );
 
   return result.rows[0];
+}
+
+async function readHistoryRecords(
+  connection: PostgresqlConnection,
+  historyTable: string,
+): Promise<PostgresqlHistoryRow[]> {
+  const result = await connection.query<PostgresqlHistoryRow>(
+    `SELECT name, checksum FROM ${quoteQualifiedIdentifier(historyTable)} ORDER BY name`,
+  );
+
+  return result.rows;
+}
+
+async function assertNoPostgresqlHistoryDrift(
+  connection: PostgresqlConnection,
+  options: MigrationDeployOptions,
+): Promise<void> {
+  if (options.allowDrift) {
+    return;
+  }
+
+  const localMigrations = new Map(
+    options.migrations.map((migration) => [migration.name, migration.checksum]),
+  );
+  const unknown = (await readHistoryRecords(connection, options.historyTable))
+    .filter((record) => record.name !== MIGRATION_NAME)
+    .filter((record) => !localMigrations.has(record.name));
+
+  if (unknown.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `Migration history drift detected. Applied migration(s) missing locally: ${unknown.map((record) => record.name).join(", ")}. Use --allow-drift to bypass.`,
+  );
 }
 
 async function upsertHistory(

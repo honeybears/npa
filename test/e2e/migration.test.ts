@@ -130,8 +130,21 @@ describe("migration E2E", () => {
           skuUniqueIndexName,
           withRelations: true,
         });
-        const altered = runCli(
+        const blockedAlter = runCli(
           ["db", "push", "--config", "npa.config.mjs"],
+          root,
+        );
+        expect(blockedAlter.status).not.toEqual(0);
+        expect(blockedAlter.stderr).toMatch(/--allow-destructive/);
+
+        const altered = runCli(
+          [
+            "db",
+            "push",
+            "--allow-destructive",
+            "--config",
+            "npa.config.mjs",
+          ],
           root,
         );
         expectCliSuccess(altered);
@@ -177,6 +190,121 @@ describe("migration E2E", () => {
         try {
           if (queryable) {
             for (const table of [
+              joinTableName,
+              categoryTableName,
+              tableName,
+              "_npa_migrations",
+            ]) {
+              await adapter.executeSql(
+                queryable,
+                `DROP TABLE IF EXISTS ${adapter.quoteIdentifier(table)}`,
+              );
+            }
+          }
+        } finally {
+          if (queryable) {
+            await adapter.closeQueryable(queryable);
+          }
+          await container.stop();
+        }
+      }
+    }, 240_000);
+
+    test(`renames columns and guards migration history drift for ${adapter.name}`, async () => {
+      const tableName = uniqueTableName(`${adapter.tablePrefix}_rename`);
+      const categoryTableName = uniqueTableName(
+        `${adapter.tablePrefix}_rename_category`,
+      );
+      const joinTableName = uniqueTableName(`${adapter.tablePrefix}_rename_join`);
+      const auditTableName = uniqueTableName(`${adapter.tablePrefix}_drift_audit`);
+      const statusIndexName = uniqueTableName(
+        `${adapter.tablePrefix}_rename_status_idx`,
+      );
+      const skuUniqueIndexName = uniqueTableName(
+        `${adapter.tablePrefix}_rename_sku_uidx`,
+      );
+      const container = await startContainerOrSkip(adapter.createContainer());
+
+      if (!container) {
+        return;
+      }
+
+      let queryable;
+
+      try {
+        const root = makeMigrationProject({
+          adapter: adapter.adapterName,
+          tableName,
+          categoryTableName,
+          joinTableName,
+          statusIndexName,
+          skuUniqueIndexName,
+          url: container.getConnectionUri(),
+        });
+
+        const first = runCli(
+          ["db", "push", "--config", "npa.config.mjs"],
+          root,
+        );
+        expectCliSuccess(first);
+
+        writeRenamedProductEntity(root, { tableName });
+        const renamed = runCli(
+          [
+            "db",
+            "push",
+            "--rename",
+            `column:${tableName}.legacy_code=external_code`,
+            "--config",
+            "npa.config.mjs",
+          ],
+          root,
+        );
+        expectCliSuccess(renamed);
+        expect(renamed.stdout).toMatch(/Pushed database schema/);
+
+        queryable = await adapter.createQueryable(container);
+        const productColumns = await readColumnNames(
+          adapter,
+          queryable,
+          tableName,
+        );
+        expect(productColumns.includes("external_code")).toEqual(true);
+        expect(productColumns.includes("legacy_code")).toEqual(false);
+
+        await adapter.executeSql(
+          queryable,
+          insertMigrationHistorySql(
+            adapter,
+            "99999999999990_remote_only",
+          ),
+        );
+        writePendingMigration(root, "99999999999991_create_audit", [
+          createAuditTableSql(adapter, auditTableName),
+        ]);
+
+        const drift = runCli(
+          ["migrate", "deploy", "--config", "npa.config.mjs"],
+          root,
+        );
+        expect(drift.status).not.toEqual(0);
+        expect(drift.stderr).toMatch(/Migration history drift detected/);
+
+        const allowed = runCli(
+          ["migrate", "deploy", "--allow-drift", "--config", "npa.config.mjs"],
+          root,
+        );
+        expectCliSuccess(allowed);
+        expect(allowed.stdout).toMatch(/Applied 1 migration\(s\)/);
+        expect(await readColumnNames(adapter, queryable, auditTableName)).toEqual([
+          "audit_id",
+          "message",
+        ]);
+      } finally {
+        try {
+          if (queryable) {
+            for (const table of [
+              auditTableName,
               joinTableName,
               categoryTableName,
               tableName,
@@ -251,6 +379,11 @@ describe("migration E2E", () => {
         expect(
           fs.existsSync(
             path.join(migrationRoot, migrationDirs[0], "migration.sql"),
+          ),
+        ).toEqual(true);
+        expect(
+          fs.existsSync(
+            path.join(migrationRoot, migrationDirs[0], "down.sql"),
           ),
         ).toEqual(true);
         const migrationFilePath = path.join(
@@ -480,6 +613,43 @@ export class Category {
   );
 }
 
+function writeRenamedProductEntity(root, options) {
+  fs.writeFileSync(
+    path.join(root, "src", "product.entity.ts"),
+    `
+import { Column, Entity, GenerationStrategy, Id, Version } from "@node-persistence-api/core";
+
+@Entity({ name: ${JSON.stringify(options.tableName)} })
+export class Product {
+  @Id({ name: "product_id", generationStrategy: GenerationStrategy.AUTO_INCREMENT })
+  id?: number;
+
+  @Column({ name: "product_name" })
+  name!: string;
+
+  @Column()
+  price!: number;
+
+  @Column()
+  active!: boolean;
+
+  @Column()
+  status!: string;
+
+  @Column({ name: "created_at" })
+  createdAt!: Date;
+
+  @Version()
+  version!: number;
+
+  @Column({ name: "external_code", nullable: true })
+  externalCode?: string | null;
+}
+`,
+    "utf8",
+  );
+}
+
 function writePendingMigration(root, name, statements) {
   const migrationRoot = path.join(root, "npa", "migrations", name);
   fs.mkdirSync(migrationRoot, { recursive: true });
@@ -515,6 +685,14 @@ function addAuditReviewedColumnSql(adapter, tableName) {
     ALTER TABLE ${adapter.quoteIdentifier(tableName)}
     ADD COLUMN reviewed BOOLEAN NOT NULL DEFAULT FALSE
   `;
+}
+
+function insertMigrationHistorySql(adapter, name) {
+  return [
+    `INSERT INTO ${adapter.quoteIdentifier("_npa_migrations")}`,
+    "(name, checksum, adapter, statement_count)",
+    `VALUES ('${name}', '${"a".repeat(64)}', '${adapter.adapterName}', 0)`,
+  ].join("\n");
 }
 
 async function readColumnNames(adapter, queryable, tableName) {

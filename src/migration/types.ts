@@ -62,6 +62,26 @@ export interface MigrationEntitySchema {
   relations: MigrationRelationSchema[];
 }
 
+export interface MigrationTableReference {
+  schema?: string;
+  tableName: string;
+}
+
+export interface MigrationTableRename {
+  kind: "table";
+  from: MigrationTableReference;
+  to: MigrationTableReference;
+}
+
+export interface MigrationColumnRename {
+  kind: "column";
+  table: MigrationTableReference;
+  from: string;
+  to: string;
+}
+
+export type MigrationRename = MigrationTableRename | MigrationColumnRename;
+
 export interface MigrationConfigFile {
   adapter?: MigrationAdapterName;
   url?: string;
@@ -97,6 +117,8 @@ export interface MigrationRunOptions {
   checksum: string;
   historyTable: string;
   dryRun?: boolean;
+  allowDestructive?: boolean;
+  renames?: MigrationRename[];
 }
 
 export interface MigrationResult {
@@ -104,6 +126,8 @@ export interface MigrationResult {
   checksum: string;
   statements: string[];
   statementCount: number;
+  downStatements?: string[];
+  downStatementCount?: number;
   previousChecksum?: string;
 }
 
@@ -116,7 +140,10 @@ export interface MigrationFile {
   checksum: string;
   statements: string[];
   statementCount: number;
+  downStatements: string[];
+  downStatementCount: number;
   filePath?: string;
+  downFilePath?: string;
 }
 
 export interface MigrationDeployOptions {
@@ -125,6 +152,8 @@ export interface MigrationDeployOptions {
   historyTable: string;
   migrations: MigrationFile[];
   dryRun?: boolean;
+  allowDestructive?: boolean;
+  allowDrift?: boolean;
 }
 
 export interface MigrationDeployItemResult {

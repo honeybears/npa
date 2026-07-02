@@ -25,7 +25,7 @@ async function runNPACli(argv: string[], cwd = process.cwd()): Promise<number> {
 
 function printHelp(): void {
   process.stdout.write(`Usage:
-  npa db push [--config npa.config.mjs] [--dry-run]
+  npa db push [--config npa.config.mjs] [--dry-run] [--allow-destructive]
   npa migrate dev [--name init] [--config npa.config.mjs]
   npa migrate deploy [--config npa.config.mjs]
 
@@ -36,6 +36,9 @@ Database and migrate options:
   --entities <patterns> Comma-separated entity source globs.
   --name <name>         Migration directory suffix for migrate dev.
   --create-only         Create a migration file without applying it.
+  --rename <mapping>    Explicit rename, e.g. table:old=new or column:users.old=new.
+  --allow-destructive   Allow drops and risky type/nullability changes.
+  --allow-drift         Allow applied migration history that is missing locally.
   --dry-run             Print SQL without changing the database.
 `);
 }

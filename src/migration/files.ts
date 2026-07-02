@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { MigrationFile } from "./types";
 
 const MIGRATION_FILE_NAME = "migration.sql";
+const DOWN_MIGRATION_FILE_NAME = "down.sql";
 
 export function createMigrationChecksumFromSql(sql: string): string {
   return crypto
@@ -60,36 +61,55 @@ export function writeMigrationFile(
   migrationsDir: string,
   migrationName: string | undefined,
   statements: string[],
+  options: { downStatements?: string[] } = {},
 ): MigrationFile {
   const root = path.resolve(cwd, migrationsDir);
   const directoryName = createMigrationDirectoryName(root, migrationName);
   const directoryPath = path.join(root, directoryName);
   const filePath = path.join(directoryPath, MIGRATION_FILE_NAME);
+  const downFilePath = path.join(directoryPath, DOWN_MIGRATION_FILE_NAME);
   const sql = formatMigrationSql(statements);
   const parsedStatements = splitMigrationSql(sql);
+  const downSql = formatMigrationSql(options.downStatements ?? []);
+  const downStatements = splitMigrationSql(downSql);
 
   fs.mkdirSync(directoryPath, { recursive: true });
   fs.writeFileSync(filePath, sql, "utf8");
+
+  if (downSql) {
+    fs.writeFileSync(downFilePath, downSql, "utf8");
+  }
 
   return {
     name: directoryName,
     checksum: createMigrationChecksumFromSql(sql),
     statements: parsedStatements,
     statementCount: parsedStatements.length,
+    downStatements,
+    downStatementCount: downStatements.length,
     filePath,
+    ...(downSql ? { downFilePath } : {}),
   };
 }
 
 function readMigrationFile(name: string, filePath: string): MigrationFile {
   const sql = fs.readFileSync(filePath, "utf8");
   const statements = splitMigrationSql(sql);
+  const downFilePath = path.join(path.dirname(filePath), DOWN_MIGRATION_FILE_NAME);
+  const downSql = fs.existsSync(downFilePath)
+    ? fs.readFileSync(downFilePath, "utf8")
+    : "";
+  const downStatements = splitMigrationSql(downSql);
 
   return {
     name,
     checksum: createMigrationChecksumFromSql(sql),
     statements,
     statementCount: statements.length,
+    downStatements,
+    downStatementCount: downStatements.length,
     filePath,
+    ...(downSql ? { downFilePath } : {}),
   };
 }
 

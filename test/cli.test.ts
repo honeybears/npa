@@ -14,6 +14,9 @@ describe("migration CLI", () => {
     expect(result.stdout).toMatch(/npa db push/);
     expect(result.stdout).toMatch(/npa migrate dev/);
     expect(result.stdout).toMatch(/npa migrate deploy/);
+    expect(result.stdout).toMatch(/--allow-destructive/);
+    expect(result.stdout).toMatch(/--allow-drift/);
+    expect(result.stdout).toMatch(/--rename/);
   });
 
   test("rejects removed generate command", () => {
@@ -96,7 +99,30 @@ describe("migration CLI", () => {
     expect(result.stdout).toMatch(/Adapter: mysql/);
     expect(result.stdout).toMatch(/Migration name: init/);
     expect(result.stdout).toMatch(/CREATE TABLE IF NOT EXISTS `products`/);
+    expect(result.stdout).toMatch(/Down statements:/);
+    expect(result.stdout).toMatch(/DROP TABLE IF EXISTS `products`/);
     expect(result.stdout).not.toMatch(/_npa_migrations/);
+  });
+
+  test("rejects explicit renames without database url", () => {
+    const root = makeCliFixtureProject();
+    const result = runCli(
+      [
+        "migrate",
+        "dev",
+        "--dry-run",
+        "--adapter",
+        "postgresql",
+        "--entities",
+        "src/**/*.entity.ts",
+        "--rename",
+        "column:products.old_name=product_name",
+      ],
+      root,
+    );
+
+    expect(result.status).toEqual(1);
+    expect(result.stderr).toMatch(/renames require database url/);
   });
 
   test("skips migrate deploy when no migration files exist", () => {

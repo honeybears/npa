@@ -4,10 +4,13 @@ import { createMigrationChecksum } from "./checksum";
 import { loadMigrationConfig } from "./config";
 import { discoverEntitySchemas } from "./entity-schema";
 import { loadMigrationFiles, writeMigrationFile } from "./files";
+import { assertSafeMigrationStatements } from "./safety";
 import {
   MigrationDeployResult,
   MigrationFile,
+  MigrationRename,
   MigrationResult,
+  MigrationTableReference,
 } from "./types";
 
 export async function runMigrateCommand(args: string[], cwd: string): Promise<void> {
@@ -45,12 +48,18 @@ async function runDbPushCommand(
   cwd: string,
   options: { legacy?: boolean } = {},
 ): Promise<void> {
-  const values = parseFlags(args, new Set(["dry-run"]));
+  const values = parseFlags(args, new Set(["dry-run", "allow-destructive"]));
   const dryRun = values.dryRun === "true";
+  const allowDestructive = values.allowDestructive === "true";
+  const renames = values.rename ? parseRenames(values.rename) : [];
   const config = await loadConfig(cwd, values);
 
   if (!dryRun && !config.url) {
     throw new Error("Database push requires database url unless --dry-run is used.");
+  }
+
+  if (renames.length > 0 && !config.url) {
+    throw new Error("Migration renames require database url.");
   }
 
   const entities = discoverEntitySchemas(cwd, config.entities);
@@ -70,19 +79,33 @@ async function runDbPushCommand(
     checksum,
     historyTable: config.migrations.table,
     dryRun,
+    allowDestructive,
+    renames,
   });
 
   writePushResult(result, config.adapter, options.legacy === true);
 }
 
 async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> {
-  const values = parseFlags(args, new Set(["dry-run", "create-only"]));
+  const values = parseFlags(args, new Set([
+    "dry-run",
+    "create-only",
+    "allow-destructive",
+    "allow-drift",
+  ]));
   const dryRun = values.dryRun === "true";
   const createOnly = values.createOnly === "true";
+  const allowDestructive = values.allowDestructive === "true";
+  const allowDrift = values.allowDrift === "true";
+  const renames = values.rename ? parseRenames(values.rename) : [];
   const config = await loadConfig(cwd, values);
 
   if (!dryRun && !config.url) {
     throw new Error("Migration dev requires database url unless --dry-run is used.");
+  }
+
+  if (renames.length > 0 && !config.url) {
+    throw new Error("Migration renames require database url.");
   }
 
   const entities = discoverEntitySchemas(cwd, config.entities);
@@ -102,6 +125,8 @@ async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> 
       url: config.url,
       historyTable: config.migrations.table,
       migrations: existingMigrations,
+      allowDestructive,
+      allowDrift,
     });
   }
 
@@ -113,6 +138,8 @@ async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> 
     checksum,
     historyTable: config.migrations.table,
     dryRun: true,
+    allowDestructive,
+    renames,
   });
 
   if (dryRun) {
@@ -125,11 +152,14 @@ async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> 
     return;
   }
 
+  assertSafeMigrationStatements(plan.statements, { allowDestructive });
+
   const migration = writeMigrationFile(
     cwd,
     config.migrations.dir,
     values.name,
     plan.statements,
+    { downStatements: plan.downStatements },
   );
 
   if (createOnly) {
@@ -144,6 +174,8 @@ async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> 
     url: config.url,
     historyTable: config.migrations.table,
     migrations: [migration],
+    allowDestructive,
+    allowDrift: true,
   });
 
   process.stdout.write(
@@ -152,8 +184,14 @@ async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> 
 }
 
 async function runMigrateDeployCommand(args: string[], cwd: string): Promise<void> {
-  const values = parseFlags(args, new Set(["dry-run"]));
+  const values = parseFlags(args, new Set([
+    "dry-run",
+    "allow-destructive",
+    "allow-drift",
+  ]));
   const dryRun = values.dryRun === "true";
+  const allowDestructive = values.allowDestructive === "true";
+  const allowDrift = values.allowDrift === "true";
   const config = await loadConfig(cwd, values);
 
   if (!config.url) {
@@ -176,6 +214,8 @@ async function runMigrateDeployCommand(args: string[], cwd: string): Promise<voi
     historyTable: config.migrations.table,
     migrations,
     dryRun,
+    allowDestructive,
+    allowDrift,
   });
 
   writeDeployResult(result, migrations, dryRun);
@@ -221,6 +261,14 @@ function writeMigrateDevDryRun(
 
   for (const statement of result.statements) {
     process.stdout.write(`${statement};\n`);
+  }
+
+  if (result.downStatements?.length) {
+    process.stdout.write(`Down statements: ${result.downStatementCount ?? result.downStatements.length}\n`);
+
+    for (const statement of result.downStatements) {
+      process.stdout.write(`${statement};\n`);
+    }
   }
 }
 
@@ -321,6 +369,90 @@ function splitList(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseRenames(value: string): MigrationRename[] {
+  return splitList(value).map(parseRename);
+}
+
+function parseRename(value: string): MigrationRename {
+  const [kind, mapping] = value.split(":", 2);
+  const [from, to] = mapping?.split("=", 2) ?? [];
+
+  if (!from || !to) {
+    throw new Error(
+      `Invalid --rename value "${value}". Use table:old=new or column:table.old=new.`,
+    );
+  }
+
+  if (kind === "table") {
+    return {
+      kind,
+      from: parseTableReference(from),
+      to: parseTableReference(to),
+    };
+  }
+
+  if (kind === "column") {
+    const source = parseColumnReference(from);
+    const target = to.includes(".") ? parseColumnReference(to) : undefined;
+
+    if (target && tableKey(source.table) !== tableKey(target.table)) {
+      throw new Error("Column rename source and target must be on the same table.");
+    }
+
+    return {
+      kind,
+      table: source.table,
+      from: source.columnName,
+      to: target?.columnName ?? to,
+    };
+  }
+
+  throw new Error(
+    `Invalid --rename kind "${kind}". Use table:old=new or column:table.old=new.`,
+  );
+}
+
+function parseTableReference(value: string): MigrationTableReference {
+  const parts = value.split(".").filter(Boolean);
+
+  if (parts.length === 1) {
+    return { tableName: parts[0] };
+  }
+
+  if (parts.length === 2) {
+    return { schema: parts[0], tableName: parts[1] };
+  }
+
+  throw new Error(`Invalid table reference "${value}".`);
+}
+
+function parseColumnReference(value: string): {
+  table: MigrationTableReference;
+  columnName: string;
+} {
+  const parts = value.split(".").filter(Boolean);
+
+  if (parts.length === 2) {
+    return {
+      table: { tableName: parts[0] },
+      columnName: parts[1],
+    };
+  }
+
+  if (parts.length === 3) {
+    return {
+      table: { schema: parts[0], tableName: parts[1] },
+      columnName: parts[2],
+    };
+  }
+
+  throw new Error(`Invalid column reference "${value}".`);
+}
+
+function tableKey(table: MigrationTableReference): string {
+  return `${table.schema ?? ""}.${table.tableName}`;
 }
 
 function toCamelCase(value: string): string {

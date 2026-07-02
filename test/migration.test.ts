@@ -4,9 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   MigrationRelationKind,
+  assertSafeMigrationStatements,
   createMigrationChecksum,
   createMigrationChecksumFromSql,
+  createDownMigrationStatements,
   discoverEntitySchemas,
+  findDestructiveMigrationStatements,
   formatMigrationSql,
   loadMigrationFiles,
   loadMigrationConfig,
@@ -568,13 +571,24 @@ describe("migration metadata", () => {
       "npa/migrations",
       "Init Products",
       statements,
+      {
+        downStatements: [
+          "ALTER TABLE products DROP COLUMN name",
+          "DROP TABLE products",
+        ],
+      },
     );
 
     expect(migration.name).toMatch(/^\d{14}_init_products$/);
     expect(path.basename(migration.filePath)).toEqual("migration.sql");
+    expect(path.basename(migration.downFilePath ?? "")).toEqual("down.sql");
     expect(migration.statementCount).toEqual(2);
+    expect(migration.downStatementCount).toEqual(2);
     expect(fs.readFileSync(migration.filePath, "utf8")).toEqual(
       `${statements[0]};\n\n${statements[1]};\n`,
+    );
+    expect(fs.readFileSync(migration.downFilePath ?? "", "utf8")).toEqual(
+      "ALTER TABLE products DROP COLUMN name;\n\nDROP TABLE products;\n",
     );
     expect(migration.checksum).toEqual(
       createMigrationChecksumFromSql(formatMigrationSql(statements)),
@@ -582,6 +596,48 @@ describe("migration metadata", () => {
     expect(JSON.stringify(loadMigrationFiles(root, "npa/migrations"))).toEqual(
       JSON.stringify([migration]),
     );
+  });
+
+  test("detects destructive migration statements unless explicitly allowed", () => {
+    const statements = [
+      "ALTER TABLE products DROP COLUMN legacy_code",
+      "ALTER TABLE products ALTER COLUMN name TYPE TEXT USING name::TEXT",
+    ];
+
+    expect(findDestructiveMigrationStatements(statements)).toEqual([
+      {
+        statement: statements[0],
+        reason: "drops a column",
+      },
+      {
+        statement: statements[1],
+        reason: "changes a column type",
+      },
+    ]);
+    expect(() => assertSafeMigrationStatements(statements)).toThrow(
+      /--allow-destructive/,
+    );
+    expect(() =>
+      assertSafeMigrationStatements(statements, { allowDestructive: true }),
+    ).not.toThrow();
+  });
+
+  test("creates best-effort down migration statements", () => {
+    expect(createDownMigrationStatements("postgresql", [
+      'CREATE TABLE IF NOT EXISTS "products" ("id" INTEGER PRIMARY KEY)',
+      'ALTER TABLE "products" ADD COLUMN "name" TEXT',
+      'ALTER TABLE "products" RENAME COLUMN "name" TO "display_name"',
+    ])).toEqual([
+      'ALTER TABLE "products" RENAME COLUMN "display_name" TO "name"',
+      'ALTER TABLE "products" DROP COLUMN "name"',
+      'DROP TABLE IF EXISTS "products"',
+    ]);
+
+    expect(createDownMigrationStatements("mysql", [
+      "CREATE INDEX `idx_products_name` ON `products` (`name`)",
+    ])).toEqual([
+      "DROP INDEX `idx_products_name` ON `products`",
+    ]);
   });
 });
 
