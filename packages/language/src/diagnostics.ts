@@ -16,6 +16,7 @@ import {
   NPAQueryMethodDiagnosticCode,
   NPAQueryMethodDiagnosticSeverity,
   type NPALanguageEntitySchema,
+  type NPALanguageEntityProperty,
   type NPALanguageWorkspaceSchema,
   type NPAQueryMethodDiagnostic,
   type NPAQueryMethodDiagnosticSuggestion,
@@ -131,17 +132,33 @@ export function validateNPAQueryMethod(
     }
 
     for (const order of parsed.orderBy) {
-      const orderProperty = getDirectQueryProperties(options.entity).find((property) =>
-        property.name === order.property,
+      const orderProperty = resolveQueryProperty(
+        options.entity,
+        order.property,
+        options.workspace,
       );
 
       if (!orderProperty) {
         diagnostics.push(error(
           NPAQueryMethodDiagnosticCode.UNSUPPORTED_ORDER_PROPERTY,
-          `OrderBy property "${order.property}" must be a direct scalar property on ${options.entity.className}.`,
+          `OrderBy property "${order.property}" must resolve to a scalar property on ${options.entity.className}.`,
           order.property,
           toMethodSegment(order.property),
-          getOrderByPropertySuggestions(options.methodName, order.property, options.entity),
+          getOrderByPropertySuggestions(options.methodName, order.property, options.entity, options.workspace),
+        ));
+        continue;
+      }
+
+      if (
+        orderProperty.missingRelationTarget ||
+        orderProperty.property.kind === "RELATION"
+      ) {
+        diagnostics.push(error(
+          NPAQueryMethodDiagnosticCode.UNSUPPORTED_ORDER_PROPERTY,
+          `OrderBy property "${order.property}" must resolve to a scalar property on ${options.entity.className}.`,
+          order.property,
+          toMethodSegment(order.property),
+          getOrderByPropertySuggestions(options.methodName, order.property, options.entity, options.workspace),
         ));
       }
     }
@@ -221,21 +238,22 @@ function getOrderByPropertySuggestions(
   methodName: string,
   orderProperty: string,
   entity: NPALanguageEntitySchema,
+  workspace: NPALanguageWorkspaceSchema | undefined,
 ): NPAQueryMethodDiagnosticSuggestion[] {
   const sourceSegment = toMethodSegment(orderProperty);
 
-  return getDirectQueryProperties(entity)
+  return getQueryableProperties(entity, workspace)
     .map((candidate) => ({
       candidate,
-      distance: levenshtein(orderProperty.toLowerCase(), candidate.name.toLowerCase()),
+      distance: levenshtein(orderProperty.toLowerCase(), candidate.methodProperty.toLowerCase()),
     }))
     .filter((item) => item.distance <= Math.max(2, Math.floor(orderProperty.length / 2)))
-    .sort((left, right) => left.distance - right.distance || left.candidate.name.localeCompare(right.candidate.name))
+    .sort((left, right) => left.distance - right.distance || left.candidate.methodProperty.localeCompare(right.candidate.methodProperty))
     .slice(0, 3)
     .map((item) => {
-      const replacementMethodName = replaceFirst(methodName, sourceSegment, toMethodSegment(item.candidate.name));
+      const replacementMethodName = replaceFirst(methodName, sourceSegment, item.candidate.methodSegment);
       return {
-        title: `Order by ${item.candidate.name}`,
+        title: `Order by ${item.candidate.methodProperty}`,
         replacementMethodName,
       };
     });
@@ -257,20 +275,61 @@ function getQueryableProperties(
       methodSegment: toMethodSegment(property.name),
     }));
 
-  const relationFields = getRelationProperties(entity).flatMap((relation) => {
-    const target = findEntitySchema(workspace, relation.target);
-
-    if (!target) {
-      return [];
-    }
-
-    return getDirectQueryProperties(target).map((property) => ({
-      methodProperty: `${relation.name}${toMethodSegment(property.name)}`,
-      methodSegment: `${toMethodSegment(relation.name)}${toMethodSegment(property.name)}`,
-    }));
-  });
+  const relationFields = getNestedRelationQueryProperties(
+    entity,
+    workspace,
+  );
 
   return [...direct, ...relationObjects, ...relationFields];
+}
+
+function getNestedRelationQueryProperties(
+  entity: NPALanguageEntitySchema,
+  workspace: NPALanguageWorkspaceSchema | undefined,
+): Array<{ methodProperty: string; methodSegment: string }> {
+  return getRelationProperties(entity).flatMap((relation) =>
+    getRelationQueryProperties(
+      relation,
+      relation.name,
+      toMethodSegment(relation.name),
+      workspace,
+      new Set([entity.className]),
+    ),
+  );
+}
+
+function getRelationQueryProperties(
+  relation: NPALanguageEntityProperty,
+  methodPrefix: string,
+  methodSegmentPrefix: string,
+  workspace: NPALanguageWorkspaceSchema | undefined,
+  visited: Set<string>,
+): Array<{ methodProperty: string; methodSegment: string }> {
+  const target = findEntitySchema(workspace, relation.target);
+
+  if (!target || visited.has(target.className)) {
+    return [];
+  }
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(target.className);
+
+  const direct = getDirectQueryProperties(target).map((property) => ({
+    methodProperty: `${methodPrefix}${toMethodSegment(property.name)}`,
+    methodSegment: `${methodSegmentPrefix}${toMethodSegment(property.name)}`,
+  }));
+
+  const nested = getRelationProperties(target).flatMap((nextRelation) =>
+    getRelationQueryProperties(
+      nextRelation,
+      `${methodPrefix}${toMethodSegment(nextRelation.name)}`,
+      `${methodSegmentPrefix}${toMethodSegment(nextRelation.name)}`,
+      workspace,
+      nextVisited,
+    ),
+  );
+
+  return [...direct, ...nested];
 }
 
 function isOperatorCompatible(

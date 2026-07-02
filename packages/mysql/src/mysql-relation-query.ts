@@ -19,9 +19,16 @@ import {
 import { MysqlQueryCompilerOptions } from "./types";
 
 interface RelationFieldPath {
-  relation: RelationMetadata;
+  segments: RelationFieldSegment[];
   targetMetadata: EntityMetadata;
   targetProperty: string;
+}
+
+interface RelationFieldSegment {
+  key: string;
+  relation: RelationMetadata;
+  sourceMetadata: EntityMetadata;
+  targetMetadata: EntityMetadata;
 }
 
 interface RelationJoin {
@@ -85,7 +92,7 @@ export class MysqlRelationQueryBuilder {
     const relationPath = this.resolveRelationFieldPath(property);
 
     if (relationPath) {
-      const join = this.ensureJoin(relationPath.relation, relationPath.targetMetadata);
+      const join = this.ensureJoinPath(relationPath);
       return `${join.targetAlias}.${mysqlPropertyToColumn(relationPath.targetProperty, {
         entity: relationPath.targetMetadata.target,
       })}`;
@@ -99,7 +106,7 @@ export class MysqlRelationQueryBuilder {
     const relationPath = this.resolveRelationFieldPath(property);
 
     if (relationPath) {
-      this.ensureJoin(relationPath.relation, relationPath.targetMetadata);
+      this.ensureJoinPath(relationPath);
     }
   }
 
@@ -108,24 +115,42 @@ export class MysqlRelationQueryBuilder {
       return undefined;
     }
 
-    const relation = [...this.metadata.relations]
-      .sort((left, right) => right.propertyName.length - left.propertyName.length)
-      .find((candidate) => isRelationPrefix(property, candidate.propertyName));
+    let currentMetadata = this.metadata;
+    let remaining = property;
+    const segments: RelationFieldSegment[] = [];
 
-    if (!relation) {
-      return undefined;
+    while (true) {
+      if (segments.length > 0) {
+        const targetProperty = lowerFirst(remaining);
+
+        if (currentMetadata.columns.some((column) => column.propertyName === targetProperty)) {
+          return { segments, targetMetadata: currentMetadata, targetProperty };
+        }
+      }
+
+      const relation = findRelationPrefix(currentMetadata, remaining);
+
+      if (!relation) {
+        if (segments.length === 0) {
+          return undefined;
+        }
+
+        throw new Error(
+          `Relation query ${this.metadata.target.name}.${property} targets ${currentMetadata.target.name}.${lowerFirst(remaining)}, but that property is not a column.`,
+        );
+      }
+
+      const targetMetadata = getEntityMetadata(relation.target());
+      const key = [...segments.map((segment) => segment.relation.propertyName), relation.propertyName].join(".");
+      segments.push({
+        key,
+        relation,
+        sourceMetadata: currentMetadata,
+        targetMetadata,
+      });
+      currentMetadata = targetMetadata;
+      remaining = lowerFirst(remaining.slice(relation.propertyName.length));
     }
-
-    const targetProperty = lowerFirst(property.slice(relation.propertyName.length));
-    const targetMetadata = getEntityMetadata(relation.target());
-
-    if (!targetMetadata.columns.some((column) => column.propertyName === targetProperty)) {
-      throw new Error(
-        `Relation query ${this.metadata.target.name}.${property} targets ${targetMetadata.target.name}.${targetProperty}, but that property is not a column.`,
-      );
-    }
-
-    return { relation, targetMetadata, targetProperty };
   }
 
   private isDirectProperty(property: string): boolean {
@@ -138,28 +163,43 @@ export class MysqlRelationQueryBuilder {
     );
   }
 
+  private ensureJoinPath(path: RelationFieldPath): RelationJoin {
+    let sourceAlias = this.baseAlias;
+    let join: RelationJoin | undefined;
+
+    for (const segment of path.segments) {
+      join = this.ensureJoin(segment, sourceAlias);
+      sourceAlias = join.targetAlias;
+    }
+
+    return join as RelationJoin;
+  }
+
   private ensureJoin(
-    relation: RelationMetadata,
-    targetMetadata: EntityMetadata,
+    segment: RelationFieldSegment,
+    sourceAlias: string,
   ): RelationJoin {
-    const current = this.joins.get(relation.propertyName);
+    const current = this.joins.get(segment.key);
 
     if (current) {
       return current;
     }
 
-    const join = this.createJoin(relation, targetMetadata);
+    const join = this.createJoin(segment, sourceAlias);
     this.joins.set(join.key, join);
     return join;
   }
 
   private createJoin(
-    relation: RelationMetadata,
-    targetMetadata: EntityMetadata,
+    segment: RelationFieldSegment,
+    sourceAlias: string,
   ): RelationJoin {
-    if (!this.metadata) {
-      throw new Error("Relation query requires entity metadata.");
-    }
+    const {
+      key,
+      relation,
+      sourceMetadata,
+      targetMetadata,
+    } = segment;
 
     const targetAlias = this.nextQuotedAlias();
     const targetTable = qualifiedTable(targetMetadata);
@@ -167,10 +207,10 @@ export class MysqlRelationQueryBuilder {
     if (relation.kind === RelationKind.MANY_TO_ONE) {
       const targetPrimary = requirePrimaryColumn(targetMetadata);
       const sourceJoinColumn = relationJoinColumnName(relation);
-      const joinPredicate = `${this.baseColumn(sourceJoinColumn)} = ${qualifiedColumn(targetAlias, targetPrimary.columnName)}`;
+      const joinPredicate = `${qualifiedColumn(sourceAlias, sourceJoinColumn)} = ${qualifiedColumn(targetAlias, targetPrimary.columnName)}`;
 
       return {
-        key: relation.propertyName,
+        key,
         relation,
         targetMetadata,
         targetAlias,
@@ -179,13 +219,13 @@ export class MysqlRelationQueryBuilder {
     }
 
     if (relation.kind === RelationKind.ONE_TO_MANY) {
-      const sourcePrimary = requirePrimaryColumn(this.metadata);
-      const targetRelation = findMappedManyToOne(this.metadata, targetMetadata, relation);
+      const sourcePrimary = requirePrimaryColumn(sourceMetadata);
+      const targetRelation = findMappedManyToOne(sourceMetadata, targetMetadata, relation);
       const targetJoinColumn = relationJoinColumnName(targetRelation);
-      const joinPredicate = `${qualifiedColumn(targetAlias, targetJoinColumn)} = ${this.baseColumn(sourcePrimary.columnName)}`;
+      const joinPredicate = `${qualifiedColumn(targetAlias, targetJoinColumn)} = ${qualifiedColumn(sourceAlias, sourcePrimary.columnName)}`;
 
       return {
-        key: relation.propertyName,
+        key,
         relation,
         targetMetadata,
         targetAlias,
@@ -193,17 +233,17 @@ export class MysqlRelationQueryBuilder {
       };
     }
 
-    const sourcePrimary = requirePrimaryColumn(this.metadata);
+    const sourcePrimary = requirePrimaryColumn(sourceMetadata);
     const targetPrimary = requirePrimaryColumn(targetMetadata);
     const joinAlias = this.nextQuotedAlias();
-    const joinTable = qualifiedJoinTable(this.metadata, targetMetadata, relation);
-    const sourceJoinColumn = joinTableColumnName(this.metadata);
+    const joinTable = qualifiedJoinTable(sourceMetadata, targetMetadata, relation);
+    const sourceJoinColumn = joinTableColumnName(sourceMetadata);
     const targetJoinColumn = joinTableColumnName(targetMetadata);
-    const sourcePredicate = `${qualifiedColumn(joinAlias, sourceJoinColumn)} = ${this.baseColumn(sourcePrimary.columnName)}`;
+    const sourcePredicate = `${qualifiedColumn(joinAlias, sourceJoinColumn)} = ${qualifiedColumn(sourceAlias, sourcePrimary.columnName)}`;
     const targetPredicate = `${qualifiedColumn(targetAlias, targetPrimary.columnName)} = ${qualifiedColumn(joinAlias, targetJoinColumn)}`;
 
     return {
-      key: relation.propertyName,
+      key,
       relation,
       targetMetadata,
       targetAlias,
@@ -219,10 +259,6 @@ export class MysqlRelationQueryBuilder {
     return [...this.joins.values()].flatMap((join) => join.selectJoins).join("");
   }
 
-  private baseColumn(columnName: string): string {
-    return qualifiedColumn(this.baseAlias, columnName);
-  }
-
   private nextQuotedAlias(): string {
     const alias = quoteMysqlIdentifier(`npa_${this.nextAlias}`);
     this.nextAlias += 1;
@@ -233,6 +269,15 @@ export class MysqlRelationQueryBuilder {
 function isRelationPrefix(property: string, relationProperty: string): boolean {
   const next = property[relationProperty.length];
   return property.startsWith(relationProperty) && next !== undefined && next === next.toUpperCase();
+}
+
+function findRelationPrefix(
+  metadata: EntityMetadata,
+  property: string,
+): RelationMetadata | undefined {
+  return [...metadata.relations]
+    .sort((left, right) => right.propertyName.length - left.propertyName.length)
+    .find((candidate) => isRelationPrefix(property, candidate.propertyName));
 }
 
 function lowerFirst(value: string): string {

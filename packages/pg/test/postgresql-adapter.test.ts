@@ -8,40 +8,44 @@ function asPgQueryable(queryable: unknown): PostgresqlQueryable {
   return queryable as PostgresqlQueryable;
 }
 
+@Entity({ name: "products" })
 class PgProduct {
+  @Id({ name: "product_id" })
   id!: number;
+
+  @Column({ name: "product_name" })
   name!: string;
+
+  @Column()
   price!: number;
+
+  @Version({ name: "lock_version" })
   version!: number;
 }
 
-Id({ name: "product_id" })(PgProduct.prototype, "id");
-Column({ name: "product_name" })(PgProduct.prototype, "name");
-Column()(PgProduct.prototype, "price");
-Version({ name: "lock_version" })(PgProduct.prototype, "version");
-Entity({ name: "products" })(PgProduct);
-
+@Entity({ name: "products" })
 class PgPlainProduct {
+  @Id({ name: "product_id" })
   id!: number;
+
+  @Column({ name: "product_name" })
   name!: string;
 }
 
-Id({ name: "product_id" })(PgPlainProduct.prototype, "id");
-Column({ name: "product_name" })(PgPlainProduct.prototype, "name");
-Entity({ name: "products" })(PgPlainProduct);
-
+@Entity({ name: "products" })
 class PgTimestampedProduct {
+  @Id({ name: "product_id" })
   id!: number;
+
+  @Column({ name: "product_name" })
   name!: string;
+
+  @CreatedAt({ name: "created_at" })
   createdAt!: Date;
+
+  @UpdatedAt({ name: "updated_at" })
   updatedAt!: Date;
 }
-
-Id({ name: "product_id" })(PgTimestampedProduct.prototype, "id");
-Column({ name: "product_name" })(PgTimestampedProduct.prototype, "name");
-CreatedAt({ name: "created_at" })(PgTimestampedProduct.prototype, "createdAt");
-UpdatedAt({ name: "updated_at" })(PgTimestampedProduct.prototype, "updatedAt");
-Entity({ name: "products" })(PgTimestampedProduct);
 
 abstract class PgProductRepository extends NPARepository<PgProduct, number> {
   repositoryName(): string {
@@ -51,34 +55,74 @@ abstract class PgProductRepository extends NPARepository<PgProduct, number> {
 
 Repository(PgProduct)(PgProductRepository);
 
-class PgTeam {}
-Id({ name: "team_id" })(PgTeam.prototype, "id");
-Column()(PgTeam.prototype, "label");
-OneToMany(() => PgMember, { mappedBy: "team" })(PgTeam.prototype, "members");
-Entity({ name: "teams" })(PgTeam);
+@Entity({ name: "organizations" })
+class PgOrganization {
+  @Id({ name: "organization_id" })
+  id!: number;
 
-class PgRole {}
-Id({ name: "role_id" })(PgRole.prototype, "id");
-Column()(PgRole.prototype, "name");
-Entity({ name: "roles" })(PgRole);
+  @Column()
+  name!: string;
+}
 
-class PgMember {}
-Id({ name: "member_id" })(PgMember.prototype, "id");
-Column()(PgMember.prototype, "name");
-ManyToOne(() => PgTeam, { joinColumn: "team_id" })(PgMember.prototype, "team");
-ManyToMany(() => PgRole, { joinTable: "member_roles" })(PgMember.prototype, "roles");
-Entity({ name: "members" })(PgMember);
+@Entity({ name: "teams" })
+class PgTeam {
+  @Id({ name: "team_id" })
+  id!: number;
 
-class PgBrokenTeam {}
-Id({ name: "team_id" })(PgBrokenTeam.prototype, "id");
-Column()(PgBrokenTeam.prototype, "label");
-OneToMany(() => PgBrokenMember)(PgBrokenTeam.prototype, "members");
-Entity({ name: "broken_teams" })(PgBrokenTeam);
+  @Column()
+  label!: string;
 
-class PgBrokenMember {}
-Id({ name: "member_id" })(PgBrokenMember.prototype, "id");
-Column()(PgBrokenMember.prototype, "name");
-Entity({ name: "broken_members" })(PgBrokenMember);
+  @ManyToOne(() => PgOrganization, { joinColumn: "organization_id" })
+  organization!: PgOrganization;
+
+  @OneToMany(() => PgMember, { mappedBy: "team" })
+  members!: PgMember[];
+}
+
+@Entity({ name: "roles" })
+class PgRole {
+  @Id({ name: "role_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+}
+
+@Entity({ name: "members" })
+class PgMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => PgTeam, { joinColumn: "team_id" })
+  team!: PgTeam;
+
+  @ManyToMany(() => PgRole, { joinTable: "member_roles" })
+  roles!: PgRole[];
+}
+
+@Entity({ name: "broken_teams" })
+class PgBrokenTeam {
+  @Id({ name: "team_id" })
+  id!: number;
+
+  @Column()
+  label!: string;
+
+  @OneToMany(() => PgBrokenMember)
+  members!: PgBrokenMember[];
+}
+
+@Entity({ name: "broken_members" })
+class PgBrokenMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+}
 
 class TestTransactionManager extends AbstractTransactionManager<object> {
   protected acquireTransactionResource() {
@@ -242,6 +286,18 @@ describe("PostgreSQL adapter", () => {
 
     expect(compilePostgresqlQuery(
         {
+          query: parseQueryMethod("findByTeamOrganizationNameOrderByTeamOrganizationNameDesc"),
+          args: ["openai"],
+        },
+        { entity: PgMember },
+      )).toEqual({
+        text:
+          'SELECT "npa_0".* FROM "members" AS "npa_0" JOIN "teams" AS "npa_1" ON "npa_0"."team_id" = "npa_1"."team_id" JOIN "organizations" AS "npa_2" ON "npa_1"."organization_id" = "npa_2"."organization_id" WHERE ("npa_2"."name" = $1) ORDER BY "npa_2"."name" DESC',
+        values: ["openai"],
+      });
+
+    expect(compilePostgresqlQuery(
+        {
           query: parseQueryMethod("countByMembersName"),
           args: ["kim"],
         },
@@ -250,6 +306,18 @@ describe("PostgreSQL adapter", () => {
         text:
           'SELECT COUNT(*)::int AS "count" FROM "teams" AS "npa_0" JOIN "members" AS "npa_1" ON "npa_1"."team_id" = "npa_0"."team_id" WHERE ("npa_1"."name" = $1)',
         values: ["kim"],
+      });
+
+    expect(compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("countByMembersRolesName"),
+          args: ["admin"],
+        },
+        { entity: PgTeam },
+      )).toEqual({
+        text:
+          'SELECT COUNT(*)::int AS "count" FROM "teams" AS "npa_0" JOIN "members" AS "npa_1" ON "npa_1"."team_id" = "npa_0"."team_id" JOIN "member_roles" AS "npa_3" ON "npa_3"."pg_member_member_id" = "npa_1"."member_id" JOIN "roles" AS "npa_2" ON "npa_2"."role_id" = "npa_3"."pg_role_role_id" WHERE ("npa_2"."name" = $1)',
+        values: ["admin"],
       });
 
     expect(compilePostgresqlQuery(

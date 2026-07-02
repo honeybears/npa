@@ -78,39 +78,16 @@ export function resolveQueryProperty(
       continue;
     }
 
-    if (!methodProperty.startsWith(relation.name)) {
-      continue;
-    }
-
-    const targetPropertyName = decapitalize(
-      methodProperty.slice(relation.name.length),
+    const resolved = resolveRelationQueryProperty(
+      relation,
+      methodProperty,
+      workspace,
+      [relation.name],
+      new Set([entity.className]),
     );
 
-    if (!targetPropertyName) {
-      continue;
-    }
-
-    const target = findEntitySchema(workspace, relation.target);
-
-    if (!target) {
-      return {
-        property: relation,
-        methodProperty,
-        path: [relation.name, targetPropertyName],
-        missingRelationTarget: relation.target,
-      };
-    }
-
-    const targetProperty = getDirectQueryProperties(target).find((property) =>
-      property.name === targetPropertyName,
-    );
-
-    if (targetProperty) {
-      return {
-        property: targetProperty,
-        methodProperty,
-        path: [relation.name, targetProperty.name],
-      };
+    if (resolved) {
+      return resolved;
     }
   }
 
@@ -123,4 +100,73 @@ export function toMethodSegment(propertyName: string): string {
 
 function decapitalize(value: string): string {
   return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+function resolveRelationQueryProperty(
+  relation: NPALanguageEntityProperty,
+  methodProperty: string,
+  workspace: NPALanguageWorkspaceSchema | undefined,
+  path: string[],
+  visited: Set<string>,
+): ResolvedNPAQueryProperty | undefined {
+  if (!methodProperty.startsWith(relation.name)) {
+    return undefined;
+  }
+
+  const targetPropertyName = decapitalize(
+    methodProperty.slice(relation.name.length),
+  );
+
+  if (!targetPropertyName) {
+    return undefined;
+  }
+
+  const target = findEntitySchema(workspace, relation.target);
+
+  if (!target) {
+    return {
+      property: relation,
+      methodProperty,
+      path: [...path, targetPropertyName],
+      missingRelationTarget: relation.target,
+    };
+  }
+
+  const targetProperty = getDirectQueryProperties(target).find((property) =>
+    property.name === targetPropertyName,
+  );
+
+  if (targetProperty) {
+    return {
+      property: targetProperty,
+      methodProperty,
+      path: [...path, targetProperty.name],
+    };
+  }
+
+  if (visited.has(target.className)) {
+    return undefined;
+  }
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(target.className);
+
+  for (const nextRelation of getRelationProperties(target)) {
+    const nested = resolveRelationQueryProperty(
+      nextRelation,
+      targetPropertyName,
+      workspace,
+      [...path, nextRelation.name],
+      nextVisited,
+    );
+
+    if (nested) {
+      return {
+        ...nested,
+        methodProperty,
+      };
+    }
+  }
+
+  return undefined;
 }

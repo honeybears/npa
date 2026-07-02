@@ -18,6 +18,7 @@ import {
   type NPALanguageEntitySchema,
   type NPAQueryMethodCompletion,
   type NPAQueryMethodCompletionParameter,
+  type NPALanguageWorkspaceSchema,
 } from "./types";
 
 interface QueryableCompletionProperty {
@@ -387,22 +388,63 @@ function getCompletionProperties(
       relation: true,
     }));
 
-  const relationFields = getRelationProperties(entity).flatMap((relation) => {
-    const target = findEntitySchema(workspace, relation.target);
-
-    if (!target) {
-      return [];
-    }
-
-    return getDirectQueryProperties(target).map((property) => ({
-      methodSegment: `${toMethodSegment(relation.name)}${toMethodSegment(property.name)}`,
-      label: `${relation.name}.${property.name}`,
-      type: property.type,
-      relation: true,
-    }));
-  });
+  const relationFields = getNestedRelationCompletionProperties(
+    entity,
+    workspace,
+  );
 
   return [...direct, ...relationObjects, ...relationFields];
+}
+
+function getNestedRelationCompletionProperties(
+  entity: NPALanguageEntitySchema,
+  workspace: NPALanguageWorkspaceSchema | undefined,
+): QueryableCompletionProperty[] {
+  return getRelationProperties(entity).flatMap((relation) =>
+    getRelationCompletionProperties(
+      relation.name,
+      relation.name,
+      relation.target,
+      workspace,
+      new Set([entity.className]),
+    ),
+  );
+}
+
+function getRelationCompletionProperties(
+  methodPrefix: string,
+  labelPrefix: string,
+  targetName: string | undefined,
+  workspace: NPALanguageWorkspaceSchema | undefined,
+  visited: Set<string>,
+): QueryableCompletionProperty[] {
+  const target = findEntitySchema(workspace, targetName);
+
+  if (!target || visited.has(target.className)) {
+    return [];
+  }
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(target.className);
+
+  const direct = getDirectQueryProperties(target).map((property) => ({
+    methodSegment: `${toMethodSegment(methodPrefix)}${toMethodSegment(property.name)}`,
+    label: `${labelPrefix}.${property.name}`,
+    type: property.type,
+    relation: true,
+  }));
+
+  const nested = getRelationProperties(target).flatMap((relation) =>
+    getRelationCompletionProperties(
+      `${methodPrefix}${toMethodSegment(relation.name)}`,
+      `${labelPrefix}.${relation.name}`,
+      relation.target,
+      workspace,
+      nextVisited,
+    ),
+  );
+
+  return [...direct, ...nested];
 }
 
 function getOperatorsForType(type: string | undefined): CompletionOperator[] {

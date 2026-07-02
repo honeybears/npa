@@ -168,21 +168,22 @@ const user = await users.findById(1, { relations: ['team', 'roles'] });
 const teams = await teamRepository.findAll({ relations: ['members'] });
 ```
 
-Derived query methods can also filter on one-level relation fields. NPA joins
-the relation target when a method uses `relationProperty + TargetColumn`, while
-direct columns still take precedence if a matching column exists.
+Derived query methods can also filter on relation fields. NPA joins relation
+targets when a method uses `relationProperty + TargetColumn`, while direct
+columns still take precedence if a matching column exists. Nested relation paths
+can chain the same rule.
 
 ```ts
 @Repository(User)
 export abstract class UserRepository extends NPARepository<User, number> {
   abstract findByTeamNameAndName(teamName: string, name: string): Promise<User[]>;
+  abstract findByTeamOrganizationName(name: string): Promise<User[]>;
   abstract existsByRolesName(roleName: string): Promise<boolean>;
 }
 ```
 
 Supported relation predicates include `@ManyToOne`, `@OneToMany({ mappedBy })`,
-and `@ManyToMany({ joinTable })` target columns. Deeper paths such as
-`findByTeamCompanyName` are not inferred yet.
+and `@ManyToMany({ joinTable })` target columns.
 
 ## Custom SQL with `@Query`
 
@@ -472,7 +473,7 @@ before treating NPA as a fuller ORM:
 - Query planning: cache parsed method names and compiled SQL templates per entity, adapter, and method name so repeat calls only bind values.
 - Query API: add pagination, runtime sort, projection/select clauses, aggregate/groupBy support, and bulk update by condition.
 - Batching: add findUnique-style same-tick batching and relation-loading batching inside transaction-aware scopes.
-- Relations: support deeper relation paths, cascade persist/remove, orphan removal, eager/lazy fetch strategies, and safer relation mutation helpers.
+- Relations: support cascade persist/remove, orphan removal, eager/lazy fetch strategies, and safer relation mutation helpers.
 - Entity mapping: add composite keys, enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
 - Migrations: add rename detection, down migrations, destructive-change guards, drift detection, data migration hooks, and richer DDL for defaults/generated columns/enums.
 - Transactions: add savepoint-backed nested transactions, more propagation modes, and stricter read-only/flush behavior.

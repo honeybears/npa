@@ -8,22 +8,26 @@ function asMysqlQueryable(queryable: unknown): MysqlQueryable {
   return queryable as MysqlQueryable;
 }
 
+@Entity({ name: "products", schema: "shop" })
 class Product {
+  @Id({ name: "product_id" })
   id!: number;
+
+  @Column({ name: "product_name" })
   name!: string;
+
+  @Column()
   price!: number;
+
+  @Column()
   active!: boolean;
+
+  @Column()
   status!: string;
+
+  @Column({ name: "created_at" })
   createdAt!: number;
 }
-
-Id({ name: "product_id" })(Product.prototype, "id");
-Column({ name: "product_name" })(Product.prototype, "name");
-Column()(Product.prototype, "price");
-Column()(Product.prototype, "active");
-Column()(Product.prototype, "status");
-Column({ name: "created_at" })(Product.prototype, "createdAt");
-Entity({ name: "products", schema: "shop" })(Product);
 
 abstract class ProductRepository extends NPARepository<Product, number> {
   repositoryName(): string {
@@ -33,60 +37,104 @@ abstract class ProductRepository extends NPARepository<Product, number> {
 
 Repository(Product)(ProductRepository);
 
-class Team {}
-Id({ name: "team_id" })(Team.prototype, "id");
-Column()(Team.prototype, "label");
-OneToMany(() => Member, { mappedBy: "team" })(Team.prototype, "members");
-Entity({ name: "teams" })(Team);
-
-class Role {}
-Id({ name: "role_id" })(Role.prototype, "id");
-Column()(Role.prototype, "name");
-Entity({ name: "roles" })(Role);
-
-class Member {}
-Id({ name: "member_id" })(Member.prototype, "id");
-Column()(Member.prototype, "name");
-ManyToOne(() => Team, { joinColumn: "team_id" })(Member.prototype, "team");
-ManyToMany(() => Role, { joinTable: "member_roles" })(Member.prototype, "roles");
-Entity({ name: "members" })(Member);
-
-class BrokenTeam {}
-Id({ name: "team_id" })(BrokenTeam.prototype, "id");
-Column()(BrokenTeam.prototype, "label");
-OneToMany(() => BrokenMember)(BrokenTeam.prototype, "members");
-Entity({ name: "broken_teams" })(BrokenTeam);
-
-class BrokenMember {}
-Id({ name: "member_id" })(BrokenMember.prototype, "id");
-Column()(BrokenMember.prototype, "name");
-Entity({ name: "broken_members" })(BrokenMember);
-
-class VersionedProduct {
+@Entity({ name: "organizations" })
+class Organization {
+  @Id({ name: "organization_id" })
   id!: number;
+
+  @Column()
   name!: string;
+}
+
+@Entity({ name: "teams" })
+class Team {
+  @Id({ name: "team_id" })
+  id!: number;
+
+  @Column()
+  label!: string;
+
+  @ManyToOne(() => Organization, { joinColumn: "organization_id" })
+  organization!: Organization;
+
+  @OneToMany(() => Member, { mappedBy: "team" })
+  members!: Member[];
+}
+
+@Entity({ name: "roles" })
+class Role {
+  @Id({ name: "role_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+}
+
+@Entity({ name: "members" })
+class Member {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => Team, { joinColumn: "team_id" })
+  team!: Team;
+
+  @ManyToMany(() => Role, { joinTable: "member_roles" })
+  roles!: Role[];
+}
+
+@Entity({ name: "broken_teams" })
+class BrokenTeam {
+  @Id({ name: "team_id" })
+  id!: number;
+
+  @Column()
+  label!: string;
+
+  @OneToMany(() => BrokenMember)
+  members!: BrokenMember[];
+}
+
+@Entity({ name: "broken_members" })
+class BrokenMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+}
+
+@Entity({ name: "products", schema: "shop" })
+class VersionedProduct {
+  @Id({ name: "product_id" })
+  id!: number;
+
+  @Column({ name: "product_name" })
+  name!: string;
+
+  @Column()
   price!: number;
+
+  @Version({ name: "lock_version" })
   version!: number;
 }
 
-Id({ name: "product_id" })(VersionedProduct.prototype, "id");
-Column({ name: "product_name" })(VersionedProduct.prototype, "name");
-Column()(VersionedProduct.prototype, "price");
-Version({ name: "lock_version" })(VersionedProduct.prototype, "version");
-Entity({ name: "products", schema: "shop" })(VersionedProduct);
-
+@Entity({ name: "products", schema: "shop" })
 class TimestampedProduct {
+  @Id({ name: "product_id" })
   id!: number;
+
+  @Column({ name: "product_name" })
   name!: string;
+
+  @CreatedAt({ name: "created_at" })
   createdAt!: Date;
+
+  @UpdatedAt({ name: "updated_at" })
   updatedAt!: Date;
 }
-
-Id({ name: "product_id" })(TimestampedProduct.prototype, "id");
-Column({ name: "product_name" })(TimestampedProduct.prototype, "name");
-CreatedAt({ name: "created_at" })(TimestampedProduct.prototype, "createdAt");
-UpdatedAt({ name: "updated_at" })(TimestampedProduct.prototype, "updatedAt");
-Entity({ name: "products", schema: "shop" })(TimestampedProduct);
 
 class TestTransactionManager extends AbstractTransactionManager<object> {
   protected acquireTransactionResource() {
@@ -241,6 +289,18 @@ describe("MySQL adapter", () => {
 
     expect(compileMysqlQuery(
         {
+          query: parseQueryMethod("findByTeamOrganizationNameOrderByTeamOrganizationNameDesc"),
+          args: ["openai"],
+        },
+        { entity: Member },
+      )).toEqual({
+        text:
+          "SELECT `npa_0`.* FROM `members` AS `npa_0` JOIN `teams` AS `npa_1` ON `npa_0`.`team_id` = `npa_1`.`team_id` JOIN `organizations` AS `npa_2` ON `npa_1`.`organization_id` = `npa_2`.`organization_id` WHERE (`npa_2`.`name` = ?) ORDER BY `npa_2`.`name` DESC",
+        values: ["openai"],
+      });
+
+    expect(compileMysqlQuery(
+        {
           query: parseQueryMethod("countByMembersName"),
           args: ["kim"],
         },
@@ -249,6 +309,18 @@ describe("MySQL adapter", () => {
         text:
           "SELECT COUNT(*) AS `count` FROM `teams` AS `npa_0` JOIN `members` AS `npa_1` ON `npa_1`.`team_id` = `npa_0`.`team_id` WHERE (`npa_1`.`name` = ?)",
         values: ["kim"],
+      });
+
+    expect(compileMysqlQuery(
+        {
+          query: parseQueryMethod("countByMembersRolesName"),
+          args: ["admin"],
+        },
+        { entity: Team },
+      )).toEqual({
+        text:
+          "SELECT COUNT(*) AS `count` FROM `teams` AS `npa_0` JOIN `members` AS `npa_1` ON `npa_1`.`team_id` = `npa_0`.`team_id` JOIN `member_roles` AS `npa_3` ON `npa_3`.`member_id` = `npa_1`.`member_id` JOIN `roles` AS `npa_2` ON `npa_2`.`role_id` = `npa_3`.`role_id` WHERE (`npa_2`.`name` = ?)",
+        values: ["admin"],
       });
 
     expect(compileMysqlQuery(

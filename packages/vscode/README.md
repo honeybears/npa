@@ -9,4 +9,4 @@ MVP support:
 - completion inside classes or interfaces extending `NPARepository<Entity, Id>`
 - diagnostics for invalid `findBy`, `findOneBy`, `existsBy`, `countBy`, and
   `deleteBy` method names
-- direct entity columns and one-level relation target fields
+- direct entity columns and relation target fields

@@ -14,7 +14,7 @@ describe("language helpers", () => {
     const workspace = createWorkspace();
     const user = workspace.entities.find((entity) => entity.className === "User");
     const completions = getNPAQueryMethodCompletions({
-      prefix: "findByTeamNa",
+      prefix: "findByTeam",
       entity: user,
       workspace,
     });
@@ -22,6 +22,7 @@ describe("language helpers", () => {
 
     for (const expected of [
       "findByTeamName",
+      "findByTeamOrganizationName",
       "findByTeamNameContaining",
       "findByTeamNameContainingIgnoreCase",
       "findByTeamNameEndingWith",
@@ -204,7 +205,7 @@ describe("language helpers", () => {
     const workspace = createWorkspace();
     const user = workspace.entities.find((entity) => entity.className === "User");
     const result = validateNPAQueryMethod({
-      methodName: "findByTeamNameAndAgeGreaterThanOrderByCreatedAtDesc",
+      methodName: "findByTeamOrganizationNameAndAgeGreaterThanOrderByTeamOrganizationNameDesc",
       entity: user,
       workspace,
     });
@@ -354,6 +355,20 @@ function createWorkspace() {
       className: "Team",
       filePath: "src/team.entity.ts",
       tableName: "teams",
+      columns: [column("id", "number", true), column("name", "string")],
+      indexes: [],
+      relations: [
+        {
+          propertyName: "organization",
+          kind: MigrationRelationKind.MANY_TO_ONE,
+          targetClassName: "Organization",
+        },
+      ],
+    },
+    {
+      className: "Organization",
+      filePath: "src/organization.entity.ts",
+      tableName: "organizations",
       columns: [column("id", "number", true), column("name", "string")],
       indexes: [],
       relations: [],
