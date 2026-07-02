@@ -16,6 +16,7 @@ class VersionedUser {}
 Id({ name: "user_id" })(User.prototype, "id");
 Column({ name: "full_name" })(User.prototype, "name");
 Column()(User.prototype, "active");
+Column()(User.prototype, "profile");
 Column({ name: "created_at" })(User.prototype, "createdAt");
 Entity({ name: "users" })(User);
 
@@ -89,6 +90,41 @@ test("detects in-place Date changes", async () => {
   assert.equal(updates[0].patch.createdAt.getUTCFullYear(), 2027);
 });
 
+test("does not detect in-place nested object changes", async () => {
+  const updates = [];
+  const context = new PersistenceContext();
+  const row = {
+    user_id: 6,
+    full_name: "kim",
+    active: true,
+    profile: { city: "seoul" },
+  };
+
+  const managed = context.manage(row, {
+    entity: User,
+    adapter: {
+      async updateDirty(_entity, id, patch) {
+        updates.push({ id, patch });
+        return _entity;
+      },
+    },
+  });
+
+  managed.profile.city = "busan";
+
+  await context.flush();
+
+  assert.deepEqual(updates, []);
+
+  managed.profile = { city: "busan" };
+
+  await context.flush();
+
+  assert.deepEqual(updates, [
+    { id: 6, patch: { profile: { city: "busan" } } },
+  ]);
+});
+
 test("detaches managed entities before flush", async () => {
   const updates = [];
   const context = new PersistenceContext();
@@ -109,6 +145,42 @@ test("detaches managed entities before flush", async () => {
   await context.flush();
 
   assert.deepEqual(updates, []);
+});
+
+test("keeps dirty snapshots when adapter update fails", async () => {
+  const updates = [];
+  const context = new PersistenceContext();
+  const row = { user_id: 7, full_name: "kim", active: true };
+  let shouldFail = true;
+
+  const managed = context.manage(row, {
+    entity: User,
+    adapter: {
+      async updateDirty(_entity, id, patch) {
+        updates.push({ id, patch });
+
+        if (shouldFail) {
+          throw new Error("database update failed");
+        }
+
+        return _entity;
+      },
+    },
+  });
+
+  managed.name = "lee";
+
+  await assert.rejects(() => context.flush(), /database update failed/);
+
+  shouldFail = false;
+
+  await context.flush();
+  await context.flush();
+
+  assert.deepEqual(updates, [
+    { id: 7, patch: { name: "lee" } },
+    { id: 7, patch: { name: "lee" } },
+  ]);
 });
 
 
