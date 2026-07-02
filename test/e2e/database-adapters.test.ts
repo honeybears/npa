@@ -1,4 +1,4 @@
-import { Column, Entity, Id, ManyToOne, ManyToMany, NPARepository, NPATransactionIsolation, NPATransactionPropagation, OneToMany, RollbackOnlyError, Transaction } from "../../dist";
+import { Column, Entity, Id, ManyToOne, ManyToMany, NPARepository, NPATransactionIsolation, NPATransactionPropagation, OneToMany, RollbackOnlyError, Transaction } from "../../src";
 import { assertRepositoryContract, createProductEntity, databaseAdapters, runDatabaseFlow, startContainerOrSkip, uniqueTableName } from "./database-flow";
 import { describe, expect, test } from "@jest/globals";
 

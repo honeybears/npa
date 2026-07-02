@@ -53,18 +53,19 @@ import {
   ManyToOne,
   OneToMany,
   ReferentialAction,
-  Unique,
   Version,
 } from '@node-persistence-api/core';
 
-@Index({ name: 'idx_users_name_created_at', columns: ['name', 'createdAt'] })
+@Index([
+  { name: 'idx_users_name_created_at', columns: ['name', 'createdAt'] },
+  { name: 'uidx_users_name_created_at', columns: ['name', 'createdAt'], unique: true },
+])
 @Entity({ name: 'users', schema: 'app' })
 class User {
   @Id({ name: 'user_id' })
   id?: number;
 
-  @Unique({ name: 'uidx_users_full_name' })
-  @Column({ name: 'full_name' })
+  @Column({ name: 'full_name', unique: 'uidx_users_full_name' })
   name!: string;
 
   @Column({ name: 'created_at', index: 'idx_users_created_at' })
@@ -87,10 +88,10 @@ class User {
 
 `@Entity`, `@Id`, and `@Column` drive table, primary key, and column mapping.
 Use `@Version` for an optimistic lock column. Inserts default it to `0`; managed
-entity dirty flushes check the previous value and increment it. Use `@Index` for
-normal indexes and `@Unique` for unique indexes. Property-level
-index decorators target that column; class-level decorators use property names in
-`columns` for composite indexes. `@Column({ index: true })` and
+entity dirty flushes check the previous value and increment it. Use class-level
+`@Index` with property names in `columns` for composite indexes. Pass an array
+to `@Index` to declare multiple indexes, and set `unique: true` for composite
+unique indexes. `@Column({ index: true })` and
 `@Column({ unique: true })` are shorthand for single-column indexes.
 `@ManyToOne` creates a nullable foreign-key column using `joinColumn` or the
 default `<property>_<targetIdColumn>` name. Use `foreignKeyName`, `onDelete`,

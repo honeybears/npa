@@ -6,7 +6,7 @@ import {
   OptimisticLockError,
   PersistenceContext,
   Version,
-} from "../dist";
+} from "../src";
 
 interface Profile {
   city: string;

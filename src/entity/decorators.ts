@@ -47,12 +47,18 @@ export function Version(options: ColumnOptions | string = {}): PropertyDecorator
   };
 }
 
-export function Index(options: IndexOptions | string = {}): ClassDecorator & PropertyDecorator {
-  return createIndexDecorator(normalizeIndexOptions(options), false);
-}
+export function Index(options: IndexOptions | IndexOptions[]): ClassDecorator {
+  const resolvedOptions = Array.isArray(options) ? options : [options];
 
-export function Unique(options: IndexOptions | string = {}): ClassDecorator & PropertyDecorator {
-  return createIndexDecorator(normalizeIndexOptions(options), true);
+  return ((target: object | EntityTarget, propertyKey?: string | symbol) => {
+    if (propertyKey !== undefined) {
+      throw new Error("@Index can only be used on entity classes. Use @Column({ index: true }) or @Column({ unique: true }) for single-column indexes.");
+    }
+
+    for (const option of resolvedOptions) {
+      registerIndex(target as EntityTarget, option);
+    }
+  }) as ClassDecorator;
 }
 
 export function OneToMany(
@@ -86,17 +92,4 @@ function normalizeColumnOptions(
   options: ColumnOptions | string,
 ): ColumnOptions {
   return typeof options === "string" ? { name: options } : options;
-}
-
-function normalizeIndexOptions(options: IndexOptions | string): IndexOptions {
-  return typeof options === "string" ? { name: options } : options;
-}
-
-function createIndexDecorator(
-  options: IndexOptions,
-  unique: boolean,
-): ClassDecorator & PropertyDecorator {
-  return ((target: object | EntityTarget, propertyKey?: string | symbol) => {
-    registerIndex(target as object | EntityTarget, propertyKey, options, unique);
-  }) as ClassDecorator & PropertyDecorator;
 }

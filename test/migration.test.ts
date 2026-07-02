@@ -12,9 +12,9 @@ import {
   loadNPAMigrationConfig,
   parseEntitySchemas,
   writeMigrationFile,
-} from "../dist";
-import { compilePostgresqlMigrationStatements } from "../packages/pg/dist/postgresql-migration";
-import { compileMysqlMigrationStatements } from "../packages/mysql/dist/mysql-migration";
+} from "../src";
+import { compilePostgresqlMigrationStatements } from "../packages/pg/src/postgresql-migration";
+import { compileMysqlMigrationStatements } from "../packages/mysql/src/mysql-migration";
 
 describe("migration metadata", () => {
   test("parses entity source files into migration schemas", () => {
@@ -40,6 +40,11 @@ describe("migration metadata", () => {
       {
         name: "uidx_products_name",
         columns: ["product_name"],
+        unique: true,
+      },
+      {
+        name: "uidx_products_name_created_at",
+        columns: ["product_name", "created_at"],
         unique: true,
       },
     ]);
@@ -300,6 +305,36 @@ describe("migration metadata", () => {
       {
         source: `
   @Entity()
+  export class Product {
+    @Id()
+    id?: number;
+
+    @Index({ name: "idx_products_sku" })
+    @Column()
+    sku!: string;
+  }
+  `,
+        error:
+          /@Index for Product\.sku can only be used on entity classes/,
+      },
+      {
+        source: `
+  @Unique({ name: "uidx_products_sku" })
+  @Entity()
+  export class Product {
+    @Id()
+    id?: number;
+
+    @Column()
+    sku!: string;
+  }
+  `,
+        error:
+          /@Unique is not supported for Product/,
+      },
+      {
+        source: `
+  @Entity()
   export class Category {
     @Id()
     id?: number;
@@ -367,6 +402,7 @@ describe("migration metadata", () => {
         'CREATE INDEX IF NOT EXISTS "idx_products_active" ON "shop"."products" ("active")',
         'CREATE INDEX IF NOT EXISTS "idx_products_active_created_at" ON "shop"."products" ("active", "created_at")',
         'CREATE UNIQUE INDEX IF NOT EXISTS "uidx_products_name" ON "shop"."products" ("product_name")',
+        'CREATE UNIQUE INDEX IF NOT EXISTS "uidx_products_name_created_at" ON "shop"."products" ("product_name", "created_at")',
         'ALTER TABLE "shop"."product_categories" ADD CONSTRAINT "fk_product_categories_category_id_categories" FOREIGN KEY ("category_id") REFERENCES "shop"."categories" ("category_id")',
         'ALTER TABLE "shop"."product_categories" ADD CONSTRAINT "fk_product_categories_product_id_products" FOREIGN KEY ("product_id") REFERENCES "shop"."products" ("product_id")',
         'ALTER TABLE "shop"."products" ADD CONSTRAINT "fk_products_primary_category" FOREIGN KEY ("primary_category_id") REFERENCES "shop"."categories" ("category_id") ON DELETE SET NULL',
@@ -411,6 +447,7 @@ describe("migration metadata", () => {
       "CREATE INDEX `idx_products_active` ON `shop`.`products` (`active`)",
       "CREATE INDEX `idx_products_active_created_at` ON `shop`.`products` (`active`, `created_at`)",
       "CREATE UNIQUE INDEX `uidx_products_name` ON `shop`.`products` (`product_name`)",
+      "CREATE UNIQUE INDEX `uidx_products_name_created_at` ON `shop`.`products` (`product_name`, `created_at`)",
       "ALTER TABLE `shop`.`product_categories` ADD CONSTRAINT `fk_product_categories_category_id_categories` FOREIGN KEY (`category_id`) REFERENCES `shop`.`categories` (`category_id`)",
       "ALTER TABLE `shop`.`product_categories` ADD CONSTRAINT `fk_product_categories_product_id_products` FOREIGN KEY (`product_id`) REFERENCES `shop`.`products` (`product_id`)",
       "ALTER TABLE `shop`.`products` ADD CONSTRAINT `fk_products_primary_category` FOREIGN KEY (`primary_category_id`) REFERENCES `shop`.`categories` (`category_id`) ON DELETE SET NULL",
@@ -506,16 +543,18 @@ function makeMigrationFixture() {
   fs.writeFileSync(
     path.join(src, "product.entity.ts"),
     `
-import { Column, Entity, Id, Index, ManyToMany, ManyToOne, ReferentialAction, Unique, Version } from "@npa/test";
+import { Column, Entity, Id, Index, ManyToMany, ManyToOne, ReferentialAction, Version } from "@npa/test";
 
-@Index({ name: "idx_products_active_created_at", columns: ["active", "createdAt"] })
+@Index([
+  { name: "idx_products_active_created_at", columns: ["active", "createdAt"] },
+  { name: "uidx_products_name_created_at", columns: ["name", "createdAt"], unique: true },
+])
 @Entity({ name: "products", schema: "shop" })
 export class Product {
   @Id({ name: "product_id" })
   id?: number;
 
-  @Unique({ name: "uidx_products_name" })
-  @Column({ name: "product_name", type: "VARCHAR(80)" })
+  @Column({ name: "product_name", type: "VARCHAR(80)", unique: "uidx_products_name" })
   name!: string;
 
   @Column({ nullable: true })

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { compilePostgresqlMigrationStatements } from "../dist";
+import { compilePostgresqlMigrationStatements } from "../src";
 
 const userSchema = {
   className: "User",

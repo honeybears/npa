@@ -18,7 +18,8 @@ export interface ColumnOptions {
 
 export interface IndexOptions {
   name?: string;
-  columns?: string[];
+  columns: string[];
+  unique?: boolean;
 }
 
 export interface RelationOptions {

@@ -9,17 +9,16 @@ import {
   NPARepository,
   OneToMany,
   RelationKind,
-  Unique,
   Version,
   getEntityMetadata,
   parseQueryMethod,
-} from "../dist";
+} from "../src";
 import {
   compilePostgresqlInsert,
   compilePostgresqlQuery,
   createPostgresqlDerivedQueryRepository,
   type PostgresqlQueryable,
-} from "../packages/pg/dist";
+} from "../packages/pg/src";
 
 type DynamicUserRepository = NPARepository<Record<string, unknown>, unknown> & {
   findByName(name: string): Promise<Record<string, unknown>[]>;
@@ -50,13 +49,15 @@ class Role {
 }
 
 @Entity({ name: "npa_users", schema: "app" })
-@Index({ name: "idx_users_name_created_at", columns: ["name", "createdAt"] })
+@Index([
+  { name: "idx_users_name_created_at", columns: ["name", "createdAt"] },
+  { name: "uidx_users_name_created_at", columns: ["name", "createdAt"], unique: true },
+])
 class User {
   @Id({ name: "user_id" })
   id!: number;
 
-  @Unique({ name: "uidx_users_full_name" })
-  @Column({ name: "full_name" })
+  @Column({ name: "full_name", unique: "uidx_users_full_name" })
   name!: string;
 
   @Column({ name: "created_at", index: "idx_users_created_at" })
@@ -135,6 +136,11 @@ describe("entity metadata", () => {
           name: "idx_users_name_created_at",
           propertyNames: ["name", "createdAt"],
           unique: false,
+        },
+        {
+          name: "uidx_users_name_created_at",
+          propertyNames: ["name", "createdAt"],
+          unique: true,
         },
       ]);
       expect(

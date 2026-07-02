@@ -1,5 +1,5 @@
-import { AbstractTransactionManager, Column, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, Version, createNPA, parseQueryMethod } from "../../../dist";
-import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../dist";
+import { AbstractTransactionManager, Column, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, Version, createNPA, parseQueryMethod } from "../../../src";
+import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;

@@ -26,7 +26,7 @@ interface DecoratorOptions {
   onUpdate?: NPAMigrationReferentialAction;
 }
 
-type FieldDecoratorName = "Id" | "Column" | "Version" | "Index" | "Unique";
+type FieldDecoratorName = "Id" | "Column" | "Version";
 
 export function discoverEntitySchemas(
   cwd: string,
@@ -141,6 +141,9 @@ function parseIndexes(
 ): NPAMigrationIndexSchema[] {
   const columnByProperty = new Map(columns.map((column) => [column.propertyName, column]));
   const classDecorators = readLeadingClassDecorators(source, entityDecoratorIndex);
+  rejectUniqueDecorator(classDecorators, className);
+  rejectUniqueDecorator(classBody, className);
+
   const parsedIndexes = [
     ...parseClassIndexes(classDecorators, className, columnByProperty),
     ...parsePropertyIndexes(classBody, className, columnByProperty),
@@ -168,12 +171,8 @@ function parseClassIndexes(
   className: string,
   columnByProperty: Map<string, NPAMigrationColumnSchema>,
 ): NPAMigrationIndexSchema[] {
-  return [
-    ...parseNamedDecoratorOptions(decorators, "Index", `@Index for ${className}`)
-      .map((options) => classIndex(options, false, className, columnByProperty)),
-    ...parseNamedDecoratorOptions(decorators, "Unique", `@Unique for ${className}`)
-      .map((options) => classIndex(options, true, className, columnByProperty)),
-  ];
+  return parseNamedDecoratorOptions(decorators, "Index", `@Index for ${className}`)
+    .map((options) => classIndex(options, className, columnByProperty));
 }
 
 function parsePropertyIndexes(
@@ -190,11 +189,11 @@ function parsePropertyIndexes(
     const propertyName = match[2];
     const column = columnByProperty.get(propertyName);
 
-    if (!column) {
-      if (/@(?:Index|Unique)(?:\(|\s|$)/.test(decorators)) {
-        throw new Error(`Index decorators for ${className}.${propertyName} must target a column property.`);
-      }
+    if (/@Index(?:\(|\s|$)/.test(decorators)) {
+      throw new Error(`@Index for ${className}.${propertyName} can only be used on entity classes. Use @Column({ index: true }) or @Column({ unique: true }) for single-column indexes.`);
+    }
 
+    if (!column) {
       continue;
     }
 
@@ -220,27 +219,6 @@ function parsePropertyIndexes(
       }
     }
 
-    const indexOptions = readDecoratorArguments(decorators, "Index");
-
-    if (indexOptions !== undefined || /@Index(?:\s|$)/.test(decorators)) {
-      const options = parseDecoratorOptions(
-        indexOptions,
-        `@Index for ${className}.${propertyName}`,
-        ["name"],
-      );
-      indexes.push({ name: options.name, columns: [column.columnName], unique: false });
-    }
-
-    const uniqueOptions = readDecoratorArguments(decorators, "Unique");
-
-    if (uniqueOptions !== undefined || /@Unique(?:\s|$)/.test(decorators)) {
-      const options = parseDecoratorOptions(
-        uniqueOptions,
-        `@Unique for ${className}.${propertyName}`,
-        ["name"],
-      );
-      indexes.push({ name: options.name, columns: [column.columnName], unique: true });
-    }
   }
 
   return indexes;
@@ -248,12 +226,11 @@ function parsePropertyIndexes(
 
 function classIndex(
   options: DecoratorOptions,
-  unique: boolean,
   className: string,
   columnByProperty: Map<string, NPAMigrationColumnSchema>,
 ): NPAMigrationIndexSchema {
   if (!options.columns?.length) {
-    throw new Error(`Class-level ${unique ? "@Unique" : "@Index"} for ${className} requires columns.`);
+    throw new Error(`Class-level @Index for ${className} requires columns.`);
   }
 
   return {
@@ -262,12 +239,12 @@ function classIndex(
       const column = columnByProperty.get(propertyName);
 
       if (!column) {
-        throw new Error(`${unique ? "@Unique" : "@Index"} for ${className} references unknown column property ${propertyName}.`);
+        throw new Error(`@Index for ${className} references unknown column property ${propertyName}.`);
       }
 
       return column.columnName;
     }),
-    unique,
+    unique: options.unique === true,
   };
 }
 
@@ -623,7 +600,7 @@ function readReferentialAction(
 
 function parseNamedDecoratorOptions(
   decorators: string,
-  name: "Index" | "Unique",
+  name: "Index",
   context: string,
 ): DecoratorOptions[] {
   const options: DecoratorOptions[] = [];
@@ -657,8 +634,43 @@ function parseNamedDecoratorOptions(
       openIndex = closeIndex + 1;
     }
 
-    options.push(parseDecoratorOptions(rawArguments, context, ["name", "columns"]));
+    options.push(...parseIndexDecoratorOptions(rawArguments, context));
     cursor = openIndex;
+  }
+
+  return options;
+}
+
+function parseIndexDecoratorOptions(
+  rawValue: string | undefined,
+  context: string,
+): DecoratorOptions[] {
+  if (rawValue === undefined || rawValue.trim() === "") {
+    return [parseDecoratorOptions(rawValue, context, ["name", "columns", "unique"])];
+  }
+
+  const value = rawValue.trim();
+
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const body = value.slice(1, -1).trim();
+
+    if (!body) {
+      return [];
+    }
+
+    return splitTopLevel(body).map((entry, index) =>
+      readIndexOptions(entry, `${context}[${index}]`),
+    );
+  }
+
+  return [readIndexOptions(value, context)];
+}
+
+function readIndexOptions(value: string | undefined, context: string): DecoratorOptions {
+  const options = parseDecoratorOptions(value, context, ["name", "columns", "unique"]);
+
+  if (typeof options.unique === "string") {
+    throw new Error(`${context}.unique must be a boolean literal.`);
   }
 
   return options;
@@ -695,25 +707,20 @@ function readDecoratorArguments(
 }
 
 function readLeadingClassDecorators(source: string, entityDecoratorIndex: number): string {
-  let start = source.lastIndexOf("\n", entityDecoratorIndex - 1) + 1;
+  const beforeEntity = source.slice(0, entityDecoratorIndex);
+  const match = /((?:\s*@\w+(?:\([\s\S]*?\))?\s*)+)$/.exec(beforeEntity);
 
-  while (start > 0) {
-    const previousLineEnd = start - 1;
-    const previousLineStart = source.lastIndexOf("\n", previousLineEnd - 1) + 1;
-    const previousLine = source.slice(previousLineStart, previousLineEnd).trim();
-
-    if (!previousLine.startsWith("@")) {
-      break;
-    }
-
-    start = previousLineStart;
-  }
-
-  return source.slice(start, entityDecoratorIndex);
+  return match?.[1] ?? "";
 }
 
 function createFieldPattern(): RegExp {
   return /((?:\s*@(?:Id|Column|Version|Index|Unique)(?:\((?:[^()"'`]|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\]*(?:\\.[^`\\]*)*`)*\))?\s*)+)\s*(?:public\s+|protected\s+|private\s+|readonly\s+)*([A-Za-z_]\w*)(?:[?!])?\s*:\s*([^=;]+)[=;]?/g;
+}
+
+function rejectUniqueDecorator(source: string, className: string): void {
+  if (/@Unique(?:\(|\s|$)/.test(source)) {
+    throw new Error(`@Unique is not supported for ${className}. Use @Index({ unique: true }) for composite indexes or @Column({ unique: true }) for single-column indexes.`);
+  }
 }
 
 function splitTopLevel(value: string): string[] {

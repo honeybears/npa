@@ -1,4 +1,4 @@
-import { NPALanguageEntityPropertyKind, NPALanguageEntityRelationKind, NPAQueryMethodDiagnosticCode, getNPAQueryMethodCompletions, parseNPAQueryMethodName, toNPALanguageEntitySchema, toNPALanguageWorkspaceSchema, validateNPAQueryMethod } from "../dist";
+import { NPALanguageEntityPropertyKind, NPALanguageEntityRelationKind, NPAQueryMethodDiagnosticCode, getNPAQueryMethodCompletions, parseNPAQueryMethodName, toNPALanguageEntitySchema, toNPALanguageWorkspaceSchema, validateNPAQueryMethod } from "../src";
 import { NPAMigrationRelationKind } from "@node-persistence-api/core";
 import { parseQueryMethod } from "@node-persistence-api/core/query-method";
 import { describe, expect, test } from "@jest/globals";

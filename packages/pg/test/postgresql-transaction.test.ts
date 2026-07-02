@@ -1,5 +1,5 @@
-import { NPATransactionIsolation } from "../../../dist";
-import { PostgresqlTransactionManager, type PostgresqlTransactionConnection } from "../dist";
+import { NPATransactionIsolation } from "../../../src";
+import { PostgresqlTransactionManager, type PostgresqlTransactionConnection } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
 type RecordedCall = Record<string, unknown>;

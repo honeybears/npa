@@ -1,6 +1,8 @@
 import { describe, expect, test } from "@jest/globals";
 import { spawnSync } from "node:child_process";
-import { Column, Entity, Id, NPA, NPARepository, Repository, createNPA, type NPACreateRepositoryOptions, type NPARuntimeAdapter } from "../dist";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { Column, Entity, Id, NPA, NPARepository, Repository, createNPA, type NPACreateRepositoryOptions, type NPARuntimeAdapter } from "../src";
 
 class TokenUser {
   id!: number;
@@ -33,6 +35,8 @@ abstract class AutoUserRepository extends NPARepository<AutoTokenUser, number> {
 Repository(AutoTokenUser)(AutoUserRepository);
 describe("repository tokens", () => {
   test("reports missing repository bootstrap imports", () => {
+    ensureBuiltCore();
+
     const script = `
   (async () => {
     const { NPA } = await import("./dist/index.js");
@@ -155,3 +159,18 @@ describe("repository tokens", () => {
     expect(npa.get(UserRepository) instanceof UserRepository).toEqual(true);
   });
 });
+
+function ensureBuiltCore(): void {
+  if (fs.existsSync(path.resolve(__dirname, "..", "dist", "index.js"))) {
+    return;
+  }
+
+  const result = spawnSync("npm", ["run", "build"], {
+    cwd: path.resolve(__dirname, ".."),
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`Failed to build core for test.\n${result.stdout}${result.stderr}`);
+  }
+}

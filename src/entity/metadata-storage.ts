@@ -99,20 +99,11 @@ export function registerVersion(
 }
 
 export function registerIndex(
-  target: object | EntityTarget,
-  propertyKey: string | symbol | undefined,
-  options: IndexOptions = {},
-  unique = false,
+  target: EntityTarget,
+  options: IndexOptions,
 ): void {
-  const isPropertyDecorator = propertyKey !== undefined;
-  const metadata = getOrCreateMutableMetadata(
-    isPropertyDecorator
-      ? (target as object).constructor as EntityTarget
-      : target as EntityTarget,
-  );
-  const propertyNames = isPropertyDecorator
-    ? [toPropertyName(propertyKey)]
-    : options.columns ?? [];
+  const metadata = getOrCreateMutableMetadata(target);
+  const propertyNames = options.columns;
 
   if (propertyNames.length === 0) {
     throw new Error("Class-level indexes require at least one column.");
@@ -121,7 +112,7 @@ export function registerIndex(
   const index: IndexMetadata = {
     name: options.name,
     propertyNames,
-    unique,
+    unique: options.unique ?? false,
   };
 
   metadata.indexes.set(indexKey(index), index);

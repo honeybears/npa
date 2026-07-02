@@ -2,9 +2,9 @@ import * as mysql from "mysql2/promise";
 import { Pool } from "pg";
 import { MySqlContainer } from "@testcontainers/mysql";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import { Column, Entity, Id, Version } from "../../dist";
-import { PostgresqlConnection, PostgresqlTransactionManager, createPostgresqlDerivedQueryRepository } from "../../packages/pg/dist/index.js";
-import { MysqlConnection, MysqlTransactionManager, createMysqlDerivedQueryRepository, type MysqlTransactionConnection } from "../../packages/mysql/dist/index.js";
+import { Column, Entity, Id, Version } from "../../src";
+import { PostgresqlConnection, PostgresqlTransactionManager, createPostgresqlDerivedQueryRepository } from "../../packages/pg/src";
+import { MysqlConnection, MysqlTransactionManager, createMysqlDerivedQueryRepository, type MysqlTransactionConnection } from "../../packages/mysql/src";
 import { expect } from "@jest/globals";
 
 const POSTGRESQL_IMAGE =

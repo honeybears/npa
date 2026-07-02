@@ -8,7 +8,7 @@ import {
   parseQueryMethod,
   type NPARepositoryAdapter,
   type RepositoryRawQueryInvocation,
-} from "../dist";
+} from "../src";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;
 

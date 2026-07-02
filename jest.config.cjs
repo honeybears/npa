@@ -1,8 +1,8 @@
 module.exports = {
   clearMocks: true,
   moduleNameMapper: {
-    "^@node-persistence-api/core$": "<rootDir>/dist/index.js",
-    "^@node-persistence-api/core/(.*)$": "<rootDir>/dist/$1",
+    "^@node-persistence-api/core$": "<rootDir>/src/index.ts",
+    "^@node-persistence-api/core/(.*)$": "<rootDir>/src/$1",
   },
   moduleFileExtensions: ["ts", "js", "json"],
   roots: ["<rootDir>/test", "<rootDir>/packages"],

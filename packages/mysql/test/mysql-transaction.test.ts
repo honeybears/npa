@@ -1,5 +1,5 @@
-import { NPATransactionIsolation } from "../../../dist";
-import { MysqlTransactionManager, type MysqlTransactionConnection } from "../dist";
+import { NPATransactionIsolation } from "../../../src";
+import { MysqlTransactionManager, type MysqlTransactionConnection } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
 type RecordedCall = Record<string, unknown>;

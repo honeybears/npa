@@ -105,14 +105,14 @@ describe("migration E2E", () => {
           ["db", "push", "--config", "npa.config.mjs"],
           root,
         );
-        expect(first.status).toEqual(0);
+        expectCliSuccess(first);
         expect(first.stdout).toMatch(/Pushed database schema/);
 
         const second = runCli(
           ["db", "push", "--config", "npa.config.mjs"],
           root,
         );
-        expect(second.status).toEqual(0);
+        expectCliSuccess(second);
         expect(second.stdout).toMatch(/Database schema is up to date/);
 
         queryable = await adapter.createQueryable(container);
@@ -134,7 +134,7 @@ describe("migration E2E", () => {
           ["db", "push", "--config", "npa.config.mjs"],
           root,
         );
-        expect(altered.status).toEqual(0);
+        expectCliSuccess(altered);
         expect(altered.stdout).toMatch(/Pushed database schema/);
 
         const productColumns = await readColumnNames(
@@ -171,7 +171,7 @@ describe("migration E2E", () => {
           ["db", "push", "--config", "npa.config.mjs"],
           root,
         );
-        expect(third.status).toEqual(0);
+        expectCliSuccess(third);
         expect(third.stdout).toMatch(/Database schema is up to date/);
       } finally {
         try {
@@ -239,7 +239,7 @@ describe("migration E2E", () => {
           ["migrate", "dev", "--name", "init", "--config", "npa.config.mjs"],
           root,
         );
-        expect(created.status).toEqual(0);
+        expectCliSuccess(created);
         expect(created.stdout).toMatch(
           /Created and applied migration \d{14}_init/,
         );
@@ -263,7 +263,7 @@ describe("migration E2E", () => {
           ["migrate", "deploy", "--config", "npa.config.mjs"],
           root,
         );
-        expect(deploy.status).toEqual(0);
+        expectCliSuccess(deploy);
         expect(deploy.stdout).toMatch(/No pending migrations/);
 
         const migrationSql = fs.readFileSync(migrationFilePath, "utf8");
@@ -280,7 +280,7 @@ describe("migration E2E", () => {
           ["migrate", "deploy", "--config", "npa.config.mjs"],
           root,
         );
-        expect(restored.status).toEqual(0);
+        expectCliSuccess(restored);
         expect(restored.stdout).toMatch(/No pending migrations/);
 
         const emptyCreateOnly = runCli(
@@ -295,7 +295,7 @@ describe("migration E2E", () => {
           ],
           root,
         );
-        expect(emptyCreateOnly.status).toEqual(0);
+        expectCliSuccess(emptyCreateOnly);
         expect(emptyCreateOnly.stdout).toMatch(/No schema changes found/);
         expect(fs.readdirSync(migrationRoot).sort()).toEqual(migrationDirs);
 
@@ -317,7 +317,7 @@ describe("migration E2E", () => {
           ["migrate", "deploy", "--dry-run", "--config", "npa.config.mjs"],
           root,
         );
-        expect(pendingPreview.status).toEqual(0);
+        expectCliSuccess(pendingPreview);
         expect(pendingPreview.stdout).toMatch(/Pending migrations: 2/);
         expect(
           pendingPreview.stdout.indexOf("99999999999991_create_audit") <
@@ -328,7 +328,7 @@ describe("migration E2E", () => {
           ["migrate", "deploy", "--config", "npa.config.mjs"],
           root,
         );
-        expect(pendingDeploy.status).toEqual(0);
+        expectCliSuccess(pendingDeploy);
         expect(pendingDeploy.stdout).toMatch(/Applied 2 migration\(s\)/);
         expect(
           await readColumnNames(adapter, queryable, auditTableName),
@@ -338,7 +338,7 @@ describe("migration E2E", () => {
           ["migrate", "deploy", "--config", "npa.config.mjs"],
           root,
         );
-        expect(redeploy.status).toEqual(0);
+        expectCliSuccess(redeploy);
         expect(redeploy.stdout).toMatch(/No pending migrations \(3 checked\)/);
       } finally {
         try {
@@ -368,6 +368,8 @@ describe("migration E2E", () => {
 });
 
 function runCli(args, cwd) {
+  ensureBuiltCli();
+
   return childProcess.spawnSync(
     process.execPath,
     [path.resolve(__dirname, "..", "..", "dist", "cli", "npa.js"), ...args],
@@ -376,6 +378,34 @@ function runCli(args, cwd) {
       encoding: "utf8",
     },
   );
+}
+
+function ensureBuiltCli() {
+  const root = path.resolve(__dirname, "..", "..");
+  const requiredFiles = [
+    "dist/cli/npa.js",
+    "packages/pg/dist/postgresql-migration.js",
+    "packages/mysql/dist/mysql-migration.js",
+  ];
+
+  if (requiredFiles.every((file) => fs.existsSync(path.join(root, file)))) {
+    return;
+  }
+
+  const result = childProcess.spawnSync("npm", ["run", "build"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`Failed to build CLI for E2E test.\n${result.stdout}${result.stderr}`);
+  }
+}
+
+function expectCliSuccess(result) {
+  if (result.status !== 0) {
+    throw new Error(`Expected CLI status 0, received ${result.status}.\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  }
 }
 
 function makeMigrationProject(options) {
@@ -406,7 +436,7 @@ function writeProductEntity(root, options) {
   fs.writeFileSync(
     path.join(root, "src", "product.entity.ts"),
     `
-import { Column, Entity, Id, Version${options.withRelations ? ", Index, ManyToMany, Unique" : ""} } from "@node-persistence-api/core";
+import { Column, Entity, Id, Version${options.withRelations ? ", ManyToMany" : ""} } from "@node-persistence-api/core";
 
 @Entity({ name: ${JSON.stringify(options.tableName)} })
 export class Product {
@@ -422,7 +452,7 @@ export class Product {
   @Column(${options.withRelations ? "{ default: true }" : ""})
   active!: boolean;
 
-  ${options.withRelations ? "@Index({ name: " + JSON.stringify(options.statusIndexName) + " })\n  " : ""}@Column()
+  @Column(${options.withRelations ? "{ index: " + JSON.stringify(options.statusIndexName) + " }" : ""})
   status!: string;
 
   @Column({ name: "created_at" })
@@ -430,7 +460,7 @@ export class Product {
 
   @Version()
   version!: number;
-${options.withRelations ? "\n  @Unique({ name: " + JSON.stringify(options.skuUniqueIndexName) + " })\n  @Column({ nullable: true })\n  sku?: string | null;\n\n  @ManyToMany(() => Category, { joinTable: " + JSON.stringify(options.joinTableName) + " })\n  categories?: Category[];\n" : '\n  @Column({ name: "legacy_code", nullable: true })\n  legacyCode?: string | null;\n'}}
+${options.withRelations ? "\n  @Column({ nullable: true, unique: " + JSON.stringify(options.skuUniqueIndexName) + " })\n  sku?: string | null;\n\n  @ManyToMany(() => Category, { joinTable: " + JSON.stringify(options.joinTableName) + " })\n  categories?: Category[];\n" : '\n  @Column({ name: "legacy_code", nullable: true })\n  legacyCode?: string | null;\n'}}
 ${
   options.withRelations
     ? `

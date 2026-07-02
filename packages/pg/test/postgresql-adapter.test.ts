@@ -1,5 +1,5 @@
-import { compilePostgresqlDeleteById, compilePostgresqlDeleteAll, compilePostgresqlExistsById, compilePostgresqlFindAll, compilePostgresqlFindById, compilePostgresqlInsert, compilePostgresqlCount, compilePostgresqlQuery, compilePostgresqlRawQuery, compilePostgresqlUpdate, compilePostgresqlVersionedUpdate, createPostgresqlDerivedQueryRepository, PostgresqlConnection, postgresql, type PostgresqlDriverConnection, type PostgresqlQueryable } from "../dist";
-import { AbstractTransactionManager, Column, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, Version, createNPA, parseQueryMethod } from "../../../dist";
+import { compilePostgresqlDeleteById, compilePostgresqlDeleteAll, compilePostgresqlExistsById, compilePostgresqlFindAll, compilePostgresqlFindById, compilePostgresqlInsert, compilePostgresqlCount, compilePostgresqlQuery, compilePostgresqlRawQuery, compilePostgresqlUpdate, compilePostgresqlVersionedUpdate, createPostgresqlDerivedQueryRepository, PostgresqlConnection, postgresql, type PostgresqlDriverConnection, type PostgresqlQueryable } from "../src";
+import { AbstractTransactionManager, Column, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, Version, createNPA, parseQueryMethod } from "../../../src";
 import { describe, expect, test } from "@jest/globals";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;

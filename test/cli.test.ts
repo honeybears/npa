@@ -8,7 +8,7 @@ describe("migration CLI", () => {
   test("prints CLI help when no command is provided", () => {
     const result = runCli([]);
 
-    expect(result.status).toEqual(0);
+    expectCliSuccess(result);
     expect(result.stdout).toMatch(/Usage:/);
     expect(result.stdout).not.toMatch(/npa generate/);
     expect(result.stdout).toMatch(/npa db push/);
@@ -42,7 +42,7 @@ describe("migration CLI", () => {
       root,
     );
 
-    expect(result.status).toEqual(0);
+    expectCliSuccess(result);
     expect(result.stdout).toMatch(/Adapter: postgresql/);
     expect(result.stdout).toMatch(/Checksum: [a-f0-9]{64}/);
     expect(result.stdout).toMatch(
@@ -67,7 +67,7 @@ describe("migration CLI", () => {
       root,
     );
 
-    expect(result.status).toEqual(0);
+    expectCliSuccess(result);
     expect(result.stdout).toMatch(/Adapter: postgresql/);
     expect(result.stdout).toMatch(
       /CREATE TABLE IF NOT EXISTS "_npa_migrations"/,
@@ -92,7 +92,7 @@ describe("migration CLI", () => {
       root,
     );
 
-    expect(result.status).toEqual(0);
+    expectCliSuccess(result);
     expect(result.stdout).toMatch(/Adapter: mysql/);
     expect(result.stdout).toMatch(/Migration name: init/);
     expect(result.stdout).toMatch(/CREATE TABLE IF NOT EXISTS `products`/);
@@ -113,7 +113,7 @@ describe("migration CLI", () => {
       root,
     );
 
-    expect(result.status).toEqual(0);
+    expectCliSuccess(result);
     expect(result.stdout).toMatch(
       /No migration files found in npa\/migrations/,
     );
@@ -131,7 +131,7 @@ describe("migration CLI", () => {
     );
     const result = runCli(["migrate", "--dry-run"], root);
 
-    expect(result.status).toEqual(0);
+    expectCliSuccess(result);
     expect(result.stdout).toMatch(/Adapter: mysql/);
     expect(result.stdout).toMatch(
       /CREATE TABLE IF NOT EXISTS `_npa_migrations`/,
@@ -179,7 +179,12 @@ describe("migration CLI", () => {
   });
 });
 
-function runCli(args, cwd = process.cwd()) {
+function runCli(
+  args: string[],
+  cwd = process.cwd(),
+): childProcess.SpawnSyncReturns<string> {
+  ensureBuiltCli();
+
   return childProcess.spawnSync(
     process.execPath,
     [path.resolve(__dirname, "..", "dist", "cli", "npa.js"), ...args],
@@ -188,6 +193,34 @@ function runCli(args, cwd = process.cwd()) {
       encoding: "utf8",
     },
   );
+}
+
+function expectCliSuccess(result: childProcess.SpawnSyncReturns<string>): void {
+  if (result.status !== 0) {
+    throw new Error(`Expected CLI status 0, received ${result.status}.\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  }
+}
+
+function ensureBuiltCli(): void {
+  const root = path.resolve(__dirname, "..");
+  const requiredFiles = [
+    "dist/cli/npa.js",
+    "packages/pg/dist/postgresql-migration.js",
+    "packages/mysql/dist/mysql-migration.js",
+  ];
+
+  if (requiredFiles.every((file) => fs.existsSync(path.join(root, file)))) {
+    return;
+  }
+
+  const result = childProcess.spawnSync("npm", ["run", "build"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`Failed to build CLI for test.\n${result.stdout}${result.stderr}`);
+  }
 }
 
 function makeCliFixtureProject() {

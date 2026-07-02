@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { AbstractTransactionManager, Column, Entity, getCurrentPersistenceContext, Id, NPATransactionIsolation, NPATransactionOptions, NPATransactionPropagation, RollbackOnlyError, Transaction } from "../dist";
+import { AbstractTransactionManager, Column, Entity, getCurrentPersistenceContext, Id, NPATransactionIsolation, NPATransactionOptions, NPATransactionPropagation, RollbackOnlyError, Transaction } from "../src";
 
 interface RecordingResource {
   id: number;
