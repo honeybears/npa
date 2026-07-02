@@ -436,11 +436,11 @@ function writeProductEntity(root, options) {
   fs.writeFileSync(
     path.join(root, "src", "product.entity.ts"),
     `
-import { Column, Entity, Id, Version${options.withRelations ? ", ManyToMany" : ""} } from "@node-persistence-api/core";
+import { Column, Entity, GenerationStrategy, Id, Version${options.withRelations ? ", ManyToMany" : ""} } from "@node-persistence-api/core";
 
 @Entity({ name: ${JSON.stringify(options.tableName)} })
 export class Product {
-  @Id({ name: "product_id" })
+  @Id({ name: "product_id", generationStrategy: GenerationStrategy.AUTO_INCREMENT })
   id?: number;
 
   @Column({ name: "product_name" })
@@ -466,7 +466,7 @@ ${
     ? `
 @Entity({ name: ${JSON.stringify(options.categoryTableName)} })
 export class Category {
-  @Id({ name: "category_id" })
+  @Id({ name: "category_id", generationStrategy: GenerationStrategy.AUTO_INCREMENT })
   id?: number;
 
   @Column()
