@@ -1,0 +1,318 @@
+import { describe, expect, test } from "@jest/globals";
+import { AbstractTransactionManager, Column, Entity, getCurrentPersistenceContext, Id, NPATransactionIsolation, NPATransactionOptions, NPATransactionPropagation, RollbackOnlyError, Transaction } from "../dist";
+
+interface RecordingResource {
+  id: number;
+  options: NPATransactionOptions;
+}
+
+class RecordingTransactionManager extends AbstractTransactionManager<RecordingResource> {
+  calls: string[] = [];
+  private nextId = 0;
+
+  currentId(): number | undefined {
+    return this.getCurrentTransactionResource()?.id;
+  }
+
+  currentOptions(): NPATransactionOptions | undefined {
+    return this.getCurrentTransactionResource()?.options;
+  }
+
+  protected acquireTransactionResource(
+    options: NPATransactionOptions,
+  ): RecordingResource {
+    const resource = { id: ++this.nextId, options };
+    this.calls.push(`acquire:${resource.id}`);
+    return resource;
+  }
+
+  protected beginTransaction(
+    resource: RecordingResource,
+    options: NPATransactionOptions,
+  ): void {
+    this.calls.push(`begin:${resource.id}:${options.isolation ?? "none"}`);
+  }
+
+  protected commitTransaction(resource: RecordingResource): void {
+    this.calls.push(`commit:${resource.id}`);
+  }
+
+  protected rollbackTransaction(resource: RecordingResource): void {
+    this.calls.push(`rollback:${resource.id}`);
+  }
+
+  protected releaseTransactionResource(resource: RecordingResource): void {
+    this.calls.push(`release:${resource.id}`);
+  }
+}
+
+class TransactionUser {}
+
+Id()(TransactionUser.prototype, "id");
+Column()(TransactionUser.prototype, "name");
+Entity({ name: "transaction_users" })(TransactionUser);
+describe("transaction manager", () => {
+  test("runs work inside a transaction and commits", async () => {
+    const manager = new RecordingTransactionManager();
+
+    const result = await manager.transactional(
+      async () => {
+        expect(manager.isTransactionActive()).toEqual(true);
+        expect(manager.currentId()).toEqual(1);
+        return "created";
+      },
+      { isolation: NPATransactionIsolation.SERIALIZABLE },
+    );
+
+    expect(result).toEqual("created");
+    expect(manager.isTransactionActive()).toEqual(false);
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:SERIALIZABLE",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("flushes dirty managed entities before commit", async () => {
+    const manager = new RecordingTransactionManager();
+    const updates = [];
+    const row = { id: 1, name: "kim" };
+
+    await manager.transactional(async () => {
+      const context = getCurrentPersistenceContext();
+      expect(context).toBeTruthy();
+
+      context.manage(row, {
+        entity: TransactionUser,
+        adapter: {
+          async updateDirty(_entity, id, patch) {
+            updates.push({
+              id,
+              patch,
+              callsBeforeCommit: [...manager.calls],
+            });
+            return _entity;
+          },
+        },
+      });
+
+      row.name = "lee";
+    });
+
+    expect(updates).toEqual([
+      {
+        id: 1,
+        patch: { name: "lee" },
+        callsBeforeCommit: ["acquire:1", "begin:1:none"],
+      },
+    ]);
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("rolls back and releases when work fails", async () => {
+    const manager = new RecordingTransactionManager();
+
+    await expect(manager.transactional(async () => {
+        throw new Error("boom");
+      })).rejects.toThrow(/boom/);
+
+    expect(manager.isTransactionActive()).toEqual(false);
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "rollback:1",
+      "release:1",
+    ]);
+  });
+
+  test("joins an existing required transaction and starts REQUIRES_NEW separately", async () => {
+    const manager = new RecordingTransactionManager();
+
+    await manager.transactional(async () => {
+      expect(manager.currentId()).toEqual(1);
+
+      await manager.transactional(async () => {
+        expect(manager.currentId()).toEqual(1);
+      });
+
+      await manager.transactional(
+        async () => {
+          expect(manager.currentId()).toEqual(2);
+        },
+        { propagation: NPATransactionPropagation.REQUIRES_NEW },
+      );
+
+      expect(manager.currentId()).toEqual(1);
+    });
+
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "acquire:2",
+      "begin:2:none",
+      "commit:2",
+      "release:2",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("keeps joined required transaction options scoped to the outer resource", async () => {
+    const manager = new RecordingTransactionManager();
+
+    await manager.transactional(
+      async () => {
+        expect(manager.currentOptions()).toEqual({
+          isolation: NPATransactionIsolation.READ_COMMITTED,
+        });
+
+        await manager.transactional(
+          async () => {
+            expect(manager.currentOptions()).toEqual({
+              isolation: NPATransactionIsolation.READ_COMMITTED,
+            });
+          },
+          {
+            isolation: NPATransactionIsolation.SERIALIZABLE,
+            readOnly: true,
+          },
+        );
+
+        expect(manager.currentOptions()).toEqual({
+          isolation: NPATransactionIsolation.READ_COMMITTED,
+        });
+      },
+      { isolation: NPATransactionIsolation.READ_COMMITTED },
+    );
+
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:READ_COMMITTED",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("marks joined required transactions rollback-only after an inner failure", async () => {
+    const manager = new RecordingTransactionManager();
+
+    await expect(
+      manager.transactional(async () => {
+          await expect(
+            manager.transactional(async () => {
+              throw new Error("inner failure");
+            }),
+          ).rejects.toThrow(/inner failure/);
+
+          return "outer recovered";
+        }),
+    ).rejects.toThrow(RollbackOnlyError);
+
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "rollback:1",
+      "release:1",
+    ]);
+  });
+
+  test("keeps outer transactions committable when a REQUIRES_NEW transaction fails", async () => {
+    const manager = new RecordingTransactionManager();
+
+    await manager.transactional(async () => {
+      await expect(
+        manager.transactional(
+          async () => {
+            throw new Error("inner failure");
+          },
+          { propagation: NPATransactionPropagation.REQUIRES_NEW },
+        ),
+      ).rejects.toThrow(/inner failure/);
+    });
+
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "acquire:2",
+      "begin:2:none",
+      "rollback:2",
+      "release:2",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("Transaction decorator resolves a manager from the instance", async () => {
+    const manager = new RecordingTransactionManager();
+
+    class UserService {
+      constructor(private readonly transactionManager: RecordingTransactionManager) {}
+
+      async create(name: string): Promise<string> {
+        return `${name}:${this.transactionManager.isTransactionActive()}:${this.transactionManager.currentId()}`;
+      }
+    }
+
+    decorateMethod(UserService, "create", Transaction());
+
+    const service = new UserService(manager);
+
+    expect(await service.create("kim")).toEqual("kim:true:1");
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("Transaction decorator supports a custom manager property", async () => {
+    const manager = new RecordingTransactionManager();
+
+    class UserService {
+      constructor(private readonly unitOfWork: RecordingTransactionManager) {}
+
+      async count(): Promise<boolean> {
+        return this.unitOfWork.isTransactionActive();
+      }
+    }
+
+    decorateMethod(
+      UserService,
+      "count",
+      Transaction({ managerProperty: "unitOfWork", readOnly: true }),
+    );
+
+    const service = new UserService(manager);
+
+    expect(await service.count()).toEqual(true);
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+});
+
+function decorateMethod(
+  targetClass: Function,
+  methodName: string,
+  decorator: MethodDecorator,
+): void {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    targetClass.prototype,
+    methodName,
+  );
+  if (!descriptor) {
+    throw new Error(`Missing method descriptor: ${methodName}`);
+  }
+  decorator(targetClass.prototype, methodName, descriptor);
+  Object.defineProperty(targetClass.prototype, methodName, descriptor);
+}

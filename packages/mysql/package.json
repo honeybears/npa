@@ -20,7 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "cd ../.. && npm run build",
-    "test": "cd ../.. && npm run build && node --test packages/mysql/test/*.test.js"
+    "test": "cd ../.. && npm run build && node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand packages/mysql/test"
   },
   "dependencies": {
     "@node-persistence-api/core": "workspace:^",

@@ -1,7 +1,12 @@
-const path = require("node:path");
-const { runTests } = require("@vscode/test-electron");
-
 async function main() {
+  const path = await import("node:path");
+  const testElectron = await import("@vscode/test-electron");
+  const runTests = testElectron.runTests ?? testElectron.default?.runTests;
+
+  if (!runTests) {
+    throw new Error("Unable to load @vscode/test-electron runTests");
+  }
+
   const extensionDevelopmentPath = path.resolve(__dirname, "..");
   const extensionTestsPath = path.resolve(__dirname, "extension-host", "index.js");
   const workspacePath = path.resolve(__dirname, "fixtures", "workspace");

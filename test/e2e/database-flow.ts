@@ -1,29 +1,29 @@
-const assert = require("node:assert/strict");
-const mysql = require("mysql2/promise");
-const { Pool } = require("pg");
-const { MySqlContainer } = require("@testcontainers/mysql");
-const { PostgreSqlContainer } = require("@testcontainers/postgresql");
-
-const {
-  Column,
-  Entity,
-  Id,
-  Version,
-} = require("../../dist");
-const {
-  PostgresqlConnection,
-  PostgresqlTransactionManager,
-  createPostgresqlDerivedQueryRepository,
-} = require("../../packages/pg/dist");
-const {
-  MysqlConnection,
-  MysqlTransactionManager,
-  createMysqlDerivedQueryRepository,
-} = require("../../packages/mysql/dist");
+import * as mysql from "mysql2/promise";
+import { Pool } from "pg";
+import { MySqlContainer } from "@testcontainers/mysql";
+import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { Column, Entity, Id, Version } from "../../dist";
+import { PostgresqlConnection, PostgresqlTransactionManager, createPostgresqlDerivedQueryRepository } from "../../packages/pg/dist/index.js";
+import { MysqlConnection, MysqlTransactionManager, createMysqlDerivedQueryRepository, type MysqlTransactionConnection } from "../../packages/mysql/dist/index.js";
+import { expect } from "@jest/globals";
 
 const POSTGRESQL_IMAGE =
   process.env.NPA_E2E_POSTGRESQL_IMAGE ?? "postgres:16-alpine";
 const MYSQL_IMAGE = process.env.NPA_E2E_MYSQL_IMAGE ?? "mysql:8.0";
+
+type StartedDatabaseContainer = {
+  getConnectionUri(): string;
+  stop(): Promise<unknown> | unknown;
+};
+
+type DatabaseFlowContext = {
+  adapter: any;
+  container: StartedDatabaseContainer;
+  queryable: any;
+  tableName: string;
+};
+
+type DatabaseFlow = (context: DatabaseFlowContext) => Promise<void> | void;
 
 const databaseAdapters = [
   {
@@ -106,10 +106,10 @@ const databaseAdapters = [
   },
 ];
 
-async function runDatabaseFlow(t, adapter, flow) {
+async function runDatabaseFlow(adapter: any, flow: DatabaseFlow) {
   const tableName = uniqueTableName(adapter.tablePrefix);
   const table = adapter.quoteIdentifier(tableName);
-  const container = await startContainerOrSkip(t, adapter.createContainer());
+  const container = await startContainerOrSkip(adapter.createContainer());
 
   if (!container) {
     return;
@@ -117,7 +117,17 @@ async function runDatabaseFlow(t, adapter, flow) {
 
   let queryable;
 
-  t.after(async () => {
+  try {
+    queryable = await adapter.createQueryable(container);
+    await adapter.executeSql(queryable, adapter.createTableSql(table));
+
+    await flow({
+      adapter,
+      container,
+      queryable,
+      tableName,
+    });
+  } finally {
     try {
       if (queryable) {
         await closeQueryable(adapter, queryable, table);
@@ -125,20 +135,13 @@ async function runDatabaseFlow(t, adapter, flow) {
     } finally {
       await container.stop();
     }
-  });
-
-  queryable = await adapter.createQueryable(container);
-  await adapter.executeSql(queryable, adapter.createTableSql(table));
-
-  await flow({
-    adapter,
-    container,
-    queryable,
-    tableName,
-  });
+  }
 }
 
-async function assertRepositoryContract(repository, options = {}) {
+async function assertRepositoryContract(
+  repository,
+  options: { nullableStatus?: boolean } = {},
+) {
   const first = await repository.insert({
     name: "desk alpha",
     price: 120,
@@ -148,16 +151,16 @@ async function assertRepositoryContract(repository, options = {}) {
   });
   const firstId = first.product_id;
 
-  assert.equal(typeof firstId, "number");
-  assert.equal(first.product_name, "desk alpha");
-  assert.equal(first.price, 120);
-  assert.equal(first.version, 0);
-  assert.equal(await repository.existsById(firstId), true);
-  assert.equal(await repository.existsById(firstId + 1000), false);
-  assert.deepEqual(await repository.findById(firstId), first);
-  assert.equal(await repository.findById(firstId + 1000), null);
-  assert.equal(await repository.findOneByName("missing product"), null);
-  assert.equal(await repository.deleteByStatus("missing"), 0);
+  expect(typeof firstId).toEqual("number");
+  expect(first.product_name).toEqual("desk alpha");
+  expect(first.price).toEqual(120);
+  expect(first.version).toEqual(0);
+  expect(await repository.existsById(firstId)).toEqual(true);
+  expect(await repository.existsById(firstId + 1000)).toEqual(false);
+  expect(await repository.findById(firstId)).toEqual(first);
+  expect(await repository.findById(firstId + 1000)).toEqual(null);
+  expect(await repository.findOneByName("missing product")).toEqual(null);
+  expect(await repository.deleteByStatus("missing")).toEqual(0);
 
   const updated = await repository.updateById(firstId, {
     name: "desk beta",
@@ -166,10 +169,10 @@ async function assertRepositoryContract(repository, options = {}) {
     status: "published",
   });
 
-  assert.equal(updated.product_id, firstId);
-  assert.equal(updated.product_name, "desk beta");
-  assert.equal(updated.price, 150);
-  assert.equal(updated.status, "published");
+  expect(updated.product_id).toEqual(firstId);
+  expect(updated.product_name).toEqual("desk beta");
+  expect(updated.price).toEqual(150);
+  expect(updated.status).toEqual("published");
 
   await repository.insert({
     name: "chair beta",
@@ -186,29 +189,23 @@ async function assertRepositoryContract(repository, options = {}) {
     createdAt: new Date("2026-01-03T00:00:00.000Z"),
   });
 
-  assert.equal(await repository.count(), 3);
-  assert.deepEqual(
-    (await repository.findAll()).map((row) => row.product_name).sort(),
-    ["chair beta", "desk beta", "desk gamma"],
-  );
+  expect(await repository.count()).toEqual(3);
+  expect((await repository.findAll()).map((row) => row.product_name).sort()).toEqual(["chair beta", "desk beta", "desk gamma"]);
 
   const desks =
     await repository.findTop2ByNameContainingAndPriceGreaterThanOrderByCreatedAtDesc(
       "desk",
       100,
     );
-  assert.deepEqual(
-    desks.map((row) => row.product_name),
-    ["desk gamma", "desk beta"],
-  );
+  expect(desks.map((row) => row.product_name)).toEqual(["desk gamma", "desk beta"]);
 
-  assert.equal(await repository.existsByActiveTrueAndStatus("published"), true);
-  assert.equal(await repository.existsByActiveFalse(), true);
-  assert.equal(await repository.countByPriceBetween(100, 300), 2);
-  assert.equal(await repository.deleteByStatusIn(["archived", "draft"]), 2);
-  assert.equal(await repository.countByPriceGreaterThan(0), 1);
-  assert.equal(await repository.deleteById(firstId), 1);
-  assert.equal(await repository.countByPriceGreaterThan(0), 0);
+  expect(await repository.existsByActiveTrueAndStatus("published")).toEqual(true);
+  expect(await repository.existsByActiveFalse()).toEqual(true);
+  expect(await repository.countByPriceBetween(100, 300)).toEqual(2);
+  expect(await repository.deleteByStatusIn(["archived", "draft"])).toEqual(2);
+  expect(await repository.countByPriceGreaterThan(0)).toEqual(1);
+  expect(await repository.deleteById(firstId)).toEqual(1);
+  expect(await repository.countByPriceGreaterThan(0)).toEqual(0);
   await repository.insert({
     name: "floor lamp",
     price: 40,
@@ -216,8 +213,8 @@ async function assertRepositoryContract(repository, options = {}) {
     status: "draft",
     createdAt: new Date("2026-01-04T00:00:00.000Z"),
   });
-  assert.equal(await repository.deleteAll(), 1);
-  assert.equal(await repository.count(), 0);
+  expect(await repository.deleteAll()).toEqual(1);
+  expect(await repository.count()).toEqual(0);
 
   if (options.nullableStatus) {
     await assertNullableStatusContract(repository);
@@ -240,28 +237,19 @@ async function assertNullableStatusContract(repository) {
     createdAt: new Date("2026-01-06T00:00:00.000Z"),
   });
 
-  assert.deepEqual(
-    (await repository.findByStatus(null)).map((row) => row.product_name),
-    ["null status"],
-  );
-  assert.deepEqual(
-    (await repository.findByStatusIsNull()).map((row) => row.product_name),
-    ["null status"],
-  );
-  await assert.rejects(
-    () => repository.findByStatusIn([]),
+  expect((await repository.findByStatus(null)).map((row) => row.product_name)).toEqual(["null status"]);
+  expect((await repository.findByStatusIsNull()).map((row) => row.product_name)).toEqual(["null status"]);
+  await expect(repository.findByStatusIn([])).rejects.toThrow(
     /expects a non-empty array parameter/,
   );
-  await assert.rejects(
-    () => repository.findByStatusNotIn([]),
+  await expect(repository.findByStatusNotIn([])).rejects.toThrow(
     /expects a non-empty array parameter/,
   );
-  await assert.rejects(
-    () => repository.findByStatus(undefined),
+  await expect(repository.findByStatus(undefined)).rejects.toThrow(
     /must not be undefined/,
   );
-  assert.equal(await repository.deleteAll(), 2);
-  assert.equal(await repository.count(), 0);
+  expect(await repository.deleteAll()).toEqual(2);
+  expect(await repository.count()).toEqual(0);
 }
 
 function createProductEntity(tableName) {
@@ -287,14 +275,13 @@ async function closeQueryable(adapter, queryable, table) {
   }
 }
 
-async function startContainerOrSkip(t, container) {
+async function startContainerOrSkip(container: {
+  start(): Promise<StartedDatabaseContainer>;
+}) {
   try {
     return await container.start();
   } catch (error) {
     if (isMissingContainerRuntimeError(error) && !isCi()) {
-      t.skip(
-        "Skipping Testcontainers E2E because no container runtime is available.",
-      );
       return null;
     }
 
@@ -329,7 +316,9 @@ async function createMysqlConnection(connectionUri) {
 
 async function createMysqlTransactionRuntime(connectionUri) {
   const pool = mysql.createPool(connectionUri);
-  const manager = new MysqlTransactionManager(pool);
+  const manager = new MysqlTransactionManager(
+    pool as unknown as MysqlTransactionConnection,
+  );
 
   try {
     await waitForMysqlPool(manager);
@@ -398,7 +387,7 @@ function assertSafeIdentifier(identifier) {
   }
 }
 
-module.exports = {
+export {
   assertRepositoryContract,
   createProductEntity,
   databaseAdapters,

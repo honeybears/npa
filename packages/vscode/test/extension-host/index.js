@@ -1,8 +1,26 @@
-const assert = require("node:assert/strict");
-const path = require("node:path");
-const vscode = require("vscode");
+let assert;
+let path;
+let vscode;
+
+async function loadDependencies() {
+  if (assert && path && vscode) {
+    return;
+  }
+
+  const [assertModule, pathModule, vscodeModule] = await Promise.all([
+    import("node:assert/strict"),
+    import("node:path"),
+    import("vscode"),
+  ]);
+
+  assert = assertModule.default ?? assertModule;
+  path = pathModule;
+  vscode = vscodeModule.default ?? vscodeModule;
+}
 
 async function run() {
+  await loadDependencies();
+
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   assert.ok(workspaceFolder, "expected a workspace folder");
 

@@ -26,7 +26,7 @@
   "scripts": {
     "build": "node scripts/prepare-vsix.js",
     "test": "pnpm run test:core",
-    "test:core": "cd ../.. && npm run build && node --test packages/vscode/test/*.test.js",
+    "test:core": "cd ../.. && npm run build && node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand packages/vscode/test/*.test.ts",
     "test:host": "cd ../.. && npm run build && pnpm --dir packages/vscode run build && node packages/vscode/test/run-extension-host.js",
     "package:vsix": "node scripts/package-vsix.js",
     "package:vsix:pre": "node scripts/package-vsix.js --pre-release",
