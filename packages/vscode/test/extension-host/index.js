@@ -54,6 +54,10 @@ async function assertCompletion(repositoryDocument) {
     compoundCompletion.detail,
     "findByNameAndAge(name: string, age: number): Promise<User[]>;",
   );
+
+  const queryParameterCompletion = await getCompletion(repositoryDocument, ":em", "email");
+  assert.equal(queryParameterCompletion.insertText, "email");
+  assert.equal(queryParameterCompletion.detail, "email: string");
 }
 
 async function getCompletion(repositoryDocument, prefix, expectedLabel) {
@@ -73,7 +77,14 @@ async function getCompletion(repositoryDocument, prefix, expectedLabel) {
 }
 
 async function assertDiagnosticsAndQuickFix(repositoryDocument) {
-  const diagnostics = await waitForDiagnostics(repositoryDocument.uri, 3);
+  const diagnostics = await waitForDiagnostics(repositoryDocument.uri, 4);
+
+  const queryDiagnostic = diagnostics.find((diagnostic) =>
+    diagnostic.message.includes("@Query methods must be declared as a decorated function property"),
+  );
+  assert.ok(queryDiagnostic, "expected function property diagnostic for @Query");
+  assert.equal(repositoryDocument.getText(queryDiagnostic.range), "findByNameSql");
+
   assert.ok(
     diagnostics.some((diagnostic) => diagnostic.message.includes("IgnoreCase is only supported")),
     `expected IgnoreCase diagnostic, got ${diagnostics.map((item) => item.message).join(" | ")}`,

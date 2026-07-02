@@ -173,9 +173,11 @@ and `@ManyToMany({ joinTable })` target columns. Deeper paths such as
 
 Use `@Query` for repository methods that should bypass method-name parsing and
 execute SQL directly. TypeScript decorators cannot be applied to abstract method
-signatures, so declare the method as a decorated property or provide a concrete
-placeholder method. Named placeholders such as `:email` are bound from repository method
-arguments in first-appearance order. Reusing the same placeholder name reuses the
+signatures, and `declare` class fields cannot be decorated. Declare raw-query
+methods as decorated function properties with a definite assignment assertion.
+The VS Code extension flags `@Query` methods that are not function properties.
+Named placeholders such as `:email` are bound from repository method arguments
+in first-appearance order. Reusing the same placeholder name reuses the
 same argument. MySQL receives `?` placeholders; PostgreSQL receives `$1`, `$2`, ... .
 
 ```ts
@@ -184,13 +186,13 @@ import { NPARepository, Query, Repository } from '@node-persistence-api/core';
 @Repository(User)
 export abstract class UserRepository extends NPARepository<User, number> {
   @Query('SELECT * FROM users WHERE email = :email', { result: 'one', managed: true })
-  declare findByEmailSql: (email: string) => Promise<User | null>;
+  findByEmailSql!: (email: string) => Promise<User | null>;
 
   @Query('SELECT COUNT(*) AS total FROM users WHERE active = :active', { result: 'scalar' })
-  declare countActiveSql: (active: boolean) => Promise<number>;
+  countActiveSql!: (active: boolean) => Promise<number>;
 
   @Query('UPDATE users SET active = :active WHERE id = :id', { result: 'execute' })
-  declare updateActiveSql: (active: boolean, id: number) => Promise<number>;
+  updateActiveSql!: (active: boolean, id: number) => Promise<number>;
 }
 ```
 

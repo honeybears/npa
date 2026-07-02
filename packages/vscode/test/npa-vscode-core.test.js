@@ -3,6 +3,8 @@ const test = require("node:test");
 
 const {
   collectLanguageWorkspaceSchemaFromSources,
+  findQueryDecoratorDiagnostics,
+  findQueryParameterCompletionContext,
   findRepositoryContext,
   findRepositoryMethodDeclarations,
   getMethodPrefixAtOffset,
@@ -88,6 +90,51 @@ test("finds declared query methods for diagnostics", () => {
     ],
   );
 });
+
+
+
+test("finds @Query parameter completion context inside SQL strings", () => {
+  const source = `
+    export abstract class UserRepository extends NPARepository<User, number> {
+      @Query('SELECT * FROM users WHERE email = :em')
+      findByEmailSql!: (email: string, active: boolean) => Promise<User | null>;
+    }
+  `;
+  const offset = source.indexOf(":em") + ":em".length;
+  const context = findQueryParameterCompletionContext(source, offset);
+
+  assert.ok(context, "expected @Query parameter completion context");
+  assert.equal(context.methodName, "findByEmailSql");
+  assert.equal(context.prefix, "em");
+  assert.equal(context.replacementStart, source.indexOf(":em") + 1);
+  assert.equal(context.replacementEnd, offset);
+  assert.deepEqual(context.parameters, [
+    { name: "email", type: "string" },
+    { name: "active", type: "boolean" },
+  ]);
+});
+
+test("diagnoses @Query members that are not function properties", () => {
+  const source = `
+    export abstract class UserRepository extends NPARepository<User, number> {
+      @Query('SELECT * FROM users WHERE email = :email')
+      findByEmailSql!: (email: string) => Promise<User | null>;
+
+      @Query('SELECT * FROM users WHERE name = :name')
+      findByNameSql(name: string): Promise<User[]> {
+        throw new Error('NPA provides the implementation');
+      }
+    }
+  `;
+  const diagnostics = findQueryDecoratorDiagnostics(source);
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].code, "npa-query-function-property");
+  assert.equal(diagnostics[0].methodName, "findByNameSql");
+  assert.equal(source.slice(diagnostics[0].start, diagnostics[0].end), "findByNameSql");
+  assert.deepEqual(findRepositoryMethodDeclarations(source), []);
+});
+
 
 test("collects workspace schema from multiple source files", () => {
   assert.deepEqual(collectLanguageWorkspaceSchemaFromSources([

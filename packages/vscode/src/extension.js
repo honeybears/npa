@@ -5,6 +5,8 @@ const {
 } = loadNPALanguage();
 const {
   collectLanguageWorkspaceSchemaFromSources,
+  findQueryDecoratorDiagnostics,
+  findQueryParameterCompletionContext,
   findRepositoryContext,
   findRepositoryMethodDeclarations,
   getMethodPrefixAtOffset,
@@ -29,6 +31,7 @@ async function activate(context) {
           return provideCompletionItems(document, position);
         },
       },
+      ":",
     ),
     vscode.languages.registerCodeActionsProvider(
       DOCUMENT_SELECTOR,
@@ -79,6 +82,14 @@ async function provideCompletionItems(document, position) {
 
   const source = document.getText();
   const offset = document.offsetAt(position);
+  const queryParameterContext = findQueryParameterCompletionContext(source, offset);
+
+  if (queryParameterContext) {
+    return queryParameterContext.parameters.map((parameter, index) =>
+      toQueryParameterCompletionItem(document, queryParameterContext, parameter, index),
+    );
+  }
+
   const repository = findRepositoryContext(source, offset);
   const prefix = getMethodPrefixAtOffset(source, offset);
 
@@ -132,6 +143,26 @@ ${completion.documentation}`);
   return item;
 }
 
+function toQueryParameterCompletionItem(document, context, parameter, index) {
+  const item = new vscode.CompletionItem(
+    parameter.name,
+    vscode.CompletionItemKind.Variable,
+  );
+  item.insertText = parameter.name;
+  item.range = new vscode.Range(
+    document.positionAt(context.replacementStart),
+    document.positionAt(context.replacementEnd),
+  );
+  item.filterText = `:${parameter.name}`;
+  item.detail = parameter.type ? `${parameter.name}: ${parameter.type}` : parameter.name;
+  item.sortText = String(index).padStart(3, "0");
+
+  const documentation = new vscode.MarkdownString();
+  documentation.appendMarkdown(`Binds \`${parameter.name}\` to \`:${parameter.name}\`.`);
+  item.documentation = documentation;
+  return item;
+}
+
 async function refreshDiagnostics(document, diagnostics) {
   if (!isSupportedDocument(document)) {
     return;
@@ -140,6 +171,20 @@ async function refreshDiagnostics(document, diagnostics) {
   const workspace = await collectWorkspaceSchema(document);
   const source = document.getText();
   const vscodeDiagnostics = [];
+
+  for (const diagnostic of findQueryDecoratorDiagnostics(source)) {
+    const vscodeDiagnostic = new vscode.Diagnostic(
+      new vscode.Range(
+        document.positionAt(diagnostic.start),
+        document.positionAt(diagnostic.end),
+      ),
+      diagnostic.message,
+      getDiagnosticSeverity(diagnostic),
+    );
+    vscodeDiagnostic.source = NPA_DIAGNOSTIC_SOURCE;
+    vscodeDiagnostic.code = diagnostic.code;
+    vscodeDiagnostics.push(vscodeDiagnostic);
+  }
 
   for (const method of findRepositoryMethodDeclarations(source)) {
     const entity = workspace.entities.find((item) =>
