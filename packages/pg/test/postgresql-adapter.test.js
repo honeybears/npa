@@ -572,6 +572,56 @@ test("executes @Query raw PostgreSQL repository methods", async () => {
   ]);
 });
 
+test("handles empty and null @Query raw PostgreSQL results", async () => {
+  const queryable = {
+    query(text) {
+      if (text.includes("COUNT_EMPTY")) {
+        return { rows: [], rowCount: 0 };
+      }
+
+      if (text.includes("COUNT_NULL")) {
+        return { rows: [{ total: null }], rowCount: 1 };
+      }
+
+      return { rows: [], rowCount: 0 };
+    },
+  };
+
+  class RawProductRepository extends NPARepository {}
+
+  Query('SELECT * FROM "products"', { result: "many" })(
+    RawProductRepository.prototype,
+    "findProductsRaw",
+  );
+  Query('SELECT * FROM "products" WHERE "product_id" = :id', { result: "one" })(
+    RawProductRepository.prototype,
+    "findOneProductRaw",
+  );
+  Query("SELECT COUNT_EMPTY AS total", { result: "scalar" })(
+    RawProductRepository.prototype,
+    "countEmptyRaw",
+  );
+  Query("SELECT COUNT_NULL AS total", { result: "scalar" })(
+    RawProductRepository.prototype,
+    "countNullRaw",
+  );
+  Query('UPDATE "products" SET "price" = "price"', { result: "execute" })(
+    RawProductRepository.prototype,
+    "touchProductsRaw",
+  );
+
+  const repository = createPostgresqlDerivedQueryRepository(
+    Object.create(RawProductRepository.prototype),
+    { entity: PgProduct, queryable },
+  );
+
+  assert.deepEqual(await repository.findProductsRaw(), []);
+  assert.equal(await repository.findOneProductRaw(1), null);
+  assert.equal(await repository.countEmptyRaw(), null);
+  assert.equal(await repository.countNullRaw(), null);
+  assert.equal(await repository.touchProductsRaw(), 0);
+});
+
 test("binds raw PostgreSQL named and positional parameters safely", () => {
   assert.deepEqual(
     compilePostgresqlRawQuery(
