@@ -38,6 +38,7 @@ interface MigrationForeignKeySchema {
 interface CurrentColumnSchema {
   columnName: string;
   type: string;
+  defaultValue?: string;
   nullable: boolean;
 }
 
@@ -67,6 +68,7 @@ interface PostgresqlColumnRow {
   columnName: string;
   dataType: string;
   characterMaximumLength: number | null;
+  columnDefault: string | null;
   isNullable: "YES" | "NO";
 }
 
@@ -398,6 +400,18 @@ function compilePostgresqlTableDiffStatements(
           `ALTER TABLE ${qualifiedTable(table)} ALTER COLUMN ${quoteQualifiedIdentifier(column.columnName)} ${column.nullable ? "DROP" : "SET"} NOT NULL`,
         );
       }
+
+      if (!column.primary) {
+        const defaultStatement = postgresqlDefaultDiffStatement(
+          table,
+          column,
+          currentColumn,
+        );
+
+        if (defaultStatement) {
+          statements.push(defaultStatement);
+        }
+      }
     }
 
     const desiredColumnNames = new Set(table.columns.map((column) => column.columnName));
@@ -520,12 +534,94 @@ function columnDefinition(
     : column.nullable
       ? ""
       : " NOT NULL";
+  const defaultClause = column.defaultValue === undefined
+    ? ""
+    : ` DEFAULT ${renderColumnDefault(column.defaultValue)}`;
 
-  return `${dbType}${constraints}`;
+  return `${dbType}${constraints}${defaultClause}`;
 }
 
 function columnAlterType(column: NPAMigrationColumnSchema): string {
   return column.dbType ?? defaultType(column, { identity: false });
+}
+
+function postgresqlDefaultDiffStatement(
+  table: MigrationTableSchema,
+  column: NPAMigrationColumnSchema,
+  currentColumn: CurrentColumnSchema,
+): string | undefined {
+  const expectedDefault = normalizeDesiredDefault(column.defaultValue);
+  const currentDefault = normalizePostgresqlDefault(currentColumn.defaultValue);
+
+  if (expectedDefault === currentDefault) {
+    return undefined;
+  }
+
+  const columnName = quoteQualifiedIdentifier(column.columnName);
+
+  if (expectedDefault === undefined) {
+    return `ALTER TABLE ${qualifiedTable(table)} ALTER COLUMN ${columnName} DROP DEFAULT`;
+  }
+
+  return `ALTER TABLE ${qualifiedTable(table)} ALTER COLUMN ${columnName} SET DEFAULT ${renderColumnDefault(column.defaultValue ?? null)}`;
+}
+
+function normalizeDesiredDefault(
+  value: string | number | boolean | null | undefined,
+): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    return `string:${value}`;
+  }
+
+  if (typeof value === "boolean") {
+    return `boolean:${value}`;
+  }
+
+  return `number:${value}`;
+}
+
+function normalizePostgresqlDefault(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+
+  if (normalized === "true" || normalized === "false") {
+    return `boolean:${normalized === "true"}`;
+  }
+
+  if (/^-?\d+(?:\.\d+)?$/.test(normalized)) {
+    return `number:${Number(normalized)}`;
+  }
+
+  const stringMatch = /^'((?:''|[^'])*)'(?:::.+)?$/.exec(normalized);
+
+  if (stringMatch) {
+    return `string:${stringMatch[1].replace(/''/g, "'")}`;
+  }
+
+  return `raw:${normalized}`;
+}
+
+function renderColumnDefault(value: string | number | boolean | null): string {
+  if (typeof value === "string") {
+    return `'${value.replace(/'/g, "''")}'`;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "TRUE" : "FALSE";
+  }
+
+  if (value === null) {
+    return "NULL";
+  }
+
+  return String(value);
 }
 
 function defaultType(
@@ -755,6 +851,7 @@ async function readCurrentTables(
         "  column_name AS \"columnName\",",
         "  data_type AS \"dataType\",",
         "  character_maximum_length AS \"characterMaximumLength\",",
+        "  column_default AS \"columnDefault\",",
         "  is_nullable AS \"isNullable\"",
         "FROM information_schema.columns",
         "WHERE table_schema = $1 AND table_name = $2",
@@ -768,6 +865,9 @@ async function readCurrentTables(
       columns.set(row.columnName, {
         columnName: row.columnName,
         type: currentPostgresqlType(row),
+        ...(row.columnDefault !== null
+          ? { defaultValue: row.columnDefault }
+          : {}),
         nullable: row.isNullable === "YES",
       });
     }

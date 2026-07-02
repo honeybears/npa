@@ -5,6 +5,7 @@ export interface NPAMigrationColumnSchema {
   columnName: string;
   tsType: string;
   dbType?: string;
+  defaultValue?: string | number | boolean | null;
   nullable: boolean;
   primary: boolean;
   version: boolean;

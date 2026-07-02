@@ -46,6 +46,7 @@ export function registerColumn(
     columnName: options.name ?? toSnakeCase(propertyName),
     nullable: options.nullable ?? false,
     type: options.type,
+    ...(options.default !== undefined ? { default: options.default } : {}),
     primary: false,
     version: false,
   });
@@ -65,6 +66,7 @@ export function registerId(
     columnName: options.name ?? toSnakeCase(propertyName),
     nullable: false,
     type: options.type,
+    ...(options.default !== undefined ? { default: options.default } : {}),
     primary: true,
     version: false,
   };
@@ -86,6 +88,7 @@ export function registerVersion(
     columnName: options.name ?? toSnakeCase(propertyName),
     nullable: false,
     type: options.type,
+    ...(options.default !== undefined ? { default: options.default } : {}),
     primary: false,
     version: true,
   };

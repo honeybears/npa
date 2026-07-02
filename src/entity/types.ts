@@ -11,6 +11,7 @@ export interface ColumnOptions {
   name?: string;
   nullable?: boolean;
   type?: string;
+  default?: string | number | boolean | null;
   index?: boolean | string;
   unique?: boolean | string;
 }
@@ -48,6 +49,7 @@ export interface ColumnMetadata {
   columnName: string;
   nullable: boolean;
   type?: string;
+  default?: string | number | boolean | null;
   primary: boolean;
   version: boolean;
 }

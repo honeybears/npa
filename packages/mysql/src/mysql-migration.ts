@@ -39,6 +39,7 @@ interface MigrationForeignKeySchema {
 interface CurrentColumnSchema {
   columnName: string;
   type: string;
+  defaultValue?: string;
   nullable: boolean;
 }
 
@@ -67,6 +68,7 @@ interface CurrentTableSchema {
 interface MysqlColumnRow {
   columnName: string;
   columnType: string;
+  columnDefault: string | null;
   isNullable: "YES" | "NO";
 }
 
@@ -363,10 +365,20 @@ function compileMysqlTableDiffStatements(
       const expectedType = normalizeMysqlTypeName(columnAlterType(column));
       const currentType = normalizeMysqlTypeName(currentColumn.type);
       const expectedNullable = column.primary ? false : column.nullable;
+      const expectedDefault = normalizeDesiredDefault(column.defaultValue);
+      const currentDefault = normalizeMysqlDefault(
+        currentColumn.defaultValue,
+        column.defaultValue,
+      );
 
-      if (!column.primary && (currentType !== expectedType || currentColumn.nullable !== expectedNullable)) {
+      if (
+        !column.primary &&
+        (currentType !== expectedType ||
+          currentColumn.nullable !== expectedNullable ||
+          currentDefault !== expectedDefault)
+      ) {
         statements.push(
-          `ALTER TABLE ${qualifiedTable(table)} MODIFY COLUMN ${quoteQualifiedIdentifier(column.columnName)} ${columnAlterType(column)}${expectedNullable ? "" : " NOT NULL"}`,
+          `ALTER TABLE ${qualifiedTable(table)} MODIFY COLUMN ${quoteQualifiedIdentifier(column.columnName)} ${columnDefinition(column, { inlinePrimary: false })}`,
         );
       }
     }
@@ -491,12 +503,72 @@ function columnDefinition(
     : column.nullable
       ? ""
       : " NOT NULL";
+  const defaultClause = column.defaultValue === undefined
+    ? ""
+    : ` DEFAULT ${renderColumnDefault(column.defaultValue)}`;
 
-  return `${dbType}${constraints}`;
+  return `${dbType}${constraints}${defaultClause}`;
 }
 
 function columnAlterType(column: NPAMigrationColumnSchema): string {
   return column.dbType ?? defaultType(column, { identity: false });
+}
+
+function normalizeDesiredDefault(
+  value: string | number | boolean | null | undefined,
+): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    return `string:${value}`;
+  }
+
+  if (typeof value === "boolean") {
+    return `boolean:${value}`;
+  }
+
+  return `number:${value}`;
+}
+
+function normalizeMysqlDefault(
+  value: string | undefined,
+  desiredValue: string | number | boolean | null | undefined,
+): string | undefined {
+  if (value === undefined || desiredValue === null) {
+    return undefined;
+  }
+
+  if (typeof desiredValue === "boolean") {
+    return `boolean:${value === "1" || value.toLowerCase() === "true"}`;
+  }
+
+  if (typeof desiredValue === "number") {
+    return `number:${Number(value)}`;
+  }
+
+  if (typeof desiredValue === "string") {
+    return `string:${value}`;
+  }
+
+  return `raw:${value}`;
+}
+
+function renderColumnDefault(value: string | number | boolean | null): string {
+  if (typeof value === "string") {
+    return `'${value.replace(/'/g, "''")}'`;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "TRUE" : "FALSE";
+  }
+
+  if (value === null) {
+    return "NULL";
+  }
+
+  return String(value);
 }
 
 function defaultType(
@@ -726,6 +798,7 @@ async function readCurrentTables(
           "SELECT",
           "  COLUMN_NAME AS columnName,",
           "  COLUMN_TYPE AS columnType,",
+          "  COLUMN_DEFAULT AS columnDefault,",
           "  IS_NULLABLE AS isNullable",
           "FROM information_schema.columns",
           `WHERE table_schema = ${table.schema ? "?" : "DATABASE()"} AND table_name = ?`,
@@ -740,6 +813,9 @@ async function readCurrentTables(
       columns.set(row.columnName, {
         columnName: row.columnName,
         type: row.columnType,
+        ...(row.columnDefault !== null
+          ? { defaultValue: row.columnDefault }
+          : {}),
         nullable: row.isNullable === "YES",
       });
     }

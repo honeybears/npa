@@ -225,14 +225,14 @@ export class Product {
   );
 });
 
-test("parses nullable custom database column types", () => {
+test("parses nullable custom database column types and defaults", () => {
   const [schema] = parseEntitySource(`
 @Entity({ name: "events" })
 export class Event {
   @Id()
   id?: number;
 
-  @Column({ type: "VARCHAR(32)", nullable: true })
+  @Column({ type: "VARCHAR(32)", nullable: true, default: "pending" })
   code?: string | null;
 }
 `);
@@ -242,6 +242,7 @@ export class Event {
     columnName: "code",
     tsType: "string | null",
     dbType: "VARCHAR(32)",
+    defaultValue: "pending",
     nullable: true,
     primary: false,
     version: false,
@@ -274,6 +275,20 @@ export class Product {
 }
 `,
       error: /@Column for Product\.name\.name must be a string literal/,
+    },
+    {
+      source: `
+const DEFAULT_STATUS = "draft";
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
+
+  @Column({ default: DEFAULT_STATUS })
+  status!: string;
+}
+`,
+      error: /@Column for Product\.status\.default must be a string, number, boolean, or null literal/,
     },
     {
       source: `
@@ -348,7 +363,7 @@ test("compiles PostgreSQL and MySQL schema migration SQL", () => {
       '  "product_id" SERIAL PRIMARY KEY,',
       '  "product_name" VARCHAR(80) NOT NULL,',
       '  "description" TEXT,',
-      '  "active" BOOLEAN NOT NULL,',
+      '  "active" BOOLEAN NOT NULL DEFAULT TRUE,',
       '  "created_at" TIMESTAMPTZ NOT NULL,',
       '  "lock_version" INTEGER NOT NULL,',
       '  "primary_category_id" INTEGER',
@@ -391,7 +406,7 @@ test("compiles PostgreSQL and MySQL schema migration SQL", () => {
       "  `product_id` INT AUTO_INCREMENT PRIMARY KEY,",
       "  `product_name` VARCHAR(80) NOT NULL,",
       "  `description` VARCHAR(255),",
-      "  `active` BOOLEAN NOT NULL,",
+      "  `active` BOOLEAN NOT NULL DEFAULT TRUE,",
       "  `created_at` DATETIME(3) NOT NULL,",
       "  `lock_version` INT NOT NULL,",
       "  `primary_category_id` INT",
@@ -505,7 +520,7 @@ export class Product {
   @Column({ nullable: true })
   description?: string | null;
 
-  @Column({ index: "idx_products_active" })
+  @Column({ index: "idx_products_active", default: true })
   active!: boolean;
 
   @Column({ name: "created_at" })

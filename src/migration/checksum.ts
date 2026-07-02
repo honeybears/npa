@@ -30,6 +30,7 @@ export function createMigrationSnapshot(
             columnName: column.columnName,
             tsType: normalizeType(column.tsType),
             dbType: column.dbType,
+            defaultValue: column.defaultValue,
             nullable: column.nullable,
             primary: column.primary,
             version: column.version,

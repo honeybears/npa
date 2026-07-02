@@ -13,6 +13,7 @@ interface DecoratorOptions {
   name?: string;
   schema?: string;
   type?: string;
+  defaultValue?: string | number | boolean | null;
   nullable?: boolean;
   index?: boolean | string;
   unique?: boolean | string;
@@ -103,7 +104,7 @@ function parseColumns(
     const options = parseDecoratorOptions(
       rawOptions,
       `@${decoratorName} for ${className}.${propertyName}`,
-      ["name", "type", "nullable", "index", "unique"],
+      ["name", "type", "default", "nullable", "index", "unique"],
     );
 
     columns.push({
@@ -111,6 +112,9 @@ function parseColumns(
       columnName: options.name ?? toSnakeCase(propertyName),
       tsType,
       dbType: options.type,
+      ...(options.defaultValue !== undefined
+        ? { defaultValue: options.defaultValue }
+        : {}),
       nullable: primary || version ? false : options.nullable ?? false,
       primary,
       version,
@@ -477,6 +481,11 @@ function parseDecoratorOptions(
       continue;
     }
 
+    if (key === "default") {
+      options.defaultValue = readDefaultLiteral(rawPropertyValue, `${context}.${key}`);
+      continue;
+    }
+
     if (key === "index" || key === "unique") {
       if (rawPropertyValue === "true" || rawPropertyValue === "false") {
         options[key] = rawPropertyValue === "true";
@@ -528,6 +537,31 @@ function parseDecoratorOptions(
   }
 
   return options;
+}
+
+function readDefaultLiteral(
+  value: string,
+  context: string,
+): string | number | boolean | null {
+  if (isStringLiteral(value)) {
+    return readStringLiteral(value, context);
+  }
+
+  if (value === "true" || value === "false") {
+    return value === "true";
+  }
+
+  if (value === "null") {
+    return null;
+  }
+
+  if (/^-?\d+(?:\.\d+)?$/.test(value)) {
+    return Number(value);
+  }
+
+  throw new Error(
+    `${context} must be a string, number, boolean, or null literal.`,
+  );
 }
 
 function readReferentialActionOption(

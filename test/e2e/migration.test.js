@@ -367,7 +367,7 @@ export class Product {
   @Column()
   price!: number;
 
-  @Column()
+  @Column(${options.withRelations ? "{ default: true }" : ""})
   active!: boolean;
 
   ${options.withRelations ? "@Index({ name: " + JSON.stringify(options.statusIndexName) + " })\n  " : ""}@Column()
