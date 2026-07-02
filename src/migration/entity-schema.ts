@@ -117,6 +117,14 @@ function parseColumns(
     });
   }
 
+  assertUniqueSchemaNames(
+    columns,
+    className,
+    "column name",
+    (column) => column.columnName,
+    (column) => column.propertyName,
+  );
+
   return columns;
 }
 
@@ -127,15 +135,24 @@ function parseIndexes(
   className: string,
   columns: NPAMigrationColumnSchema[],
 ): NPAMigrationIndexSchema[] {
-  const indexes = new Map<string, NPAMigrationIndexSchema>();
   const columnByProperty = new Map(columns.map((column) => [column.propertyName, column]));
   const classDecorators = readLeadingClassDecorators(source, entityDecoratorIndex);
+  const parsedIndexes = [
+    ...parseClassIndexes(classDecorators, className, columnByProperty),
+    ...parsePropertyIndexes(classBody, className, columnByProperty),
+  ];
 
-  for (const index of parseClassIndexes(classDecorators, className, columnByProperty)) {
-    indexes.set(indexKey(index), index);
-  }
+  assertUniqueSchemaNames(
+    parsedIndexes,
+    className,
+    "index name",
+    (index) => index.name,
+    (index) => index.columns.join(","),
+  );
 
-  for (const index of parsePropertyIndexes(classBody, className, columnByProperty)) {
+  const indexes = new Map<string, NPAMigrationIndexSchema>();
+
+  for (const index of parsedIndexes) {
     indexes.set(indexKey(index), index);
   }
 
@@ -317,6 +334,21 @@ function parseRelations(
     });
     cursor = closeIndex + 1;
   }
+
+  assertUniqueSchemaNames(
+    relations,
+    className,
+    "relation property",
+    (relation) => relation.propertyName,
+    (relation) => relation.kind,
+  );
+  assertUniqueSchemaNames(
+    relations,
+    className,
+    "relation foreign key name",
+    (relation) => relation.foreignKeyName,
+    (relation) => relation.propertyName,
+  );
 
   return relations;
 }
@@ -763,6 +795,35 @@ function indexKey(index: NPAMigrationIndexSchema): string {
 
 function compareIndexes(left: NPAMigrationIndexSchema, right: NPAMigrationIndexSchema): number {
   return indexKey(left).localeCompare(indexKey(right));
+}
+
+function assertUniqueSchemaNames<T>(
+  items: T[],
+  className: string,
+  label: string,
+  nameOf: (item: T) => string | undefined,
+  ownerOf: (item: T) => string,
+): void {
+  const seen = new Map<string, string>();
+
+  for (const item of items) {
+    const name = nameOf(item);
+
+    if (!name) {
+      continue;
+    }
+
+    const owner = ownerOf(item);
+    const previous = seen.get(name);
+
+    if (previous !== undefined) {
+      throw new Error(
+        `Duplicate ${label} "${name}" in ${className}: ${previous} and ${owner}.`,
+      );
+    }
+
+    seen.set(name, owner);
+  }
 }
 
 function collectFiles(root: string): string[] {

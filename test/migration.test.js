@@ -141,13 +141,117 @@ test("parses entity source files into migration schemas", () => {
   );
 });
 
+test("rejects duplicate migration metadata names", () => {
+  assert.throws(
+    () =>
+      parseEntitySource(`
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
+
+  @Column({ name: "sku" })
+  sku!: string;
+
+  @Column({ name: "sku" })
+  legacySku!: string;
+}
+`),
+    /Duplicate column name "sku" in Product: sku and legacySku/,
+  );
+
+  assert.throws(
+    () =>
+      parseEntitySource(`
+@Index({ name: "idx_products_sku", columns: ["sku"] })
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
+
+  @Column({ index: "idx_products_sku" })
+  sku!: string;
+}
+`),
+    /Duplicate index name "idx_products_sku" in Product/,
+  );
+
+  assert.throws(
+    () =>
+      parseEntitySource(`
+@Entity()
+export class Category {
+  @Id()
+  id?: number;
+}
+
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
+
+  @ManyToOne(() => Category)
+  category?: Category;
+
+  @ManyToMany(() => Category)
+  category?: Category[];
+}
+`),
+    /Duplicate relation property "category" in Product/,
+  );
+
+  assert.throws(
+    () =>
+      parseEntitySource(`
+@Entity()
+export class Category {
+  @Id()
+  id?: number;
+}
+
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
+
+  @ManyToOne(() => Category, { foreignKeyName: "fk_products_category" })
+  primaryCategory?: Category;
+
+  @ManyToOne(() => Category, { foreignKeyName: "fk_products_category" })
+  secondaryCategory?: Category;
+}
+`),
+    /Duplicate relation foreign key name "fk_products_category" in Product/,
+  );
+});
+
+test("parses nullable custom database column types", () => {
+  const [schema] = parseEntitySource(`
+@Entity({ name: "events" })
+export class Event {
+  @Id()
+  id?: number;
+
+  @Column({ type: "VARCHAR(32)", nullable: true })
+  code?: string | null;
+}
+`);
+
+  assert.deepEqual(schema.columns.find((column) => column.propertyName === "code"), {
+    propertyName: "code",
+    columnName: "code",
+    tsType: "string | null",
+    dbType: "VARCHAR(32)",
+    nullable: true,
+    primary: false,
+    version: false,
+  });
+});
+
 test("rejects dynamic decorator metadata for migrations", () => {
-  const root = makeTempRoot();
-  const filePath = path.join(root, "src", "bad.entity.ts");
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(
-    filePath,
-    `
+  const cases = [
+    {
+      source: `
 const TABLE = "products";
 @Entity(TABLE)
 export class Product {
@@ -155,13 +259,61 @@ export class Product {
   id?: number;
 }
 `,
-    "utf8",
-  );
+      error: /must use a string literal or object literal/,
+    },
+    {
+      source: `
+const NAME = "product_name";
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
 
-  assert.throws(
-    () => parseEntitySchemas(filePath),
-    /must use a string literal or object literal/,
-  );
+  @Column({ name: NAME })
+  name!: string;
+}
+`,
+      error: /@Column for Product\.name\.name must be a string literal/,
+    },
+    {
+      source: `
+const COLUMNS = ["sku"];
+@Index({ name: "idx_products_sku", columns: COLUMNS })
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
+
+  @Column()
+  sku!: string;
+}
+`,
+      error: /@Index for Product\.columns must be an array of string literals/,
+    },
+    {
+      source: `
+@Entity()
+export class Category {
+  @Id()
+  id?: number;
+}
+
+@Entity()
+export class Product {
+  @Id()
+  id?: number;
+
+  @ManyToOne(() => resolveCategory())
+  category?: Category;
+}
+`,
+      error: /target must use a literal \(\) => EntityClass expression/,
+    },
+  ];
+
+  for (const { source, error } of cases) {
+    assert.throws(() => parseEntitySource(source), error);
+  }
 });
 
 test("compiles PostgreSQL and MySQL schema migration SQL", () => {
@@ -381,6 +533,15 @@ export class Category {
     "utf8",
   );
   return root;
+}
+
+function parseEntitySource(source) {
+  const root = makeTempRoot();
+  const filePath = path.join(root, "src", "test.entity.ts");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, source, "utf8");
+
+  return parseEntitySchemas(filePath);
 }
 
 function makeTempRoot() {
