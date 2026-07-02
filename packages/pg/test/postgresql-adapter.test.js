@@ -12,6 +12,7 @@ const {
   compilePostgresqlQuery,
   compilePostgresqlRawQuery,
   compilePostgresqlUpdate,
+  compilePostgresqlVersionedUpdate,
   createPostgresqlDerivedQueryRepository,
   PostgresqlConnection,
   postgresql,
@@ -458,6 +459,37 @@ test("compiles insert, update, and deleteById PostgreSQL CRUD SQL", () => {
       text:
         'UPDATE "users" SET "name" = $1, "created_at" = $2 WHERE "id" = $3 RETURNING *',
       values: ["lee", 4, 1],
+    },
+  );
+  assert.throws(
+    () => compilePostgresqlUpdate(1, { id: 1 }, options),
+    /without changed values/,
+  );
+  assert.throws(
+    () =>
+      compilePostgresqlVersionedUpdate(
+        1,
+        { id: 1, version: 2 },
+        2,
+        { entity: PgProduct },
+      ),
+    /without changed values/,
+  );
+  assert.deepEqual(
+    compilePostgresqlUpdate(
+      1,
+      { displayName: "kim" },
+      {
+        tableName: 'audit.user"events',
+        columns: {
+          displayName: 'display"name',
+        },
+      },
+    ),
+    {
+      text:
+        'UPDATE "audit"."user""events" SET "display""name" = $1 WHERE "id" = $2 RETURNING *',
+      values: ["kim", 1],
     },
   );
   assert.deepEqual(compilePostgresqlDeleteById(1, options), {

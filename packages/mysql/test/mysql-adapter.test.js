@@ -26,6 +26,7 @@ const {
   compileMysqlQuery,
   compileMysqlRawQuery,
   compileMysqlUpdate,
+  compileMysqlVersionedUpdate,
   compileMysqlFindById,
   createMysqlDerivedQueryRepository,
   MysqlConnection,
@@ -345,6 +346,38 @@ test("compiles insert, update, and deleteById MySQL CRUD SQL", () => {
       text:
         "UPDATE `shop`.`products` SET `product_name` = ?, `created_at` = ? WHERE `product_id` = ?",
       values: ["chair", 11, 1],
+    },
+  );
+  assert.throws(
+    () => compileMysqlUpdate(1, { id: 1 }, { entity: Product }),
+    /without changed values/,
+  );
+  assert.throws(
+    () =>
+      compileMysqlVersionedUpdate(
+        1,
+        { id: 1, version: 2 },
+        2,
+        { entity: VersionedProduct },
+      ),
+    /without changed values/,
+  );
+  assert.deepEqual(
+    compileMysqlUpdate(
+      1,
+      { displayName: "desk" },
+      {
+        schema: "shop`schema",
+        tableName: "products`archive",
+        columns: {
+          displayName: "display`name",
+        },
+      },
+    ),
+    {
+      text:
+        "UPDATE `shop``schema`.`products``archive` SET `display``name` = ? WHERE `id` = ?",
+      values: ["desk", 1],
     },
   );
   assert.deepEqual(compileMysqlDeleteById(1, { entity: Product }), {
