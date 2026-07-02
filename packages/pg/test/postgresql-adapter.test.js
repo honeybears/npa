@@ -67,6 +67,17 @@ ManyToOne(() => PgTeam, { joinColumn: "team_id" })(PgMember.prototype, "team");
 ManyToMany(() => PgRole, { joinTable: "member_roles" })(PgMember.prototype, "roles");
 Entity({ name: "members" })(PgMember);
 
+class PgBrokenTeam {}
+Id({ name: "team_id" })(PgBrokenTeam.prototype, "id");
+Column()(PgBrokenTeam.prototype, "label");
+OneToMany(() => PgBrokenMember)(PgBrokenTeam.prototype, "members");
+Entity({ name: "broken_teams" })(PgBrokenTeam);
+
+class PgBrokenMember {}
+Id({ name: "member_id" })(PgBrokenMember.prototype, "id");
+Column()(PgBrokenMember.prototype, "name");
+Entity({ name: "broken_members" })(PgBrokenMember);
+
 class TestTransactionManager extends AbstractTransactionManager {
   acquireTransactionResource() {
     return {};
@@ -303,6 +314,30 @@ test("compiles PostgreSQL derived queries across relation fields", () => {
         'SELECT "npa_0".* FROM "members" AS "npa_0" JOIN "member_roles" AS "npa_2" ON "npa_2"."pg_member_member_id" = "npa_0"."member_id" JOIN "roles" AS "npa_1" ON "npa_1"."role_id" = "npa_2"."pg_role_role_id" WHERE ("npa_1"."name" = $1)',
       values: ["admin"],
     },
+  );
+
+  assert.throws(
+    () =>
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByRolesMissing"),
+          args: ["admin"],
+        },
+        { entity: PgMember },
+      ),
+    /Relation query PgMember\.rolesMissing targets PgRole\.missing, but that property is not a column/,
+  );
+
+  assert.throws(
+    () =>
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByMembersName"),
+          args: ["kim"],
+        },
+        { entity: PgBrokenTeam },
+      ),
+    /@OneToMany PgBrokenTeam\.members requires mappedBy/,
   );
 
   assert.deepEqual(

@@ -68,6 +68,17 @@ ManyToOne(() => Team, { joinColumn: "team_id" })(Member.prototype, "team");
 ManyToMany(() => Role, { joinTable: "member_roles" })(Member.prototype, "roles");
 Entity({ name: "members" })(Member);
 
+class BrokenTeam {}
+Id({ name: "team_id" })(BrokenTeam.prototype, "id");
+Column()(BrokenTeam.prototype, "label");
+OneToMany(() => BrokenMember)(BrokenTeam.prototype, "members");
+Entity({ name: "broken_teams" })(BrokenTeam);
+
+class BrokenMember {}
+Id({ name: "member_id" })(BrokenMember.prototype, "id");
+Column()(BrokenMember.prototype, "name");
+Entity({ name: "broken_members" })(BrokenMember);
+
 class VersionedProduct {}
 
 Id({ name: "product_id" })(VersionedProduct.prototype, "id");
@@ -306,6 +317,30 @@ test("compiles MySQL derived queries across relation fields", () => {
         "SELECT `npa_0`.* FROM `members` AS `npa_0` JOIN `member_roles` AS `npa_2` ON `npa_2`.`member_id` = `npa_0`.`member_id` JOIN `roles` AS `npa_1` ON `npa_1`.`role_id` = `npa_2`.`role_id` WHERE (`npa_1`.`name` = ?)",
       values: ["admin"],
     },
+  );
+
+  assert.throws(
+    () =>
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByRolesMissing"),
+          args: ["admin"],
+        },
+        { entity: Member },
+      ),
+    /Relation query Member\.rolesMissing targets Role\.missing, but that property is not a column/,
+  );
+
+  assert.throws(
+    () =>
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByMembersName"),
+          args: ["kim"],
+        },
+        { entity: BrokenTeam },
+      ),
+    /@OneToMany BrokenTeam\.members requires mappedBy/,
   );
 
   assert.deepEqual(
