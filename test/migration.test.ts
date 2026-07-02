@@ -129,6 +129,15 @@ describe("migration metadata", () => {
         version: false,
       },
       {
+        propertyName: "updatedAt",
+        columnName: "updated_at",
+        tsType: "Date",
+        dbType: undefined,
+        nullable: false,
+        primary: false,
+        version: false,
+      },
+      {
         propertyName: "version",
         columnName: "lock_version",
         tsType: "number",
@@ -138,6 +147,10 @@ describe("migration metadata", () => {
         version: true,
       },
     ]);
+    expect(product.columns.find((column) => column.propertyName === "createdAt"))
+      .toMatchObject({ createdAt: true, defaultCurrentTimestamp: true });
+    expect(product.columns.find((column) => column.propertyName === "updatedAt"))
+      .toMatchObject({ updatedAt: true, defaultCurrentTimestamp: true });
   });
 
   test("rejects duplicate migration metadata names", () => {
@@ -394,7 +407,8 @@ describe("migration metadata", () => {
           '  "product_name" VARCHAR(80) NOT NULL,',
           '  "description" TEXT,',
           '  "active" BOOLEAN NOT NULL DEFAULT TRUE,',
-          '  "created_at" TIMESTAMPTZ NOT NULL,',
+          '  "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,',
+          '  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,',
           '  "lock_version" INTEGER NOT NULL,',
           '  "primary_category_id" INTEGER',
           ")",
@@ -439,7 +453,8 @@ describe("migration metadata", () => {
         "  `product_name` VARCHAR(80) NOT NULL,",
         "  `description` VARCHAR(255),",
         "  `active` BOOLEAN NOT NULL DEFAULT TRUE,",
-        "  `created_at` DATETIME(3) NOT NULL,",
+        "  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),",
+        "  `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),",
         "  `lock_version` INT NOT NULL,",
         "  `primary_category_id` INT",
         ")",
@@ -543,7 +558,7 @@ function makeMigrationFixture() {
   fs.writeFileSync(
     path.join(src, "product.entity.ts"),
     `
-import { Column, Entity, Id, Index, ManyToMany, ManyToOne, ReferentialAction, Version } from "@npa/test";
+import { Column, CreatedAt, Entity, Id, Index, ManyToMany, ManyToOne, ReferentialAction, UpdatedAt, Version } from "@npa/test";
 
 @Index([
   { name: "idx_products_active_created_at", columns: ["active", "createdAt"] },
@@ -563,8 +578,11 @@ export class Product {
   @Column({ index: "idx_products_active", default: true })
   active!: boolean;
 
-  @Column({ name: "created_at" })
+  @CreatedAt({ name: "created_at" })
   createdAt!: Date;
+
+  @UpdatedAt({ name: "updated_at" })
+  updatedAt!: Date;
 
   @Version({ name: "lock_version" })
   version!: number;

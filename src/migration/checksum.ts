@@ -31,9 +31,12 @@ export function createMigrationSnapshot(
             tsType: normalizeType(column.tsType),
             dbType: column.dbType,
             defaultValue: column.defaultValue,
+            defaultCurrentTimestamp: column.defaultCurrentTimestamp,
             nullable: column.nullable,
             primary: column.primary,
             version: column.version,
+            createdAt: column.createdAt,
+            updatedAt: column.updatedAt,
           }))
           .sort((left, right) => left.columnName.localeCompare(right.columnName)),
         indexes: (entity.indexes ?? [])

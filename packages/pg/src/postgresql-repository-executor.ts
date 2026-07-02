@@ -6,6 +6,7 @@ import {
   NPADirtyCheckAdapter,
   RepositoryMethodExecutor,
   RepositoryRawQueryExecutor,
+  withUpdatedAtTimestamp,
 } from "@node-persistence-api/core";
 import {
   compilePostgresqlCount,
@@ -29,14 +30,15 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
 {
   private readonly dirtyCheckAdapter: NPADirtyCheckAdapter<TEntity> = {
     updateDirty: async (_entity, id, patch, updateOptions) => {
+      const touchedPatch = withUpdatedAtTimestamp(patch, this.options.entity);
       const query = updateOptions?.versionColumn
         ? compilePostgresqlVersionedUpdate(
           id,
-          patch,
+          touchedPatch,
           updateOptions.expectedVersion,
           this.options,
         )
-        : compilePostgresqlUpdate(id, patch, this.options);
+        : compilePostgresqlUpdate(id, touchedPatch, this.options);
       const result = await this.options.queryable.query<TEntity>(
         query.text,
         query.values,
@@ -158,7 +160,12 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
     entity: TEntity,
   ): Promise<TEntity | null> => {
     const id = getPrimaryKeyValue(entity, this.options);
-    return this.updateById(id as TId, entity);
+    return this.updateById(
+      id as TId,
+      withUpdatedAtTimestamp(entity, this.options.entity, new Date(), {
+        overwrite: true,
+      }),
+    );
   };
 
   updateById = async (
@@ -169,9 +176,10 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
       patch,
       this.options.entity,
     );
+    const touchedPatch = withUpdatedAtTimestamp(patch, this.options.entity);
     const query = expectedVersion === undefined
-      ? compilePostgresqlUpdate(id, patch, this.options)
-      : compilePostgresqlVersionedUpdate(id, patch, expectedVersion, this.options);
+      ? compilePostgresqlUpdate(id, touchedPatch, this.options)
+      : compilePostgresqlVersionedUpdate(id, touchedPatch, expectedVersion, this.options);
     const result = await this.options.queryable.query<TEntity>(
       query.text,
       query.values,

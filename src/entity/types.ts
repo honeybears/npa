@@ -53,6 +53,8 @@ export interface ColumnMetadata {
   default?: string | number | boolean | null;
   primary: boolean;
   version: boolean;
+  createdAt: boolean;
+  updatedAt: boolean;
 }
 
 export interface IndexMetadata {
@@ -83,4 +85,6 @@ export interface EntityMetadata {
   relations: RelationMetadata[];
   primaryColumn?: ColumnMetadata;
   versionColumn?: ColumnMetadata;
+  createdAtColumn?: ColumnMetadata;
+  updatedAtColumn?: ColumnMetadata;
 }

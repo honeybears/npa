@@ -6,6 +6,7 @@ import {
   NPADirtyCheckAdapter,
   RepositoryMethodExecutor,
   RepositoryRawQueryExecutor,
+  withUpdatedAtTimestamp,
 } from "@node-persistence-api/core";
 import {
   compileMysqlCount,
@@ -30,14 +31,15 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
 {
   private readonly dirtyCheckAdapter: NPADirtyCheckAdapter<TEntity> = {
     updateDirty: async (_entity, id, patch, updateOptions) => {
+      const touchedPatch = withUpdatedAtTimestamp(patch, this.options.entity);
       const query = updateOptions?.versionColumn
         ? compileMysqlVersionedUpdate(
           id,
-          patch,
+          touchedPatch,
           updateOptions.expectedVersion,
           this.options,
         )
-        : compileMysqlUpdate(id, patch, this.options);
+        : compileMysqlUpdate(id, touchedPatch, this.options);
       const result = await executeMysqlQuery<TEntity>(
         this.options,
         query.text,
@@ -171,7 +173,12 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
 
   update = async (entity: TEntity): Promise<TEntity | null> => {
     const id = getMysqlPrimaryKeyValue(entity, this.options);
-    return this.updateById(id as TId, entity);
+    return this.updateById(
+      id as TId,
+      withUpdatedAtTimestamp(entity, this.options.entity, new Date(), {
+        overwrite: true,
+      }),
+    );
   };
 
   updateById = async (
@@ -182,9 +189,10 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       patch,
       this.options.entity,
     );
+    const touchedPatch = withUpdatedAtTimestamp(patch, this.options.entity);
     const query = expectedVersion === undefined
-      ? compileMysqlUpdate(id, patch, this.options)
-      : compileMysqlVersionedUpdate(id, patch, expectedVersion, this.options);
+      ? compileMysqlUpdate(id, touchedPatch, this.options)
+      : compileMysqlVersionedUpdate(id, touchedPatch, expectedVersion, this.options);
     const result = await executeMysqlQuery<TEntity>(
       this.options,
       query.text,

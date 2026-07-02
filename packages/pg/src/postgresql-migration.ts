@@ -534,9 +534,7 @@ function columnDefinition(
     : column.nullable
       ? ""
       : " NOT NULL";
-  const defaultClause = column.defaultValue === undefined
-    ? ""
-    : ` DEFAULT ${renderColumnDefault(column.defaultValue)}`;
+  const defaultClause = columnDefaultClause(column);
 
   return `${dbType}${constraints}${defaultClause}`;
 }
@@ -550,7 +548,7 @@ function postgresqlDefaultDiffStatement(
   column: NPAMigrationColumnSchema,
   currentColumn: CurrentColumnSchema,
 ): string | undefined {
-  const expectedDefault = normalizeDesiredDefault(column.defaultValue);
+  const expectedDefault = normalizeDesiredDefault(column);
   const currentDefault = normalizePostgresqlDefault(currentColumn.defaultValue);
 
   if (expectedDefault === currentDefault) {
@@ -563,12 +561,18 @@ function postgresqlDefaultDiffStatement(
     return `ALTER TABLE ${qualifiedTable(table)} ALTER COLUMN ${columnName} DROP DEFAULT`;
   }
 
-  return `ALTER TABLE ${qualifiedTable(table)} ALTER COLUMN ${columnName} SET DEFAULT ${renderColumnDefault(column.defaultValue ?? null)}`;
+  return `ALTER TABLE ${qualifiedTable(table)} ALTER COLUMN ${columnName} SET DEFAULT ${renderColumnDefault(column)}`;
 }
 
 function normalizeDesiredDefault(
-  value: string | number | boolean | null | undefined,
+  column: NPAMigrationColumnSchema,
 ): string | undefined {
+  if (column.defaultCurrentTimestamp) {
+    return "raw:current_timestamp";
+  }
+
+  const value = column.defaultValue;
+
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -590,6 +594,14 @@ function normalizePostgresqlDefault(value: string | undefined): string | undefin
   }
 
   const normalized = value.trim();
+  const lowercase = normalized.toLowerCase();
+
+  if (
+    lowercase === "now()" ||
+    /^current_timestamp(?:\(\d+\))?$/.test(lowercase)
+  ) {
+    return "raw:current_timestamp";
+  }
 
   if (normalized === "true" || normalized === "false") {
     return `boolean:${normalized === "true"}`;
@@ -608,7 +620,25 @@ function normalizePostgresqlDefault(value: string | undefined): string | undefin
   return `raw:${normalized}`;
 }
 
-function renderColumnDefault(value: string | number | boolean | null): string {
+function columnDefaultClause(column: NPAMigrationColumnSchema): string {
+  if (column.defaultCurrentTimestamp) {
+    return " DEFAULT CURRENT_TIMESTAMP";
+  }
+
+  if (column.defaultValue === undefined) {
+    return "";
+  }
+
+  return ` DEFAULT ${renderColumnDefault(column)}`;
+}
+
+function renderColumnDefault(column: NPAMigrationColumnSchema): string {
+  if (column.defaultCurrentTimestamp) {
+    return "CURRENT_TIMESTAMP";
+  }
+
+  const value = column.defaultValue;
+
   if (typeof value === "string") {
     return `'${value.replace(/'/g, "''")}'`;
   }
@@ -617,7 +647,7 @@ function renderColumnDefault(value: string | number | boolean | null): string {
     return value ? "TRUE" : "FALSE";
   }
 
-  if (value === null) {
+  if (value === null || value === undefined) {
     return "NULL";
   }
 

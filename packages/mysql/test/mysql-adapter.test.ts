@@ -1,4 +1,4 @@
-import { AbstractTransactionManager, Column, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, Version, createNPA, parseQueryMethod } from "../../../src";
+import { AbstractTransactionManager, Column, CreatedAt, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, UpdatedAt, Version, createNPA, parseQueryMethod } from "../../../src";
 import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
@@ -74,6 +74,19 @@ Column({ name: "product_name" })(VersionedProduct.prototype, "name");
 Column()(VersionedProduct.prototype, "price");
 Version({ name: "lock_version" })(VersionedProduct.prototype, "version");
 Entity({ name: "products", schema: "shop" })(VersionedProduct);
+
+class TimestampedProduct {
+  id!: number;
+  name!: string;
+  createdAt!: Date;
+  updatedAt!: Date;
+}
+
+Id({ name: "product_id" })(TimestampedProduct.prototype, "id");
+Column({ name: "product_name" })(TimestampedProduct.prototype, "name");
+CreatedAt({ name: "created_at" })(TimestampedProduct.prototype, "createdAt");
+UpdatedAt({ name: "updated_at" })(TimestampedProduct.prototype, "updatedAt");
+Entity({ name: "products", schema: "shop" })(TimestampedProduct);
 
 class TestTransactionManager extends AbstractTransactionManager<object> {
   protected acquireTransactionResource() {
@@ -679,6 +692,55 @@ describe("MySQL adapter", () => {
       {
         text: "DELETE FROM `shop`.`products`",
         values: [],
+      },
+    ]);
+  });
+
+  test("uses timestamp decorators for MySQL insert defaults and update touches", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text.startsWith("INSERT")) {
+          return [{ affectedRows: 1, insertId: 10 }, []];
+        }
+
+        if (text.startsWith("UPDATE")) {
+          return [{ affectedRows: 1 }, []];
+        }
+
+        return [[{ product_id: values[0], product_name: "chair" }], []];
+      },
+    };
+    const repository = createMysqlDerivedQueryRepository(
+      {},
+      { entity: TimestampedProduct, queryable: asMysqlQueryable(queryable) },
+    ) as NPARepository<Record<string, unknown>, number>;
+
+    await repository.insert({ name: "desk" });
+    await repository.updateById(10, { name: "chair" });
+
+    expect(calls).toEqual([
+      {
+        text:
+          "INSERT INTO `shop`.`products` (`product_name`) VALUES (?)",
+        values: ["desk"],
+      },
+      {
+        text:
+          "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
+        values: [10],
+      },
+      {
+        text:
+          "UPDATE `shop`.`products` SET `product_name` = ?, `updated_at` = ? WHERE `product_id` = ?",
+        values: ["chair", expect.any(Date), 10],
+      },
+      {
+        text:
+          "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
+        values: [10],
       },
     ]);
   });

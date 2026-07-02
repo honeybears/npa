@@ -1,9 +1,11 @@
 import {
   registerColumn,
+  registerCreatedAt,
   registerEntity,
   registerId,
   registerIndex,
   registerRelation,
+  registerUpdatedAt,
   registerVersion,
 } from "./metadata-storage";
 import {
@@ -36,6 +38,22 @@ export function Column(options: ColumnOptions | string = {}): PropertyDecorator 
 
   return (target, propertyKey) => {
     registerColumn(target, propertyKey, resolvedOptions);
+  };
+}
+
+export function CreatedAt(options: ColumnOptions | string = {}): PropertyDecorator {
+  const resolvedOptions = normalizeColumnOptions(options);
+
+  return (target, propertyKey) => {
+    registerCreatedAt(target, propertyKey, resolvedOptions);
+  };
+}
+
+export function UpdatedAt(options: ColumnOptions | string = {}): PropertyDecorator {
+  const resolvedOptions = normalizeColumnOptions(options);
+
+  return (target, propertyKey) => {
+    registerUpdatedAt(target, propertyKey, resolvedOptions);
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@jest/globals";
 import {
   Column,
+  CreatedAt,
   Entity,
   Id,
   Index,
@@ -9,6 +10,7 @@ import {
   NPARepository,
   OneToMany,
   RelationKind,
+  UpdatedAt,
   Version,
   getEntityMetadata,
   parseQueryMethod,
@@ -60,8 +62,11 @@ class User {
   @Column({ name: "full_name", unique: "uidx_users_full_name" })
   name!: string;
 
-  @Column({ name: "created_at", index: "idx_users_created_at" })
+  @CreatedAt({ name: "created_at", index: "idx_users_created_at" })
   createdAt!: number;
+
+  @UpdatedAt({ name: "updated_at" })
+  updatedAt!: Date;
 
   @Version({ name: "lock_version" })
   version!: number;
@@ -86,6 +91,8 @@ describe("entity metadata", () => {
           columnName: column.columnName,
           primary: column.primary,
           version: column.version,
+          createdAt: column.createdAt,
+          updatedAt: column.updatedAt,
         })),
       ).toEqual([
         {
@@ -93,28 +100,46 @@ describe("entity metadata", () => {
           columnName: "user_id",
           primary: true,
           version: false,
+          createdAt: false,
+          updatedAt: false,
         },
         {
           propertyName: "name",
           columnName: "full_name",
           primary: false,
           version: false,
+          createdAt: false,
+          updatedAt: false,
         },
         {
           propertyName: "createdAt",
           columnName: "created_at",
           primary: false,
           version: false,
+          createdAt: true,
+          updatedAt: false,
+        },
+        {
+          propertyName: "updatedAt",
+          columnName: "updated_at",
+          primary: false,
+          version: false,
+          createdAt: false,
+          updatedAt: true,
         },
         {
           propertyName: "version",
           columnName: "lock_version",
           primary: false,
           version: true,
+          createdAt: false,
+          updatedAt: false,
         },
       ]);
       expect(metadata.versionColumn?.propertyName).toEqual("version");
       expect(metadata.versionColumn?.columnName).toEqual("lock_version");
+      expect(metadata.createdAtColumn?.propertyName).toEqual("createdAt");
+      expect(metadata.updatedAtColumn?.propertyName).toEqual("updatedAt");
       expect(
         metadata.indexes.map((index) => ({
           name: index.name,

@@ -1,5 +1,5 @@
 import { compilePostgresqlDeleteById, compilePostgresqlDeleteAll, compilePostgresqlExistsById, compilePostgresqlFindAll, compilePostgresqlFindById, compilePostgresqlInsert, compilePostgresqlCount, compilePostgresqlQuery, compilePostgresqlRawQuery, compilePostgresqlUpdate, compilePostgresqlVersionedUpdate, createPostgresqlDerivedQueryRepository, PostgresqlConnection, postgresql, type PostgresqlDriverConnection, type PostgresqlQueryable } from "../src";
-import { AbstractTransactionManager, Column, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, Version, createNPA, parseQueryMethod } from "../../../src";
+import { AbstractTransactionManager, Column, CreatedAt, Entity, Id, ManyToMany, ManyToOne, NPARepository, OneToMany, Query, Repository, UpdatedAt, Version, createNPA, parseQueryMethod } from "../../../src";
 import { describe, expect, test } from "@jest/globals";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;
@@ -29,6 +29,19 @@ class PgPlainProduct {
 Id({ name: "product_id" })(PgPlainProduct.prototype, "id");
 Column({ name: "product_name" })(PgPlainProduct.prototype, "name");
 Entity({ name: "products" })(PgPlainProduct);
+
+class PgTimestampedProduct {
+  id!: number;
+  name!: string;
+  createdAt!: Date;
+  updatedAt!: Date;
+}
+
+Id({ name: "product_id" })(PgTimestampedProduct.prototype, "id");
+Column({ name: "product_name" })(PgTimestampedProduct.prototype, "name");
+CreatedAt({ name: "created_at" })(PgTimestampedProduct.prototype, "createdAt");
+UpdatedAt({ name: "updated_at" })(PgTimestampedProduct.prototype, "updatedAt");
+Entity({ name: "products" })(PgTimestampedProduct);
 
 abstract class PgProductRepository extends NPARepository<PgProduct, number> {
   repositoryName(): string {
@@ -766,6 +779,51 @@ describe("PostgreSQL adapter", () => {
       {
         text: 'DELETE FROM "users"',
         values: [],
+      },
+    ]);
+  });
+
+  test("uses timestamp decorators for PostgreSQL insert defaults and update touches", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text.startsWith("INSERT")) {
+          return {
+            rows: [{ product_id: 1, product_name: values[0] }],
+            rowCount: 1,
+          };
+        }
+
+        return {
+          rows: [{
+            product_id: 1,
+            product_name: values[0],
+            updated_at: values[1],
+          }],
+          rowCount: 1,
+        };
+      },
+    };
+    const repository = createPostgresqlDerivedQueryRepository(
+      {},
+      { entity: PgTimestampedProduct, queryable: asPgQueryable(queryable) },
+    ) as NPARepository<Record<string, unknown>, number>;
+
+    await repository.insert({ name: "desk" });
+    await repository.updateById(1, { name: "chair" });
+
+    expect(calls).toEqual([
+      {
+        text:
+          'INSERT INTO "products" ("product_name") VALUES ($1) RETURNING *',
+        values: ["desk"],
+      },
+      {
+        text:
+          'UPDATE "products" SET "product_name" = $1, "updated_at" = $2 WHERE "product_id" = $3 RETURNING *',
+        values: ["chair", expect.any(Date), 1],
       },
     ]);
   });

@@ -46,6 +46,7 @@ exercise a real database.
 ```ts
 import {
   Column,
+  CreatedAt,
   Entity,
   Id,
   Index,
@@ -53,6 +54,7 @@ import {
   ManyToOne,
   OneToMany,
   ReferentialAction,
+  UpdatedAt,
   Version,
 } from '@node-persistence-api/core';
 
@@ -68,8 +70,11 @@ class User {
   @Column({ name: 'full_name', unique: 'uidx_users_full_name' })
   name!: string;
 
-  @Column({ name: 'created_at', index: 'idx_users_created_at' })
+  @CreatedAt({ name: 'created_at', index: 'idx_users_created_at' })
   createdAt!: Date;
+
+  @UpdatedAt({ name: 'updated_at' })
+  updatedAt!: Date;
 
   @Version()
   version!: number;
@@ -87,7 +92,9 @@ class User {
 ```
 
 `@Entity`, `@Id`, and `@Column` drive table, primary key, and column mapping.
-Use `@Version` for an optimistic lock column. Inserts default it to `0`; managed
+Use `@CreatedAt` and `@UpdatedAt` for timestamp columns; migrations default them
+to the current timestamp, and updates refresh `@UpdatedAt`. Use `@Version` for
+an optimistic lock column. Inserts default it to `0`; managed
 entity dirty flushes check the previous value and increment it. Use class-level
 `@Index` with property names in `columns` for composite indexes. Pass an array
 to `@Index` to declare multiple indexes, and set `unique: true` for composite

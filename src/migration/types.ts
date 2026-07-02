@@ -6,9 +6,12 @@ export interface NPAMigrationColumnSchema {
   tsType: string;
   dbType?: string;
   defaultValue?: string | number | boolean | null;
+  defaultCurrentTimestamp?: boolean;
   nullable: boolean;
   primary: boolean;
   version: boolean;
+  createdAt?: boolean;
+  updatedAt?: boolean;
 }
 
 export interface NPAMigrationIndexSchema {

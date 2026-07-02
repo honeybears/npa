@@ -20,6 +20,8 @@ interface MutableEntityMetadata {
   relations: Map<string, RelationMetadata>;
   primaryColumn?: ColumnMetadata;
   versionColumn?: ColumnMetadata;
+  createdAtColumn?: ColumnMetadata;
+  updatedAtColumn?: ColumnMetadata;
 }
 
 const metadataByTarget = new WeakMap<EntityTarget, MutableEntityMetadata>();
@@ -41,15 +43,11 @@ export function registerColumn(
   const metadata = getOrCreateMutableMetadata(target.constructor as EntityTarget);
   const propertyName = toPropertyName(propertyKey);
 
-  metadata.columns.set(propertyName, {
+  metadata.columns.set(propertyName, createColumnMetadata(
     propertyName,
-    columnName: options.name ?? toSnakeCase(propertyName),
-    nullable: options.nullable ?? false,
-    type: options.type,
-    ...(options.default !== undefined ? { default: options.default } : {}),
-    primary: false,
-    version: false,
-  });
+    options,
+    { primary: false, version: false, createdAt: false, updatedAt: false },
+  ));
 
   registerColumnIndexOptions(metadata, propertyName, options);
 }
@@ -62,13 +60,12 @@ export function registerId(
   const metadata = getOrCreateMutableMetadata(target.constructor as EntityTarget);
   const propertyName = toPropertyName(propertyKey);
   const column: ColumnMetadata = {
-    propertyName,
-    columnName: options.name ?? toSnakeCase(propertyName),
+    ...createColumnMetadata(
+      propertyName,
+      options,
+      { primary: true, version: false, createdAt: false, updatedAt: false },
+    ),
     nullable: false,
-    type: options.type,
-    ...(options.default !== undefined ? { default: options.default } : {}),
-    primary: true,
-    version: false,
   };
 
   metadata.columns.set(propertyName, column);
@@ -84,17 +81,52 @@ export function registerVersion(
   const metadata = getOrCreateMutableMetadata(target.constructor as EntityTarget);
   const propertyName = toPropertyName(propertyKey);
   const column: ColumnMetadata = {
-    propertyName,
-    columnName: options.name ?? toSnakeCase(propertyName),
+    ...createColumnMetadata(
+      propertyName,
+      options,
+      { primary: false, version: true, createdAt: false, updatedAt: false },
+    ),
     nullable: false,
-    type: options.type,
-    ...(options.default !== undefined ? { default: options.default } : {}),
-    primary: false,
-    version: true,
   };
 
   metadata.columns.set(propertyName, column);
   metadata.versionColumn = column;
+  registerColumnIndexOptions(metadata, propertyName, options);
+}
+
+export function registerCreatedAt(
+  target: object,
+  propertyKey: string | symbol,
+  options: ColumnOptions = {},
+): void {
+  const metadata = getOrCreateMutableMetadata(target.constructor as EntityTarget);
+  const propertyName = toPropertyName(propertyKey);
+  const column = createColumnMetadata(
+    propertyName,
+    options,
+    { primary: false, version: false, createdAt: true, updatedAt: false },
+  );
+
+  metadata.columns.set(propertyName, column);
+  metadata.createdAtColumn = column;
+  registerColumnIndexOptions(metadata, propertyName, options);
+}
+
+export function registerUpdatedAt(
+  target: object,
+  propertyKey: string | symbol,
+  options: ColumnOptions = {},
+): void {
+  const metadata = getOrCreateMutableMetadata(target.constructor as EntityTarget);
+  const propertyName = toPropertyName(propertyKey);
+  const column = createColumnMetadata(
+    propertyName,
+    options,
+    { primary: false, version: false, createdAt: false, updatedAt: true },
+  );
+
+  metadata.columns.set(propertyName, column);
+  metadata.updatedAtColumn = column;
   registerColumnIndexOptions(metadata, propertyName, options);
 }
 
@@ -160,6 +192,8 @@ export function getEntityMetadata<TEntity extends object>(
     relations: [...metadata.relations.values()],
     primaryColumn: metadata.primaryColumn,
     versionColumn: metadata.versionColumn,
+    createdAtColumn: metadata.createdAtColumn,
+    updatedAtColumn: metadata.updatedAtColumn,
   };
 }
 
@@ -167,6 +201,21 @@ export function getOptionalEntityMetadata<TEntity extends object>(
   target: EntityTarget<TEntity> | undefined,
 ): EntityMetadata | undefined {
   return target ? getEntityMetadata(target) : undefined;
+}
+
+function createColumnMetadata(
+  propertyName: string,
+  options: ColumnOptions,
+  flags: Pick<ColumnMetadata, "primary" | "version" | "createdAt" | "updatedAt">,
+): ColumnMetadata {
+  return {
+    propertyName,
+    columnName: options.name ?? toSnakeCase(propertyName),
+    nullable: options.nullable ?? false,
+    type: options.type,
+    ...(options.default !== undefined ? { default: options.default } : {}),
+    ...flags,
+  };
 }
 
 function registerColumnIndexOptions(
@@ -219,6 +268,8 @@ function getOrCreateMutableMetadata(
     relations: new Map(),
     primaryColumn: undefined,
     versionColumn: undefined,
+    createdAtColumn: undefined,
+    updatedAtColumn: undefined,
   };
   metadataByTarget.set(target, metadata);
 

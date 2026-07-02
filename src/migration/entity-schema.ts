@@ -26,7 +26,7 @@ interface DecoratorOptions {
   onUpdate?: NPAMigrationReferentialAction;
 }
 
-type FieldDecoratorName = "Id" | "Column" | "Version";
+type FieldDecoratorName = "Id" | "Column" | "Version" | "CreatedAt" | "UpdatedAt";
 
 export function discoverEntitySchemas(
   cwd: string,
@@ -91,7 +91,7 @@ function parseColumns(
   while ((match = fieldPattern.exec(classBody)) !== null) {
     const decorators = match[1];
 
-    if (!/@(?:Id|Column|Version)(?:\(|\s|$)/.test(decorators)) {
+    if (!/@(?:Id|Column|Version|CreatedAt|UpdatedAt)(?:\(|\s|$)/.test(decorators)) {
       continue;
     }
 
@@ -99,7 +99,17 @@ function parseColumns(
     const tsType = match[3].trim();
     const primary = /@Id(?:\(|\s|$)/.test(decorators);
     const version = /@Version(?:\(|\s|$)/.test(decorators);
-    const decoratorName = primary ? "Id" : version ? "Version" : "Column";
+    const createdAt = /@CreatedAt(?:\(|\s|$)/.test(decorators);
+    const updatedAt = /@UpdatedAt(?:\(|\s|$)/.test(decorators);
+    const decoratorName = primary
+      ? "Id"
+      : version
+        ? "Version"
+        : createdAt
+          ? "CreatedAt"
+          : updatedAt
+            ? "UpdatedAt"
+            : "Column";
     const rawOptions = readDecoratorArguments(decorators, decoratorName);
     const options = parseDecoratorOptions(
       rawOptions,
@@ -115,9 +125,14 @@ function parseColumns(
       ...(options.defaultValue !== undefined
         ? { defaultValue: options.defaultValue }
         : {}),
+      ...((createdAt || updatedAt) && options.defaultValue === undefined
+        ? { defaultCurrentTimestamp: true }
+        : {}),
       nullable: primary || version ? false : options.nullable ?? false,
       primary,
       version,
+      ...(createdAt ? { createdAt: true } : {}),
+      ...(updatedAt ? { updatedAt: true } : {}),
     });
   }
 
@@ -201,9 +216,13 @@ function parsePropertyIndexes(
       ? "Id"
       : /@Version(?:\(|\s|$)/.test(decorators)
         ? "Version"
-        : "Column";
+        : /@CreatedAt(?:\(|\s|$)/.test(decorators)
+          ? "CreatedAt"
+          : /@UpdatedAt(?:\(|\s|$)/.test(decorators)
+            ? "UpdatedAt"
+            : "Column";
 
-    if (/@(?:Id|Column|Version)(?:\(|\s|$)/.test(decorators)) {
+    if (/@(?:Id|Column|Version|CreatedAt|UpdatedAt)(?:\(|\s|$)/.test(decorators)) {
       const columnOptions = parseDecoratorOptions(
         readDecoratorArguments(decorators, columnDecorator),
         `@${columnDecorator} for ${className}.${propertyName}`,
@@ -714,7 +733,7 @@ function readLeadingClassDecorators(source: string, entityDecoratorIndex: number
 }
 
 function createFieldPattern(): RegExp {
-  return /((?:\s*@(?:Id|Column|Version|Index|Unique)(?:\((?:[^()"'`]|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\]*(?:\\.[^`\\]*)*`)*\))?\s*)+)\s*(?:public\s+|protected\s+|private\s+|readonly\s+)*([A-Za-z_]\w*)(?:[?!])?\s*:\s*([^=;]+)[=;]?/g;
+  return /((?:\s*@(?:Id|Column|Version|CreatedAt|UpdatedAt|Index|Unique)(?:\((?:[^()"'`]|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\]*(?:\\.[^`\\]*)*`)*\))?\s*)+)\s*(?:public\s+|protected\s+|private\s+|readonly\s+)*([A-Za-z_]\w*)(?:[?!])?\s*:\s*([^=;]+)[=;]?/g;
 }
 
 function rejectUniqueDecorator(source: string, className: string): void {

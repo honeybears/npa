@@ -365,10 +365,10 @@ function compileMysqlTableDiffStatements(
       const expectedType = normalizeMysqlTypeName(columnAlterType(column));
       const currentType = normalizeMysqlTypeName(currentColumn.type);
       const expectedNullable = column.primary ? false : column.nullable;
-      const expectedDefault = normalizeDesiredDefault(column.defaultValue);
+      const expectedDefault = normalizeDesiredDefault(column);
       const currentDefault = normalizeMysqlDefault(
         currentColumn.defaultValue,
-        column.defaultValue,
+        column,
       );
 
       if (
@@ -503,9 +503,7 @@ function columnDefinition(
     : column.nullable
       ? ""
       : " NOT NULL";
-  const defaultClause = column.defaultValue === undefined
-    ? ""
-    : ` DEFAULT ${renderColumnDefault(column.defaultValue)}`;
+  const defaultClause = columnDefaultClause(column);
 
   return `${dbType}${constraints}${defaultClause}`;
 }
@@ -515,8 +513,14 @@ function columnAlterType(column: NPAMigrationColumnSchema): string {
 }
 
 function normalizeDesiredDefault(
-  value: string | number | boolean | null | undefined,
+  column: NPAMigrationColumnSchema,
 ): string | undefined {
+  if (column.defaultCurrentTimestamp) {
+    return "raw:current_timestamp";
+  }
+
+  const value = column.defaultValue;
+
   if (value === undefined || value === null) {
     return undefined;
   }
@@ -534,10 +538,18 @@ function normalizeDesiredDefault(
 
 function normalizeMysqlDefault(
   value: string | undefined,
-  desiredValue: string | number | boolean | null | undefined,
+  column: NPAMigrationColumnSchema,
 ): string | undefined {
+  const desiredValue = column.defaultValue;
+
   if (value === undefined || desiredValue === null) {
     return undefined;
+  }
+
+  if (column.defaultCurrentTimestamp) {
+    return /^current_timestamp(?:\(\d+\))?$/i.test(value)
+      ? "raw:current_timestamp"
+      : `raw:${value}`;
   }
 
   if (typeof desiredValue === "boolean") {
@@ -555,7 +567,21 @@ function normalizeMysqlDefault(
   return `raw:${value}`;
 }
 
-function renderColumnDefault(value: string | number | boolean | null): string {
+function columnDefaultClause(column: NPAMigrationColumnSchema): string {
+  if (column.defaultCurrentTimestamp) {
+    return " DEFAULT CURRENT_TIMESTAMP(3)";
+  }
+
+  if (column.defaultValue === undefined) {
+    return "";
+  }
+
+  return ` DEFAULT ${renderColumnDefault(column)}`;
+}
+
+function renderColumnDefault(column: NPAMigrationColumnSchema): string {
+  const value = column.defaultValue;
+
   if (typeof value === "string") {
     return `'${value.replace(/'/g, "''")}'`;
   }
@@ -564,7 +590,7 @@ function renderColumnDefault(value: string | number | boolean | null): string {
     return value ? "TRUE" : "FALSE";
   }
 
-  if (value === null) {
+  if (value === null || value === undefined) {
     return "NULL";
   }
 

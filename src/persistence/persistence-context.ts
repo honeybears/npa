@@ -155,6 +155,18 @@ export class PersistenceContext {
         );
       }
 
+      if (updated && managed.metadata.updatedAtColumn) {
+        const updatedAt = readColumnValue(updated, managed.metadata.updatedAtColumn);
+
+        if (updatedAt !== undefined) {
+          writeColumnValue(
+            managed.entity,
+            managed.metadata.updatedAtColumn,
+            updatedAt,
+          );
+        }
+      }
+
       managed.snapshot = snapshotEntity(managed.entity, managed.metadata);
     }
   }

@@ -5,6 +5,7 @@ import {
   Id,
   OptimisticLockError,
   PersistenceContext,
+  UpdatedAt,
   Version,
 } from "../src";
 
@@ -28,6 +29,9 @@ class User {
 
   @Column({ name: "created_at" })
   createdAt!: Date;
+
+  @UpdatedAt({ name: "updated_at" })
+  updatedAt!: Date;
 }
 
 @Entity({ name: "versioned_users" })
@@ -205,6 +209,39 @@ describe("persistence context", () => {
       { id: 7, patch: { name: "lee" } },
       { id: 7, patch: { name: "lee" } },
     ]);
+  });
+
+  test("copies returned updatedAt values into managed entities", async () => {
+    const context = new PersistenceContext();
+    const oldUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
+    const newUpdatedAt = new Date("2026-01-02T00:00:00.000Z");
+    const row = {
+      user_id: 8,
+      full_name: "kim",
+      active: true,
+      updated_at: oldUpdatedAt,
+    };
+
+    const managed = context.manage<User>(row as unknown as User, {
+      entity: User,
+      adapter: {
+        async updateDirty(_entity, id, patch) {
+          return {
+            user_id: id,
+            full_name: patch.name,
+            active: true,
+            updated_at: newUpdatedAt,
+          } as unknown as User;
+        },
+      },
+    });
+
+    managed.name = "lee";
+
+    await context.flush();
+
+    expect(row.updated_at).toEqual(newUpdatedAt);
+    expect(managed.updatedAt).toEqual(newUpdatedAt);
   });
 
   test("uses @Version metadata for optimistic dirty updates", async () => {
