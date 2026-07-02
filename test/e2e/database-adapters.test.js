@@ -163,6 +163,14 @@ for (const adapter of databaseAdapters) {
           });
           const service = new ProductService(runtime.manager, repository);
 
+          await assertTransactionIsolation(
+            adapter,
+            container,
+            tableName,
+            runtime,
+            repository,
+          );
+
           await assert.rejects(() => service.createThenFail(), /rollback/);
           assert.equal(await repository.count(), 0);
 
@@ -264,12 +272,12 @@ decorateMethod(
 );
 decorateMethod(ProductService, "renameManagedProduct", Transaction());
 
-function product(name, price) {
+function product(name, price, status = "draft") {
   return {
     name,
     price,
     active: true,
-    status: "draft",
+    status,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
   };
 }
@@ -281,6 +289,73 @@ function decorateMethod(targetClass, methodName, decorator) {
   );
   decorator(targetClass.prototype, methodName, descriptor);
   Object.defineProperty(targetClass.prototype, methodName, descriptor);
+}
+
+function normalizeIsolation(value) {
+  return String(value).toLowerCase().replace(/-/g, " ");
+}
+
+async function assertTransactionIsolation(
+  adapter,
+  container,
+  tableName,
+  runtime,
+  repository,
+) {
+  const probe = transactionIsolationProbe(adapter);
+  const writer = await adapter.createQueryable(container);
+  const writerRepository = adapter.createRepository({
+    entity: createProductEntity(tableName),
+    queryable: writer,
+  });
+  let beforeCount;
+  let afterCount;
+  let transactionIsolation;
+
+  try {
+    await runtime.manager.transactional(
+      async () => {
+        beforeCount = await repository.countByStatus("isolation-probe");
+        if (probe.expectedIsolation) {
+          transactionIsolation = await adapter.readTransactionIsolation(
+            runtime.queryable,
+          );
+        }
+        await writerRepository.insert(
+          product("isolation probe", 5, "isolation-probe"),
+        );
+        afterCount = await repository.countByStatus("isolation-probe");
+      },
+      { isolation: probe.isolation },
+    );
+
+    assert.equal(beforeCount, 0);
+    assert.equal(afterCount, probe.expectedAfterCount);
+    if (probe.expectedIsolation) {
+      assert.equal(
+        normalizeIsolation(transactionIsolation),
+        probe.expectedIsolation,
+      );
+    }
+  } finally {
+    await writerRepository.deleteByStatus("isolation-probe").catch(() => {});
+    await adapter.closeQueryable(writer);
+  }
+}
+
+function transactionIsolationProbe(adapter) {
+  if (adapter.adapterName === "postgresql") {
+    return {
+      isolation: NPATransactionIsolation.REPEATABLE_READ,
+      expectedAfterCount: 0,
+      expectedIsolation: "repeatable read",
+    };
+  }
+
+  return {
+    isolation: NPATransactionIsolation.READ_COMMITTED,
+    expectedAfterCount: 1,
+  };
 }
 
 function createTeamMemberEntities(

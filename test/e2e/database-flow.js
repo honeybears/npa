@@ -48,6 +48,10 @@ const databaseAdapters = [
     },
     closeQueryable: (connection) => connection.close(),
     executeSql: (connection, sql) => connection.query(sql),
+    readTransactionIsolation: async (queryable) => {
+      const result = await queryable.query("SHOW transaction_isolation");
+      return result.rows[0].transaction_isolation;
+    },
     createTableSql: (table) => `
       CREATE TABLE ${table} (
         product_id SERIAL PRIMARY KEY,
