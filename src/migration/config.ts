@@ -20,6 +20,8 @@ export async function loadNPAMigrationConfig(
   const url = options.url ?? config.url;
   const adapter = resolveAdapter(options.adapter ?? config.adapter, url);
 
+  assertUrlMatchesAdapter(url, adapter);
+
   return {
     adapter,
     url,
@@ -81,13 +83,40 @@ function resolveAdapter(
   value: string | undefined,
   url: string | undefined,
 ): NPAMigrationAdapterName {
-  const adapter = value ?? inferAdapterFromUrl(url);
+  const inferredAdapter = inferAdapterFromUrl(url);
+
+  if (!value && url && !inferredAdapter) {
+    throw new Error(
+      "Migration url must start with postgres://, postgresql://, or mysql://.",
+    );
+  }
+
+  const adapter = value ?? inferredAdapter;
 
   if (adapter !== "postgresql" && adapter !== "mysql") {
     throw new Error("Migration adapter must be postgresql or mysql.");
   }
 
   return adapter;
+}
+
+function assertUrlMatchesAdapter(
+  url: string | undefined,
+  adapter: NPAMigrationAdapterName,
+): void {
+  const inferredAdapter = inferAdapterFromUrl(url);
+
+  if (url && !inferredAdapter) {
+    throw new Error(
+      "Migration url must start with postgres://, postgresql://, or mysql://.",
+    );
+  }
+
+  if (inferredAdapter && inferredAdapter !== adapter) {
+    throw new Error(
+      `Migration adapter ${adapter} does not match ${inferredAdapter} url.`,
+    );
+  }
 }
 
 function normalizeEntities(value: string | string[] | undefined): string[] {

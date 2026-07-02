@@ -120,7 +120,7 @@ async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> 
     return;
   }
 
-  if (plan.statements.length === 0 && !createOnly) {
+  if (plan.statements.length === 0) {
     process.stdout.write("No schema changes found. Database is up to date.\n");
     return;
   }

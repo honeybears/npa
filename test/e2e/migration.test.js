@@ -13,6 +13,57 @@ const {
   uniqueTableName,
 } = require("./database-flow");
 
+test("reports migration CLI config errors", () => {
+  const root = makeMigrationProject({
+    adapter: "postgresql",
+    tableName: "products",
+    categoryTableName: "categories",
+    joinTableName: "product_categories",
+    statusIndexName: "idx_products_status",
+    skuUniqueIndexName: "uidx_products_sku",
+    url: "postgresql://localhost/npa",
+  });
+
+  const missingConfig = runCli(
+    ["db", "push", "--dry-run", "--config", "missing.config.mjs"],
+    root,
+  );
+  assert.equal(missingConfig.status, 1);
+  assert.match(missingConfig.stderr, /NPA config file was not found/);
+
+  writeConfig(root, {
+    adapter: "sqlite",
+    url: "sqlite://local.db",
+  });
+  const badAdapter = runCli(["db", "push", "--dry-run", "--config", "npa.config.mjs"], root);
+  assert.equal(badAdapter.status, 1);
+  assert.match(badAdapter.stderr, /Migration adapter must be postgresql or mysql/);
+
+  writeConfig(root, {
+    url: "sqlite://local.db",
+  });
+  const badUrl = runCli(["db", "push", "--dry-run", "--config", "npa.config.mjs"], root);
+  assert.equal(badUrl.status, 1);
+  assert.match(
+    badUrl.stderr,
+    /Migration url must start with postgres:\/\/, postgresql:\/\/, or mysql:\/\//,
+  );
+
+  writeConfig(root, {
+    adapter: "postgresql",
+    url: "mysql://localhost/npa",
+  });
+  const mismatchedUrl = runCli(
+    ["db", "push", "--dry-run", "--config", "npa.config.mjs"],
+    root,
+  );
+  assert.equal(mismatchedUrl.status, 1);
+  assert.match(
+    mismatchedUrl.stderr,
+    /Migration adapter postgresql does not match mysql url/,
+  );
+});
+
 for (const adapter of databaseAdapters) {
   test(
     `runs npa db push against ${adapter.name} and alters existing schema`,
@@ -179,7 +230,7 @@ for (const adapter of databaseAdapters) {
       assert.match(created.stdout, /Created and applied migration \d{14}_init/);
 
       const migrationRoot = path.join(root, "npa", "migrations");
-      const migrationDirs = fs.readdirSync(migrationRoot);
+      const migrationDirs = fs.readdirSync(migrationRoot).sort();
       assert.equal(migrationDirs.length, 1);
       assert.match(migrationDirs[0], /^\d{14}_init$/);
       assert.equal(
@@ -206,6 +257,22 @@ for (const adapter of databaseAdapters) {
       const restored = runCli(["migrate", "deploy", "--config", "npa.config.mjs"], root);
       assert.equal(restored.status, 0, restored.stderr);
       assert.match(restored.stdout, /No pending migrations/);
+
+      const emptyCreateOnly = runCli(
+        [
+          "migrate",
+          "dev",
+          "--name",
+          "empty",
+          "--create-only",
+          "--config",
+          "npa.config.mjs",
+        ],
+        root,
+      );
+      assert.equal(emptyCreateOnly.status, 0, emptyCreateOnly.stderr);
+      assert.match(emptyCreateOnly.stdout, /No schema changes found/);
+      assert.deepEqual(fs.readdirSync(migrationRoot).sort(), migrationDirs);
 
       queryable = await adapter.createQueryable(container);
       const repository = adapter.createRepository({
@@ -273,6 +340,14 @@ function makeMigrationProject(options) {
   );
   writeProductEntity(root, options);
   return root;
+}
+
+function writeConfig(root, config) {
+  fs.writeFileSync(
+    path.join(root, "npa.config.mjs"),
+    `export default ${JSON.stringify(config, null, 2)};`,
+    "utf8",
+  );
 }
 
 function writeProductEntity(root, options) {
