@@ -125,6 +125,17 @@ for (const adapter of databaseAdapters) {
       assert.deepEqual(matched.map((row) => row.name), ["kim"]);
       assert.equal(await teams.countByMembersName("kim"), 1);
       assert.deepEqual(
+        (await members.findByTeamIn([{ id: platformId }, { id: designId }]))
+          .map((row) => row.name)
+          .sort(),
+        ["kim", "lee"],
+      );
+      assert.deepEqual(
+        (await members.findByTeamLabelInOrderByTeamLabelDesc(["platform", "design"]))
+          .map((row) => row.name),
+        ["kim", "lee"],
+      );
+      assert.deepEqual(
         (await members.findByRolesName("admin")).map((row) => row.name),
         ["kim"],
       );
