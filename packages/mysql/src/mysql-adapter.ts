@@ -6,14 +6,36 @@ import type {
 } from "@node-persistence-api/core";
 import { MysqlRepositoryExecutor } from "./mysql-repository-executor";
 import { MysqlQueryable } from "./types";
+import {
+  MysqlTransactionConnection,
+  MysqlTransactionManager,
+} from "./mysql-transaction-manager";
 
-export interface MysqlAdapterOptions {
-  preferExecute?: boolean;
-  queryable: MysqlQueryable;
-}
+export type MysqlAdapterOptions =
+  | {
+      connection: MysqlTransactionConnection;
+      preferExecute?: boolean;
+      queryable?: never;
+    }
+  | {
+      connection?: never;
+      preferExecute?: boolean;
+      queryable: MysqlQueryable;
+    };
 
 export function mysql(options: MysqlAdapterOptions): NPARuntimeAdapter {
+  const transactionManager = options.connection
+    ? new MysqlTransactionManager(options.connection)
+    : undefined;
+  const queryable = transactionManager?.queryable ?? options.queryable;
+
+  if (!queryable) {
+    throw new Error("MySQL adapter requires queryable or connection.");
+  }
+
   return {
+    transactionManager,
+
     createRepository<
       TEntity extends object,
       TId = unknown,
@@ -28,7 +50,7 @@ export function mysql(options: MysqlAdapterOptions): NPARuntimeAdapter {
       const executor = new MysqlRepositoryExecutor<TEntity, TId>({
         entity: repositoryOptions.entity,
         preferExecute: options.preferExecute,
-        queryable: options.queryable,
+        queryable,
       });
       const target = Object.create(
         repositoryOptions.repository.prototype,

@@ -1,5 +1,18 @@
-import { describe, expect, test } from "@jest/globals";
-import { AbstractTransactionManager, Column, Entity, getCurrentPersistenceContext, Id, TransactionIsolation, TransactionOptions, TransactionPropagation, RollbackOnlyError, Transaction } from "../src";
+import { afterEach, describe, expect, test } from "@jest/globals";
+import {
+  AbstractTransactionManager,
+  Column,
+  Entity,
+  getCurrentPersistenceContext,
+  Id,
+  NPA,
+  RollbackOnlyError,
+  Transaction,
+  TransactionIsolation,
+  TransactionOptions,
+  TransactionPropagation,
+  clearTransactionManagers,
+} from "../src";
 
 interface RecordingResource {
   id: number;
@@ -45,6 +58,10 @@ class RecordingTransactionManager extends AbstractTransactionManager<RecordingRe
     this.calls.push(`release:${resource.id}`);
   }
 }
+
+afterEach(() => {
+  clearTransactionManagers();
+});
 
 class TransactionUser {}
 
@@ -298,6 +315,111 @@ describe("transaction manager", () => {
       "commit:1",
       "release:1",
     ]);
+  });
+
+  test("Transaction decorator resolves a manager registered by NPA", async () => {
+    const manager = new RecordingTransactionManager();
+
+    new NPA({
+      adapter: {
+        createRepository() {
+          throw new Error("unexpected repository creation");
+        },
+      },
+      repositories: [],
+      transactionManager: manager,
+    });
+
+    class UserService {
+      async count(): Promise<boolean> {
+        return manager.isTransactionActive();
+      }
+    }
+
+    decorateMethod(UserService, "count", Transaction());
+
+    expect(await new UserService().count()).toEqual(true);
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("Transaction decorator resolves a manager from the NPA adapter", async () => {
+    const manager = new RecordingTransactionManager();
+
+    new NPA({
+      adapter: {
+        transactionManager: manager,
+        createRepository() {
+          throw new Error("unexpected repository creation");
+        },
+      },
+      repositories: [],
+    });
+
+    class UserService {
+      async count(): Promise<boolean> {
+        return manager.isTransactionActive();
+      }
+    }
+
+    decorateMethod(UserService, "count", Transaction());
+
+    expect(await new UserService().count()).toEqual(true);
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("Transaction decorator requires a name when multiple managers are registered", async () => {
+    const userManager = new RecordingTransactionManager();
+    const auditManager = new RecordingTransactionManager();
+    const adapter = {
+      createRepository() {
+        throw new Error("unexpected repository creation");
+      },
+    };
+
+    new NPA({
+      adapter,
+      name: "user",
+      repositories: [],
+      transactionManager: userManager,
+    });
+    new NPA({
+      adapter,
+      name: "audit",
+      repositories: [],
+      transactionManager: auditManager,
+    });
+
+    class UserService {
+      async save(): Promise<string> {
+        return `user:${userManager.isTransactionActive()}:audit:${auditManager.isTransactionActive()}`;
+      }
+
+      async writeAudit(): Promise<string> {
+        return `user:${userManager.isTransactionActive()}:audit:${auditManager.isTransactionActive()}`;
+      }
+    }
+
+    decorateMethod(UserService, "save", Transaction());
+    decorateMethod(
+      UserService,
+      "writeAudit",
+      Transaction({ managerName: "audit" }),
+    );
+
+    const service = new UserService();
+
+    await expect(service.save()).rejects.toThrow(/multiple transaction managers/);
+    expect(await service.writeAudit()).toEqual("user:false:audit:true");
   });
 });
 

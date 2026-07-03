@@ -1,4 +1,6 @@
 import type { EntityTarget } from "../entity";
+import { registerTransactionManager } from "../transaction/transaction-manager-registry";
+import type { TransactionManager } from "../transaction/types";
 import {
   getRegisteredRepositoryTargets,
   getRepositoryMetadata,
@@ -17,6 +19,8 @@ export interface NPACreateRepositoryOptions<
 }
 
 export interface NPARuntimeAdapter {
+  transactionManager?: TransactionManager;
+
   createRepository<
     TEntity extends object,
     TId = unknown,
@@ -28,7 +32,9 @@ export interface NPARuntimeAdapter {
 
 export interface NPAOptions {
   adapter: NPARuntimeAdapter;
+  name?: string;
   repositories?: NPARepositoryTarget[];
+  transactionManager?: TransactionManager;
 }
 
 export type CreateNPAOptions = NPAOptions;
@@ -70,6 +76,13 @@ export class NPA implements NPAApplication {
           repository,
         }),
       );
+    }
+
+    const transactionManager =
+      options.transactionManager ?? options.adapter.transactionManager;
+
+    if (transactionManager) {
+      registerTransactionManager(transactionManager, options.name);
     }
   }
 

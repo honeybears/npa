@@ -753,6 +753,44 @@ describe("PostgreSQL adapter", () => {
     ]);
   });
 
+  test("creates a transaction manager when PostgreSQL adapter receives a connection", async () => {
+    const calls = [];
+    const adapter = postgresql({
+      connection: {
+        query(text, values) {
+          calls.push({ text, values });
+
+          return {
+            rows: text.startsWith("SELECT")
+              ? [{ product_id: values?.[0], product_name: "desk" }]
+              : [],
+            rowCount: 1,
+          };
+        },
+      },
+    });
+    const products = adapter.createRepository({
+      entity: PgProduct,
+      repository: PgProductRepository,
+    }) as PgProductRepository & DynamicRepository;
+
+    expect(adapter.transactionManager).toBeDefined();
+    await expect(
+      adapter.transactionManager?.transactional(() => products.findById(10)),
+    ).resolves.toEqual({
+      product_id: 10,
+      product_name: "desk",
+    });
+    expect(calls).toEqual([
+      { text: "BEGIN", values: undefined },
+      {
+        text: 'SELECT * FROM "products" WHERE "product_id" = $1 LIMIT 1',
+        values: [10],
+      },
+      { text: "COMMIT", values: undefined },
+    ]);
+  });
+
   test("compiles insert, update, and deleteById PostgreSQL CRUD SQL", () => {
     const options = {
       tableName: "users",

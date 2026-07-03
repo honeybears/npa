@@ -469,36 +469,31 @@ await users.findDistinctTop10ByNameContainingIgnoreCaseOrderByCreatedAtDesc('ki'
 ## Transactions
 
 Use a database transaction manager when multiple repository calls must commit or
-roll back as one unit. Pass the manager's context-aware `queryable` to the
-runtime adapter, then decorate service methods with `@Transaction()`. The
-default propagation is `TransactionPropagation.REQUIRED`, so nested
-transactional calls reuse the active transaction. Use
+roll back as one unit. Pass a transaction-capable connection to the runtime
+adapter, then decorate service methods with `@Transaction()`. The default
+propagation is `TransactionPropagation.REQUIRED`, so nested transactional calls
+reuse the active transaction. Use
 `{ propagation: TransactionPropagation.REQUIRES_NEW }` to force a separate
 transaction.
 
 ```ts
 import {
   TransactionIsolation,
-  TransactionPropagation,
   Transaction,
   NPA,
 } from '@node-persistence-api/core';
-import { PostgresqlTransactionManager, postgresql } from '@node-persistence-api/connector-pg';
+import { postgresql } from '@node-persistence-api/connector-pg';
 import { Pool } from 'pg';
 import './repositories';
 import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const txManager = new PostgresqlTransactionManager(pool);
 const npa = new NPA({
-  adapter: postgresql({ queryable: txManager.queryable }),
+  adapter: postgresql({ connection: pool }),
 });
 
 class UserService {
-  constructor(
-    private readonly users = npa.get(UserRepository),
-    private readonly transactionManager = txManager,
-  ) {}
+  private readonly users = npa.get(UserRepository);
 
   @Transaction({ isolation: TransactionIsolation.READ_COMMITTED })
   async renameUser(id: number, name: string): Promise<void> {
@@ -510,9 +505,13 @@ class UserService {
 const service = new UserService();
 ```
 
-MySQL uses the same core decorator with `MysqlTransactionManager` from
-`@node-persistence-api/connector-mysql`. Transaction options currently support `isolation`,
-`readOnly`, `TransactionPropagation.REQUIRED`, and
+When multiple `NPA` instances register transaction managers, pass
+`name: 'main'` to each instance and choose one explicitly with
+`@Transaction({ managerName: 'main' })`.
+
+MySQL uses the same core decorator with
+`@node-persistence-api/connector-mysql`. Transaction options currently support
+`isolation`, `readOnly`, `TransactionPropagation.REQUIRED`, and
 `TransactionPropagation.REQUIRES_NEW`.
 
 ## Dirty Checking and Versioning

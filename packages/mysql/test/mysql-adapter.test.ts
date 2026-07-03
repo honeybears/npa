@@ -718,6 +718,44 @@ describe("MySQL adapter", () => {
     ]);
   });
 
+  test("creates a transaction manager when MySQL adapter receives a connection", async () => {
+    const calls = [];
+    const adapter = mysql({
+      connection: {
+        query(text, values) {
+          calls.push({ text, values });
+
+          if (text.startsWith("SELECT")) {
+            return [[{ product_id: values?.[0], product_name: "desk" }], []];
+          }
+
+          return [[], []];
+        },
+      },
+    });
+    const products = adapter.createRepository({
+      entity: Product,
+      repository: ProductRepository,
+    }) as ProductRepository & DynamicRepository;
+
+    expect(adapter.transactionManager).toBeDefined();
+    await expect(
+      adapter.transactionManager?.transactional(() => products.findById(10)),
+    ).resolves.toEqual({
+      product_id: 10,
+      product_name: "desk",
+    });
+    expect(calls).toEqual([
+      { text: "START TRANSACTION", values: undefined },
+      {
+        text:
+          "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
+        values: [10],
+      },
+      { text: "COMMIT", values: undefined },
+    ]);
+  });
+
   test("executes @Query raw MySQL repository methods", async () => {
     const calls = [];
     const queryable = {

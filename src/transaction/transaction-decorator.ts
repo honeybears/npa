@@ -1,8 +1,10 @@
 import { TransactionManager, TransactionOptions } from "./types";
+import { resolveRegisteredTransactionManager } from "./transaction-manager-registry";
 
 export interface TransactionDecoratorOptions
   extends TransactionOptions {
   manager?: TransactionManager;
+  managerName?: string;
   managerProperty?: string;
 }
 
@@ -23,10 +25,16 @@ export function Transaction(
     descriptor.value = async function transactionalMethod(
       ...args: unknown[]
     ): Promise<unknown> {
-      const { manager, managerProperty, ...transactionOptions } = options;
+      const {
+        manager,
+        managerName,
+        managerProperty,
+        ...transactionOptions
+      } = options;
       const transactionManager = resolveTransactionManager(
         this,
         manager,
+        managerName,
         managerProperty,
       );
 
@@ -45,10 +53,33 @@ export const Transactional = Transaction;
 function resolveTransactionManager(
   target: unknown,
   manager: TransactionManager | undefined,
+  managerName: string | undefined,
   managerProperty: string | undefined,
 ): TransactionManager {
   if (manager) {
     return manager;
+  }
+
+  if (managerProperty) {
+    const value = (target as Record<string, unknown> | undefined)?.[
+      managerProperty
+    ];
+
+    if (isTransactionManager(value)) {
+      return value;
+    }
+
+    throw new Error(
+      `@Transaction could not find a transaction manager. Add a ${managerProperty} property or pass @Transaction({ manager }).`,
+    );
+  }
+
+  if (managerName) {
+    const registered = resolveRegisteredTransactionManager(managerName);
+
+    if (registered) {
+      return registered;
+    }
   }
 
   const propertyName = managerProperty ?? "transactionManager";
@@ -58,8 +89,14 @@ function resolveTransactionManager(
     return value;
   }
 
+  const registered = resolveRegisteredTransactionManager();
+
+  if (registered) {
+    return registered;
+  }
+
   throw new Error(
-    `@Transaction could not find a transaction manager. Add a ${propertyName} property or pass @Transaction({ manager }).`,
+    `@Transaction could not find a transaction manager. Add a ${propertyName} property, pass @Transaction({ manager }), or register one with new NPA({ transactionManager }).`,
   );
 }
 

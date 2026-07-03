@@ -35,25 +35,21 @@ await users.findByNameContainingIgnoreCase('ki');
 await users.findAll({ select: ['id', 'name'] as const, orderBy: [{ property: 'name' }] });
 ```
 
-Use `PostgresqlTransactionManager` when repository calls must share a database
-transaction:
+Pass a transaction-capable connection when repository calls must share a
+database transaction:
 
 ```ts
 import { NPA, Transaction } from '@node-persistence-api/core';
-import {
-  PostgresqlTransactionManager,
-  postgresql,
-} from '@node-persistence-api/connector-pg';
+import { postgresql } from '@node-persistence-api/connector-pg';
 
-const txManager = new PostgresqlTransactionManager(pool);
 const npa = new NPA({
-  adapter: postgresql({ queryable: txManager.queryable }),
+  adapter: postgresql({ connection: pool }),
 });
 
 class UserService {
   private readonly users = npa.get(UserRepository);
 
-  @Transaction({ manager: txManager })
+  @Transaction()
   async rename(id: number, name: string): Promise<void> {
     await this.users.updateById(id, { name });
   }

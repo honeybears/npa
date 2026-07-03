@@ -35,25 +35,21 @@ await users.findByNameContainingIgnoreCase('ki');
 await users.findAll({ select: ['id', 'name'] as const, orderBy: [{ property: 'name' }] });
 ```
 
-Use `MysqlTransactionManager` when repository calls must share a database
-transaction:
+Pass a transaction-capable connection when repository calls must share a
+database transaction:
 
 ```ts
 import { NPA, Transaction } from '@node-persistence-api/core';
-import {
-  MysqlTransactionManager,
-  mysql as npaMysql,
-} from '@node-persistence-api/connector-mysql';
+import { mysql as npaMysql } from '@node-persistence-api/connector-mysql';
 
-const txManager = new MysqlTransactionManager(pool);
 const npa = new NPA({
-  adapter: npaMysql({ queryable: txManager.queryable }),
+  adapter: npaMysql({ connection: pool }),
 });
 
 class UserService {
   private readonly users = npa.get(UserRepository);
 
-  @Transaction({ manager: txManager })
+  @Transaction()
   async rename(id: number, name: string): Promise<void> {
     await this.users.updateById(id, { name });
   }
