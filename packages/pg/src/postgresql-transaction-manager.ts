@@ -47,6 +47,27 @@ export class PostgresqlTransactionManager extends AbstractTransactionManager<Pos
     return voidQuery(resource.query("ROLLBACK"));
   }
 
+  protected createSavepoint(
+    resource: PostgresqlTransactionConnection,
+    name: string,
+  ): Promise<void> | void {
+    return voidQuery(resource.query(`SAVEPOINT ${name}`));
+  }
+
+  protected rollbackToSavepoint(
+    resource: PostgresqlTransactionConnection,
+    name: string,
+  ): Promise<void> | void {
+    return voidQuery(resource.query(`ROLLBACK TO SAVEPOINT ${name}`));
+  }
+
+  protected releaseSavepoint(
+    resource: PostgresqlTransactionConnection,
+    name: string,
+  ): Promise<void> | void {
+    return voidQuery(resource.query(`RELEASE SAVEPOINT ${name}`));
+  }
+
   protected releaseTransactionResource(
     resource: PostgresqlTransactionConnection,
   ): void {

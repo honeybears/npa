@@ -8,8 +8,10 @@ import {
 } from "./types";
 
 interface TransactionContext<TResource> {
+  readOnly: boolean;
   resource: TResource;
   rollbackOnly: boolean;
+  savepointIndex: number;
 }
 
 export abstract class AbstractTransactionManager<TResource>
@@ -24,6 +26,10 @@ export abstract class AbstractTransactionManager<TResource>
     const propagation = this.normalizePropagation(options.propagation);
 
     const currentContext = this.storage.getStore();
+
+    if (propagation === TransactionPropagation.NESTED && currentContext) {
+      return this.transactionalNested(work, currentContext, options);
+    }
 
     if (propagation === TransactionPropagation.REQUIRED && currentContext) {
       try {
@@ -42,10 +48,14 @@ export abstract class AbstractTransactionManager<TResource>
       await this.beginTransaction(resource, options);
       began = true;
 
-      const persistenceContext = new PersistenceContext();
+      const persistenceContext = new PersistenceContext({
+        readOnly: !!options.readOnly,
+      });
       const transactionContext: TransactionContext<TResource> = {
+        readOnly: !!options.readOnly,
         resource,
         rollbackOnly: false,
+        savepointIndex: 0,
       };
       const result = await this.storage.run(transactionContext, () =>
         runWithPersistenceContext(persistenceContext, async () => {
@@ -104,6 +114,30 @@ export abstract class AbstractTransactionManager<TResource>
     options: TransactionOptions,
   ): Promise<void> | void;
 
+  protected createSavepoint(
+    _resource: TResource,
+    _name: string,
+    _options: TransactionOptions,
+  ): Promise<void> | void {
+    throw new Error("Nested transactions are not supported by this transaction manager.");
+  }
+
+  protected rollbackToSavepoint(
+    _resource: TResource,
+    _name: string,
+    _options: TransactionOptions,
+  ): Promise<void> | void {
+    throw new Error("Nested transactions are not supported by this transaction manager.");
+  }
+
+  protected releaseSavepoint(
+    _resource: TResource,
+    _name: string,
+    _options: TransactionOptions,
+  ): Promise<void> | void {
+    throw new Error("Nested transactions are not supported by this transaction manager.");
+  }
+
   protected releaseTransactionResource(
     _resource: TResource,
     _options: TransactionOptions,
@@ -114,12 +148,46 @@ export abstract class AbstractTransactionManager<TResource>
   private normalizePropagation(propagation: unknown): TransactionPropagation {
     switch (propagation) {
       case undefined:
+      case TransactionPropagation.NESTED:
       case TransactionPropagation.REQUIRED:
-        return TransactionPropagation.REQUIRED;
+        return propagation ?? TransactionPropagation.REQUIRED;
       case TransactionPropagation.REQUIRES_NEW:
         return TransactionPropagation.REQUIRES_NEW;
       default:
         throw new Error(`Unsupported transaction propagation: ${String(propagation)}`);
+    }
+  }
+
+  private async transactionalNested<T>(
+    work: () => Promise<T> | T,
+    context: TransactionContext<TResource>,
+    options: TransactionOptions,
+  ): Promise<T> {
+    const savepointName = `npa_savepoint_${++context.savepointIndex}`;
+    await this.createSavepoint(context.resource, savepointName, options);
+
+    try {
+      const persistenceContext = new PersistenceContext({
+        readOnly: context.readOnly || !!options.readOnly,
+      });
+      const result = await runWithPersistenceContext(
+        persistenceContext,
+        async () => {
+          const value = await work();
+          await persistenceContext.flush();
+          return value;
+        },
+      );
+
+      await this.releaseSavepoint(context.resource, savepointName, options);
+      return result;
+    } catch (error) {
+      await Promise.resolve(
+        this.rollbackToSavepoint(context.resource, savepointName, options),
+      ).catch(() => {
+        context.rollbackOnly = true;
+      });
+      throw error;
     }
   }
 }

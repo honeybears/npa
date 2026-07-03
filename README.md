@@ -474,7 +474,10 @@ adapter, then decorate service methods with `@Transaction()`. The default
 propagation is `TransactionPropagation.REQUIRED`, so nested transactional calls
 reuse the active transaction. Use
 `{ propagation: TransactionPropagation.REQUIRES_NEW }` to force a separate
-transaction.
+transaction, or `{ propagation: TransactionPropagation.NESTED }` to use a
+savepoint inside the current transaction. `readOnly: true` starts a read-only
+database transaction and rejects dirty-checking flushes, `persist`, and
+`remove`.
 
 ```ts
 import {
@@ -511,8 +514,8 @@ When multiple `NPA` instances register transaction managers, pass
 
 MySQL uses the same core decorator with
 `@node-persistence-api/connector-mysql`. Transaction options currently support
-`isolation`, `readOnly`, `TransactionPropagation.REQUIRED`, and
-`TransactionPropagation.REQUIRES_NEW`.
+`isolation`, `readOnly`, `TransactionPropagation.REQUIRED`,
+`TransactionPropagation.REQUIRES_NEW`, and `TransactionPropagation.NESTED`.
 
 ## Dirty Checking and Versioning
 
@@ -641,7 +644,7 @@ before treating NPA as a fuller ORM:
 - Relations: support eager fetch strategies and safer relation mutation helpers.
 - Entity mapping: add composite relation keys, enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
 - Migrations: add data migration hooks and richer DDL for defaults/generated columns/enums.
-- Transactions: add savepoint-backed nested transactions, more propagation modes, and stricter read-only/flush behavior.
+- Transactions: add more propagation modes.
 - Operations: add SQL logging, slow-query hooks, metrics/tracing, normalized driver errors, retry policy hooks, and clearer connection ownership docs.
 - Tooling: harden package publishing, keep examples current, and expand editor support beyond the VS Code MVP.
 

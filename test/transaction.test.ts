@@ -54,6 +54,27 @@ class RecordingTransactionManager extends AbstractTransactionManager<RecordingRe
     this.calls.push(`rollback:${resource.id}`);
   }
 
+  protected createSavepoint(
+    resource: RecordingResource,
+    name: string,
+  ): void {
+    this.calls.push(`savepoint:${resource.id}:${name}`);
+  }
+
+  protected rollbackToSavepoint(
+    resource: RecordingResource,
+    name: string,
+  ): void {
+    this.calls.push(`rollback-savepoint:${resource.id}:${name}`);
+  }
+
+  protected releaseSavepoint(
+    resource: RecordingResource,
+    name: string,
+  ): void {
+    this.calls.push(`release-savepoint:${resource.id}:${name}`);
+  }
+
   protected releaseTransactionResource(resource: RecordingResource): void {
     this.calls.push(`release:${resource.id}`);
   }
@@ -262,6 +283,125 @@ describe("transaction manager", () => {
       "release:2",
       "commit:1",
       "release:1",
+    ]);
+  });
+
+  test("rolls back nested transactions to a savepoint without marking outer rollback-only", async () => {
+    const manager = new RecordingTransactionManager();
+
+    await manager.transactional(async () => {
+      await manager.transactional(
+        async () => {
+          expect(manager.currentId()).toEqual(1);
+        },
+        { propagation: TransactionPropagation.NESTED },
+      );
+
+      await expect(
+        manager.transactional(
+          async () => {
+            throw new Error("nested failure");
+          },
+          { propagation: TransactionPropagation.NESTED },
+        ),
+      ).rejects.toThrow(/nested failure/);
+
+      expect(manager.currentId()).toEqual(1);
+    });
+
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "savepoint:1:npa_savepoint_1",
+      "release-savepoint:1:npa_savepoint_1",
+      "savepoint:1:npa_savepoint_2",
+      "rollback-savepoint:1:npa_savepoint_2",
+      "commit:1",
+      "release:1",
+    ]);
+  });
+
+  test("rejects dirty checking flushes in read-only transactions", async () => {
+    const manager = new RecordingTransactionManager();
+    const updates = [];
+    const row = { id: 1, name: "kim" };
+
+    await expect(
+      manager.transactional(
+        async () => {
+          const context = getCurrentPersistenceContext();
+
+          context.manage(row, {
+            entity: TransactionUser,
+            adapter: {
+              async updateDirty(_entity, id, patch) {
+                updates.push({ id, patch });
+                return _entity;
+              },
+            },
+          });
+
+          row.name = "lee";
+        },
+        { readOnly: true },
+      ),
+    ).rejects.toThrow(/read-only transaction/);
+
+    expect(updates).toEqual([]);
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "rollback:1",
+      "release:1",
+    ]);
+  });
+
+  test("rejects persist and remove in read-only transactions", async () => {
+    const manager = new RecordingTransactionManager();
+    const adapter = {
+      async insertManaged(entity) {
+        return entity;
+      },
+      async deleteManaged() {
+        return undefined;
+      },
+    };
+
+    await expect(
+      manager.transactional(
+        async () => {
+          const context = getCurrentPersistenceContext();
+          await context.persist(new TransactionUser(), {
+            entity: TransactionUser,
+            adapter,
+          });
+        },
+        { readOnly: true },
+      ),
+    ).rejects.toThrow(/Cannot persist/);
+
+    await expect(
+      manager.transactional(
+        async () => {
+          const context = getCurrentPersistenceContext();
+          await context.remove(Object.assign(new TransactionUser(), { id: 1 }), {
+            entity: TransactionUser,
+            adapter,
+          });
+        },
+        { readOnly: true },
+      ),
+    ).rejects.toThrow(/Cannot remove/);
+
+    expect(manager.calls).toEqual([
+      "acquire:1",
+      "begin:1:none",
+      "rollback:1",
+      "release:1",
+      "acquire:2",
+      "begin:2:none",
+      "rollback:2",
+      "release:2",
     ]);
   });
 

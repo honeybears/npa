@@ -54,6 +54,27 @@ export class MysqlTransactionManager extends AbstractTransactionManager<MysqlTra
     await query(resource, "ROLLBACK");
   }
 
+  protected async createSavepoint(
+    resource: MysqlTransactionConnection,
+    name: string,
+  ): Promise<void> {
+    await query(resource, `SAVEPOINT ${name}`);
+  }
+
+  protected async rollbackToSavepoint(
+    resource: MysqlTransactionConnection,
+    name: string,
+  ): Promise<void> {
+    await query(resource, `ROLLBACK TO SAVEPOINT ${name}`);
+  }
+
+  protected async releaseSavepoint(
+    resource: MysqlTransactionConnection,
+    name: string,
+  ): Promise<void> {
+    await query(resource, `RELEASE SAVEPOINT ${name}`);
+  }
+
   protected releaseTransactionResource(resource: MysqlTransactionConnection): void {
     if (resource !== this.connection) {
       resource.release?.();

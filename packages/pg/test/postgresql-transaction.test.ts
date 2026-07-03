@@ -1,4 +1,4 @@
-import { TransactionIsolation } from "../../../src";
+import { TransactionIsolation, TransactionPropagation } from "../../../src";
 import { PostgresqlTransactionManager, type PostgresqlTransactionConnection } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
@@ -98,6 +98,60 @@ describe("PostgreSQL transaction manager", () => {
       { target: "pool", text: "connect" },
       { target: "tx", text: "BEGIN", values: undefined },
       { target: "tx", text: "SELECT nested", values: undefined },
+      { target: "tx", text: "COMMIT", values: undefined },
+      { target: "tx", text: "release" },
+    ]);
+  });
+
+  test("uses PostgreSQL savepoints for nested transactions", async () => {
+    const calls = [];
+    const txClient = createClient("tx", calls);
+    const pool = {
+      async connect() {
+        calls.push({ target: "pool", text: "connect" });
+        return txClient;
+      },
+    };
+    const manager = new PostgresqlTransactionManager(
+      pool as unknown as PostgresqlTransactionConnection,
+    );
+
+    await manager.transactional(async () => {
+      await manager.transactional(
+        async () => {
+          await manager.queryable.query("SELECT nested");
+        },
+        { propagation: TransactionPropagation.NESTED },
+      );
+
+      await expect(
+        manager.transactional(
+          async () => {
+            await manager.queryable.query("UPDATE nested");
+            throw new Error("nested fail");
+          },
+          { propagation: TransactionPropagation.NESTED },
+        ),
+      ).rejects.toThrow(/nested fail/);
+    });
+
+    expect(calls).toEqual([
+      { target: "pool", text: "connect" },
+      { target: "tx", text: "BEGIN", values: undefined },
+      { target: "tx", text: "SAVEPOINT npa_savepoint_1", values: undefined },
+      { target: "tx", text: "SELECT nested", values: undefined },
+      {
+        target: "tx",
+        text: "RELEASE SAVEPOINT npa_savepoint_1",
+        values: undefined,
+      },
+      { target: "tx", text: "SAVEPOINT npa_savepoint_2", values: undefined },
+      { target: "tx", text: "UPDATE nested", values: undefined },
+      {
+        target: "tx",
+        text: "ROLLBACK TO SAVEPOINT npa_savepoint_2",
+        values: undefined,
+      },
       { target: "tx", text: "COMMIT", values: undefined },
       { target: "tx", text: "release" },
     ]);

@@ -1,4 +1,4 @@
-import { TransactionIsolation } from "../../../src";
+import { TransactionIsolation, TransactionPropagation } from "../../../src";
 import { MysqlTransactionManager, type MysqlTransactionConnection } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
@@ -105,6 +105,62 @@ describe("MySQL transaction manager", () => {
       { target: "pool", text: "getConnection" },
       { method: "query", target: "tx", text: "START TRANSACTION", values: undefined },
       { method: "query", target: "tx", text: "SELECT nested", values: undefined },
+      { method: "query", target: "tx", text: "COMMIT", values: undefined },
+      { target: "tx", text: "release" },
+    ]);
+  });
+
+  test("uses MySQL savepoints for nested transactions", async () => {
+    const calls = [];
+    const txConnection = createConnection("tx", calls);
+    const pool = {
+      async getConnection() {
+        calls.push({ target: "pool", text: "getConnection" });
+        return txConnection;
+      },
+    };
+    const manager = new MysqlTransactionManager(
+      pool as unknown as MysqlTransactionConnection,
+    );
+
+    await manager.transactional(async () => {
+      await manager.transactional(
+        async () => {
+          await manager.queryable.query("SELECT nested");
+        },
+        { propagation: TransactionPropagation.NESTED },
+      );
+
+      await expect(
+        manager.transactional(
+          async () => {
+            await manager.queryable.query("UPDATE nested");
+            throw new Error("nested fail");
+          },
+          { propagation: TransactionPropagation.NESTED },
+        ),
+      ).rejects.toThrow(/nested fail/);
+    });
+
+    expect(calls).toEqual([
+      { target: "pool", text: "getConnection" },
+      { method: "query", target: "tx", text: "START TRANSACTION", values: undefined },
+      { method: "query", target: "tx", text: "SAVEPOINT npa_savepoint_1", values: undefined },
+      { method: "query", target: "tx", text: "SELECT nested", values: undefined },
+      {
+        method: "query",
+        target: "tx",
+        text: "RELEASE SAVEPOINT npa_savepoint_1",
+        values: undefined,
+      },
+      { method: "query", target: "tx", text: "SAVEPOINT npa_savepoint_2", values: undefined },
+      { method: "query", target: "tx", text: "UPDATE nested", values: undefined },
+      {
+        method: "query",
+        target: "tx",
+        text: "ROLLBACK TO SAVEPOINT npa_savepoint_2",
+        values: undefined,
+      },
       { method: "query", target: "tx", text: "COMMIT", values: undefined },
       { target: "tx", text: "release" },
     ]);

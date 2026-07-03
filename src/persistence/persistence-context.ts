@@ -27,6 +27,10 @@ interface ManagedEntity<TEntity extends object = object> {
   snapshot: EntitySnapshot;
 }
 
+export interface PersistenceContextOptions {
+  readOnly?: boolean;
+}
+
 export class PersistenceContext {
   private readonly managed = new Map<object, ManagedEntity>();
   private readonly newEntities = new Set<object>();
@@ -35,6 +39,8 @@ export class PersistenceContext {
     NPADirtyCheckAdapter,
     WeakMap<object, Map<unknown, ManagedEntity>>
   >();
+
+  constructor(private readonly options: PersistenceContextOptions = {}) {}
 
   manage<TEntity extends object>(
     entity: TEntity,
@@ -85,6 +91,7 @@ export class PersistenceContext {
     entity: TEntity,
     options: NPAManageEntityOptions<TEntity>,
   ): Promise<TEntity> {
+    this.assertWritable("persist");
     return this.persistCascade(entity, options, new Set());
   }
 
@@ -92,6 +99,7 @@ export class PersistenceContext {
     entity: TEntity,
     options: NPAManageEntityOptions<TEntity>,
   ): Promise<void> {
+    this.assertWritable("remove");
     return this.removeCascade(entity, options, new Set());
   }
 
@@ -161,6 +169,11 @@ export class PersistenceContext {
   }
 
   async flush(): Promise<void> {
+    if (this.options.readOnly) {
+      this.assertNoPendingChangesForReadOnlyFlush();
+      return;
+    }
+
     await this.flushNewEntities();
 
     for (const managed of [...this.managed.values()]) {
@@ -241,6 +254,38 @@ export class PersistenceContext {
     }
 
     await this.flushRemovedEntities();
+  }
+
+  private assertWritable(operation: string): void {
+    if (this.options.readOnly) {
+      throw new Error(`Cannot ${operation} inside a read-only transaction.`);
+    }
+  }
+
+  private assertNoPendingChangesForReadOnlyFlush(): void {
+    if (this.newEntities.size > 0) {
+      throw new Error("Cannot flush persisted entities inside a read-only transaction.");
+    }
+
+    if (this.removedEntities.size > 0) {
+      throw new Error("Cannot flush removed entities inside a read-only transaction.");
+    }
+
+    for (const managed of this.managed.values()) {
+      const patch = diffEntity(managed.entity, managed.snapshot, managed.metadata);
+      const hasManyToManyChanges = hasLoadedManyToManyChanges(managed);
+      const hasOneToManyChanges = hasLoadedOneToManyChanges(managed);
+
+      if (
+        Object.keys(patch).length > 0 ||
+        hasManyToManyChanges ||
+        hasOneToManyChanges
+      ) {
+        throw new Error(
+          `Cannot flush dirty entity "${managed.metadata.target.name}" inside a read-only transaction.`,
+        );
+      }
+    }
   }
 
   private async persistCascade<TEntity extends object>(

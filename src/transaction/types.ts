@@ -1,4 +1,5 @@
 export enum TransactionPropagation {
+  NESTED = "NESTED",
   REQUIRED = "REQUIRED",
   REQUIRES_NEW = "REQUIRES_NEW",
 }
