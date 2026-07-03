@@ -6,9 +6,10 @@ import {
   getEntityMetadata,
   readEntityPrimaryValue,
   readRelationForeignKeyValue,
-  relationJoinColumnName,
+  relationJoinColumns,
   RelationKind,
   RelationMetadata,
+  primaryColumnsOf,
 } from "../entity";
 import { OptimisticLockError } from "./optimistic-lock-error";
 import { NPADirtyCheckAdapter, NPAManageEntityOptions } from "./types";
@@ -37,7 +38,7 @@ export class PersistenceContext {
   private readonly removedEntities = new Set<object>();
   private identityMap = new WeakMap<
     NPADirtyCheckAdapter,
-    WeakMap<object, Map<unknown, ManagedEntity>>
+    WeakMap<object, Map<string, ManagedEntity>>
   >();
 
   constructor(private readonly options: PersistenceContextOptions = {}) {}
@@ -63,10 +64,10 @@ export class PersistenceContext {
     }
 
     const metadata = getEntityMetadata(options.entity);
-    const primaryColumn = requirePrimaryColumn(metadata);
+    requirePrimaryColumns(metadata);
     installColumnAliases(entity, metadata);
-    const id = readColumnValue(entity, primaryColumn);
-    const existing = id === null || id === undefined
+    const id = readEntityPrimaryValue(entity, metadata);
+    const existing = !hasCompletePrimaryValue(id)
       ? undefined
       : this.findByIdentity(options.adapter, metadata.target, id);
 
@@ -131,14 +132,13 @@ export class PersistenceContext {
     options: NPAManageEntityOptions<TEntity>,
   ): void {
     const metadata = getEntityMetadata(options.entity);
-    const primaryColumn = requirePrimaryColumn(metadata);
 
     for (const [entity, managed] of this.managed.entries()) {
       if (!isSameManagedEntity(managed, metadata, options.adapter)) {
         continue;
       }
 
-      if (Object.is(readColumnValue(managed.entity, primaryColumn), id)) {
+      if (isSameId(readEntityPrimaryValue(managed.entity, metadata), id)) {
         this.detachManagedEntity(entity);
       }
     }
@@ -193,10 +193,9 @@ export class PersistenceContext {
         continue;
       }
 
-      const primaryColumn = requirePrimaryColumn(managed.metadata);
-      const id = readColumnValue(managed.entity, primaryColumn);
+      const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
-      if (id === null || id === undefined) {
+      if (!hasCompletePrimaryValue(id)) {
         throw new Error(
           `Cannot flush dirty entity "${managed.metadata.target.name}" without a primary key value.`,
         );
@@ -464,11 +463,10 @@ export class PersistenceContext {
     mergeDatabaseValues(managed.entity, inserted, managed.metadata);
     installColumnAliases(managed.entity, managed.metadata);
 
-    const primaryColumn = requirePrimaryColumn(managed.metadata);
     this.rememberIdentity(
       managed.adapter,
       managed.metadata.target,
-      readColumnValue(managed.entity, primaryColumn),
+      readEntityPrimaryValue(managed.entity, managed.metadata),
       managed,
     );
   }
@@ -488,10 +486,9 @@ export class PersistenceContext {
         );
       }
 
-      const primaryColumn = requirePrimaryColumn(managed.metadata);
-      const id = readColumnValue(managed.entity, primaryColumn);
+      const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
-      if (id === null || id === undefined) {
+      if (!hasCompletePrimaryValue(id)) {
         throw new Error(
           `Cannot remove entity "${managed.metadata.target.name}" without a primary key value.`,
         );
@@ -508,10 +505,9 @@ export class PersistenceContext {
     managed: ManagedEntity,
     options: { force?: boolean } = {},
   ): Promise<void> {
-    const primaryColumn = requirePrimaryColumn(managed.metadata);
-    const id = readColumnValue(managed.entity, primaryColumn);
+    const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
-    if (id === null || id === undefined) {
+    if (!hasCompletePrimaryValue(id)) {
       throw new Error(
         `Cannot flush many-to-many relations for "${managed.metadata.target.name}" without a primary key value.`,
       );
@@ -553,10 +549,9 @@ export class PersistenceContext {
     managed: ManagedEntity,
     options: { force?: boolean } = {},
   ): Promise<void> {
-    const primaryColumn = requirePrimaryColumn(managed.metadata);
-    const id = readColumnValue(managed.entity, primaryColumn);
+    const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
-    if (id === null || id === undefined) {
+    if (!hasCompletePrimaryValue(id)) {
       throw new Error(
         `Cannot flush one-to-many relations for "${managed.metadata.target.name}" without a primary key value.`,
       );
@@ -582,11 +577,11 @@ export class PersistenceContext {
 
       const targetRelation = findMappedByManyToOneRelation(managed.metadata, relation);
       const targetAdapter = adapterForRelation(managed.adapter, relation, CascadeType.PERSIST);
-      const currentSet = new Set(currentIds);
+      const currentSet = new Set(currentIds.map(idKey));
       const previousSet = previousIds ?? [];
 
       for (const targetId of currentIds) {
-        if (!options.force && previousSet.some((value) => Object.is(value, targetId))) {
+        if (!options.force && previousSet.some((value) => isSameId(value, targetId))) {
           continue;
         }
 
@@ -598,7 +593,7 @@ export class PersistenceContext {
       }
 
       for (const targetId of previousSet) {
-        if (currentSet.has(targetId)) {
+        if (currentSet.has(idKey(targetId))) {
           continue;
         }
 
@@ -657,10 +652,9 @@ export class PersistenceContext {
     }
 
     const metadata = getEntityMetadata(options.entity);
-    const primaryColumn = requirePrimaryColumn(metadata);
-    const id = readColumnValue(entity, primaryColumn);
+    const id = readEntityPrimaryValue(entity, metadata);
 
-    return id === null || id === undefined
+    return !hasCompletePrimaryValue(id)
       ? undefined
       : this.findByIdentity(options.adapter, metadata.target, id);
   }
@@ -670,7 +664,7 @@ export class PersistenceContext {
     entity: object,
     id: unknown,
   ): ManagedEntity | undefined {
-    return this.identityMap.get(adapter)?.get(entity)?.get(id);
+    return this.identityMap.get(adapter)?.get(entity)?.get(idKey(id));
   }
 
   private rememberIdentity(
@@ -679,7 +673,7 @@ export class PersistenceContext {
     id: unknown,
     managed: ManagedEntity,
   ): void {
-    if (id === null || id === undefined) {
+    if (!hasCompletePrimaryValue(id)) {
       return;
     }
 
@@ -697,7 +691,7 @@ export class PersistenceContext {
       entityMap.set(entity, idMap);
     }
 
-    idMap.set(id, managed);
+    idMap.set(idKey(id), managed);
   }
 
   private detachManagedEntity(entity: object): void {
@@ -707,9 +701,8 @@ export class PersistenceContext {
       return;
     }
 
-    const primaryColumn = requirePrimaryColumn(managed.metadata);
-    const id = readColumnValue(managed.entity, primaryColumn);
-    this.identityMap.get(managed.adapter)?.get(managed.metadata.target)?.delete(id);
+    const id = readEntityPrimaryValue(managed.entity, managed.metadata);
+    this.identityMap.get(managed.adapter)?.get(managed.metadata.target)?.delete(idKey(id));
     this.newEntities.delete(entity);
     this.removedEntities.delete(entity);
     this.managed.delete(entity);
@@ -849,7 +842,7 @@ function diffEntity<TEntity extends object>(
       continue;
     }
 
-    if (!isSameValue(currentValue, snapshot.get(relation.propertyName))) {
+    if (!isSameId(currentValue, snapshot.get(relation.propertyName))) {
       patchRecord[relation.propertyName] = currentValue;
     }
   }
@@ -926,7 +919,7 @@ function mergeDatabaseValues(
     const value = readRelationForeignKey(source, relation);
 
     if (value !== undefined) {
-      writeRawValue(target, relationJoinColumnName(relation), value);
+      writeRelationForeignKey(target, relation, value);
     }
   }
 }
@@ -957,7 +950,42 @@ function readRelationForeignKey(
     return readRelationForeignKeyValue(property.value, relation);
   }
 
-  return readPropertyValue(entity, relationJoinColumnName(relation));
+  const joinColumns = relationJoinColumns(relation);
+
+  if (joinColumns.length === 1) {
+    return readPropertyValue(entity, joinColumns[0].joinColumnName);
+  }
+
+  const entries = joinColumns.map(({ column, joinColumnName }) => [
+    column.propertyName,
+    readPropertyValue(entity, joinColumnName),
+  ] as const);
+
+  return entries.some(([, value]) => value === undefined)
+    ? undefined
+    : Object.fromEntries(entries);
+}
+
+function writeRelationForeignKey(
+  entity: object,
+  relation: RelationMetadata,
+  value: unknown,
+): void {
+  const joinColumns = relationJoinColumns(relation);
+
+  if (joinColumns.length === 1) {
+    writeRawValue(entity, joinColumns[0].joinColumnName, value);
+    return;
+  }
+
+  const record = isObject(value) ? value as Record<string, unknown> : {};
+
+  for (const { column, joinColumnName } of joinColumns) {
+    const part = column.propertyName in record
+      ? record[column.propertyName]
+      : record[column.columnName];
+    writeRawValue(entity, joinColumnName, part);
+  }
 }
 
 function readRelationForeignKeyForSnapshot(
@@ -1019,7 +1047,7 @@ function readRequiredRelationTargetId(
 ): unknown {
   const id = readEntityPrimaryValue(target, targetMetadata);
 
-  if (id === null || id === undefined) {
+  if (!hasCompletePrimaryValue(id)) {
     throw new Error(
       `Relation "${relation.propertyName}" requires ${targetMetadata.target.name} id.`,
     );
@@ -1073,7 +1101,7 @@ function readSnapshotEntity(
   const targetMetadata = getEntityMetadata(relation.target());
   const entity = isToManySnapshot(snapshot)
     ? snapshot.entities.find((candidate) =>
-      Object.is(readEntityPrimaryValue(candidate, targetMetadata), id),
+      isSameId(readEntityPrimaryValue(candidate, targetMetadata), id),
     )
     : undefined;
 
@@ -1084,11 +1112,27 @@ function createEntityReference(
   metadata: EntityMetadata,
   id: unknown,
 ): object {
-  const primaryColumn = requirePrimaryColumn(metadata);
-  return {
-    [primaryColumn.columnName]: id,
-    [primaryColumn.propertyName]: id,
-  };
+  const primaryColumns = requirePrimaryColumns(metadata);
+
+  if (primaryColumns.length === 1) {
+    const primaryColumn = primaryColumns[0];
+    return {
+      [primaryColumn.columnName]: id,
+      [primaryColumn.propertyName]: id,
+    };
+  }
+
+  const record = isObject(id) ? id as Record<string, unknown> : {};
+  return Object.fromEntries(primaryColumns.flatMap((primaryColumn) => {
+    const value = primaryColumn.propertyName in record
+      ? record[primaryColumn.propertyName]
+      : record[primaryColumn.columnName];
+
+    return [
+      [primaryColumn.columnName, value],
+      [primaryColumn.propertyName, value],
+    ];
+  }));
 }
 
 function isToManySnapshot(value: unknown): value is ToManySnapshot {
@@ -1134,7 +1178,7 @@ function isSameIdSet(
   }
 
   return current.every((value) =>
-    snapshotIds.some((snapshotValue) => Object.is(value, snapshotValue)),
+    snapshotIds.some((snapshotValue) => isSameId(value, snapshotValue)),
   );
 }
 
@@ -1142,7 +1186,7 @@ function uniqueValues(values: unknown[]): unknown[] {
   const unique: unknown[] = [];
 
   for (const value of values) {
-    if (!unique.some((current) => Object.is(current, value))) {
+    if (!unique.some((current) => isSameId(current, value))) {
       unique.push(value);
     }
   }
@@ -1250,14 +1294,16 @@ function installColumnAliases(
   }
 }
 
-function requirePrimaryColumn(metadata: EntityMetadata): ColumnMetadata {
-  if (!metadata.primaryColumn) {
+function requirePrimaryColumns(metadata: EntityMetadata): ColumnMetadata[] {
+  const primaryColumns = primaryColumnsOf(metadata);
+
+  if (primaryColumns.length === 0) {
     throw new Error(
       `Entity "${metadata.target.name}" requires an @Id column for dirty checking.`,
     );
   }
 
-  return metadata.primaryColumn;
+  return primaryColumns;
 }
 
 function isSameManagedEntity(
@@ -1282,4 +1328,48 @@ function isSameValue(currentValue: unknown, snapshotValue: unknown): boolean {
   }
 
   return Object.is(currentValue, snapshotValue);
+}
+
+function hasCompletePrimaryValue(id: unknown): boolean {
+  if (id === null || id === undefined) {
+    return false;
+  }
+
+  if (!isCompositeIdValue(id)) {
+    return true;
+  }
+
+  return Object.values(id).every((value) => value !== null && value !== undefined);
+}
+
+function isSameId(left: unknown, right: unknown): boolean {
+  return idKey(left) === idKey(right);
+}
+
+function idKey(id: unknown): string {
+  if (id instanceof Date) {
+    return `date:${id.getTime()}`;
+  }
+
+  if (!isCompositeIdValue(id)) {
+    return `${typeof id}:${String(id)}`;
+  }
+
+  return `object:${JSON.stringify(sortRecord(id))}`;
+}
+
+function isCompositeIdValue(value: unknown): value is Record<string, unknown> {
+  return isObject(value) && !(value instanceof Date) && !Array.isArray(value);
+}
+
+function sortRecord(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, normalizeIdPart(record[key])]),
+  );
+}
+
+function normalizeIdPart(value: unknown): unknown {
+  return value instanceof Date ? value.getTime() : value;
 }

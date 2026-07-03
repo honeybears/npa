@@ -49,6 +49,30 @@ class TenantUser {
   name!: string;
 }
 
+@Entity({ name: "tenant_teams" })
+class TenantTeam {
+  @Id({ name: "tenant_id" })
+  tenantId!: string;
+
+  @Id({ name: "team_id" })
+  teamId!: string;
+
+  @Column()
+  label!: string;
+}
+
+@Entity({ name: "tenant_members" })
+class TenantMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => TenantTeam)
+  team!: TenantTeam;
+}
+
 @Entity({ name: "organizations" })
 class Organization {
   @Id({ name: "organization_id" })
@@ -677,6 +701,67 @@ describe("MySQL adapter", () => {
       text:
         "DELETE FROM `tenant_users` WHERE `tenant_id` = ? AND `user_id` = ?",
       values: ["t1", "u1"],
+    });
+  });
+
+  test("compiles MySQL composite relation key SQL", () => {
+    expect(
+      compileMysqlInsert(
+        {
+          name: "kim",
+          team: { tenantId: "t1", teamId: "team1" },
+        },
+        { entity: TenantMember },
+      ),
+    ).toEqual({
+      text:
+        "INSERT INTO `tenant_members` (`name`, `team_tenant_id`, `team_team_id`) VALUES (?, ?, ?)",
+      values: ["kim", "t1", "team1"],
+    });
+
+    expect(
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByTeam"),
+          args: [{ tenantId: "t1", teamId: "team1" }],
+        },
+        { entity: TenantMember },
+      ),
+    ).toEqual({
+      text:
+        "SELECT * FROM `tenant_members` WHERE (`team_tenant_id` = ? AND `team_team_id` = ?)",
+      values: ["t1", "team1"],
+    });
+
+    expect(
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByTeamIn"),
+          args: [[
+            { tenantId: "t1", teamId: "team1" },
+            { tenantId: "t1", teamId: "team2" },
+          ]],
+        },
+        { entity: TenantMember },
+      ),
+    ).toEqual({
+      text:
+        "SELECT * FROM `tenant_members` WHERE ((`team_tenant_id`, `team_team_id`) IN ((?, ?), (?, ?)))",
+      values: ["t1", "team1", "t1", "team2"],
+    });
+
+    expect(
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByTeamLabel"),
+          args: ["platform"],
+        },
+        { entity: TenantMember },
+      ),
+    ).toEqual({
+      text:
+        "SELECT `t0`.* FROM `tenant_members` AS `t0` JOIN `tenant_teams` AS `t1` ON `t0`.`team_tenant_id` = `t1`.`tenant_id` AND `t0`.`team_team_id` = `t1`.`team_id` WHERE (`t1`.`label` = ?)",
+      values: ["platform"],
     });
   });
 

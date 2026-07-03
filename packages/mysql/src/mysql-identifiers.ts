@@ -4,6 +4,7 @@ import {
   getOptionalEntityMetadata,
   primaryColumnsOf,
   readRelationForeignKeyValue,
+  relationJoinColumns,
   relationJoinColumnName,
   RelationKind,
   RelationMetadata,
@@ -35,11 +36,31 @@ export function mysqlPropertyToColumn(
   return quoteIdentifier(mysqlPropertyToColumnName(property, options));
 }
 
+export function mysqlPropertyToColumns(
+  property: string,
+  options: MysqlQueryCompilerOptions,
+): string[] {
+  return mysqlPropertyToColumnNames(property, options).map(quoteIdentifier);
+}
+
 export function mysqlPropertyToColumnName(
   property: string,
   options: MysqlQueryCompilerOptions,
 ): string {
   return resolveColumnName(property, options);
+}
+
+export function mysqlPropertyToColumnNames(
+  property: string,
+  options: MysqlQueryCompilerOptions,
+): string[] {
+  const relation = findOwningToOneRelation(property, options);
+
+  if (relation) {
+    return relationJoinColumns(relation).map((column) => column.joinColumnName);
+  }
+
+  return [resolveColumnName(property, options)];
 }
 
 export function mysqlPrimaryKeyProperty(
@@ -93,6 +114,42 @@ export function normalizeMysqlPropertyValue(
   return relation ? readRelationForeignKeyValue(value, relation) : value;
 }
 
+export function normalizeMysqlPropertyValues(
+  property: string,
+  value: unknown,
+  options: MysqlQueryCompilerOptions,
+): unknown[] {
+  const relation = findOwningToOneRelation(property, options);
+
+  if (!relation) {
+    return [value];
+  }
+
+  const normalized = readRelationForeignKeyValue(value, relation);
+  const joinColumns = relationJoinColumns(relation);
+
+  if (joinColumns.length === 1) {
+    return [normalized];
+  }
+
+  if (normalized === null) {
+    return joinColumns.map(() => null);
+  }
+
+  if (!isRecord(normalized)) {
+    throw new Error(
+      `Relation ${relation.propertyName} requires an object with composite primary key values.`,
+    );
+  }
+
+  const record = normalized as Record<string, unknown>;
+  return joinColumns.map(({ column }) =>
+    column.propertyName in record
+      ? record[column.propertyName]
+      : record[column.columnName],
+  );
+}
+
 function resolveColumnName(
   property: string,
   options: MysqlQueryCompilerOptions,
@@ -142,6 +199,10 @@ function getMetadata(
   options: MysqlQueryCompilerOptions,
 ): EntityMetadata | undefined {
   return getOptionalEntityMetadata(options.entity);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function quoteMysqlQualifiedIdentifier(identifier: string): string {

@@ -47,6 +47,7 @@ export interface MigrationRelationSchema {
   targetClassName: string;
   mappedBy?: string;
   joinColumn?: string;
+  joinColumns?: string[];
   joinTable?: string;
   foreignKeyName?: string;
   onDelete?: MigrationReferentialAction;

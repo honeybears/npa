@@ -3,8 +3,8 @@ import {
   EntityMetadata,
   getEntityMetadata,
   getOptionalEntityMetadata,
-  joinTableColumnName,
-  relationJoinColumnName,
+  joinTableColumnNames,
+  relationJoinColumns,
   RelationKind,
   RelationMetadata,
 } from "@node-persistence-api/core";
@@ -12,6 +12,7 @@ import { ParsedQueryMethod } from "@node-persistence-api/core";
 import {
   primaryKeyProperty,
   propertyToColumn,
+  propertyToColumns,
   propertyToColumnName,
   quoteIdentifier,
   quoteQualifiedIdentifier,
@@ -105,17 +106,29 @@ export class PostgresqlRelationQueryBuilder {
   }
 
   column(property: string): string {
+    const columns = this.columns(property);
+
+    if (columns.length !== 1) {
+      throw new Error(`Property ${property} maps to multiple columns.`);
+    }
+
+    return columns[0];
+  }
+
+  columns(property: string): string[] {
     const relationPath = this.resolveRelationFieldPath(property);
 
     if (relationPath) {
       const join = this.ensureJoinPath(relationPath);
-      return `${join.targetAlias}.${propertyToColumn(relationPath.targetProperty, {
+      return [`${join.targetAlias}.${propertyToColumn(relationPath.targetProperty, {
         entity: relationPath.targetMetadata.target,
-      })}`;
+      })}`];
     }
 
-    const column = propertyToColumn(property, this.options);
-    return this.hasJoins() ? `${this.baseAlias}.${column}` : column;
+    const columns = propertyToColumns(property, this.options);
+    return this.hasJoins()
+      ? columns.map((column) => `${this.baseAlias}.${column}`)
+      : columns;
   }
 
   cursorOrder(
@@ -247,9 +260,10 @@ export class PostgresqlRelationQueryBuilder {
     const targetTable = qualifiedTable(targetMetadata);
 
     if (isOwningToOneRelation(relation)) {
-      const targetPrimary = requirePrimaryColumn(targetMetadata);
-      const sourceJoinColumn = relationJoinColumnName(relation);
-      const joinPredicate = `${qualifiedColumn(sourceAlias, sourceJoinColumn)} = ${qualifiedColumn(targetAlias, targetPrimary.columnName)}`;
+      const joinPredicate = relationJoinColumns(relation)
+        .map(({ column, joinColumnName }) =>
+          `${qualifiedColumn(sourceAlias, joinColumnName)} = ${qualifiedColumn(targetAlias, column.columnName)}`)
+        .join(" AND ");
 
       return {
         key,
@@ -263,10 +277,11 @@ export class PostgresqlRelationQueryBuilder {
     }
 
     if (relation.kind === RelationKind.ONE_TO_MANY || relation.kind === RelationKind.ONE_TO_ONE) {
-      const sourcePrimary = requirePrimaryColumn(sourceMetadata);
       const targetRelation = findMappedOwningToOne(sourceMetadata, targetMetadata, relation);
-      const targetJoinColumn = relationJoinColumnName(targetRelation);
-      const joinPredicate = `${qualifiedColumn(targetAlias, targetJoinColumn)} = ${qualifiedColumn(sourceAlias, sourcePrimary.columnName)}`;
+      const joinPredicate = relationJoinColumns(targetRelation)
+        .map(({ column, joinColumnName }) =>
+          `${qualifiedColumn(targetAlias, joinColumnName)} = ${qualifiedColumn(sourceAlias, column.columnName)}`)
+        .join(" AND ");
 
       return {
         key,
@@ -279,14 +294,16 @@ export class PostgresqlRelationQueryBuilder {
       };
     }
 
-    const sourcePrimary = requirePrimaryColumn(sourceMetadata);
-    const targetPrimary = requirePrimaryColumn(targetMetadata);
     const joinAlias = this.nextQuotedAlias();
     const joinTable = qualifiedJoinTable(sourceMetadata, targetMetadata, relation);
-    const sourceJoinColumn = joinTableColumnName(sourceMetadata);
-    const targetJoinColumn = joinTableColumnName(targetMetadata);
-    const sourcePredicate = `${qualifiedColumn(joinAlias, sourceJoinColumn)} = ${qualifiedColumn(sourceAlias, sourcePrimary.columnName)}`;
-    const targetPredicate = `${qualifiedColumn(targetAlias, targetPrimary.columnName)} = ${qualifiedColumn(joinAlias, targetJoinColumn)}`;
+    const sourcePredicate = joinTableColumnNames(sourceMetadata)
+      .map(({ column, joinColumnName }) =>
+        `${qualifiedColumn(joinAlias, joinColumnName)} = ${qualifiedColumn(sourceAlias, column.columnName)}`)
+      .join(" AND ");
+    const targetPredicate = joinTableColumnNames(targetMetadata)
+      .map(({ column, joinColumnName }) =>
+        `${qualifiedColumn(targetAlias, column.columnName)} = ${qualifiedColumn(joinAlias, joinColumnName)}`)
+      .join(" AND ");
 
     return {
       key,
@@ -360,14 +377,6 @@ function qualifiedJoinTable(
   const table = quoteQualifiedIdentifier(rawName);
   const schema = source.schema ?? target.schema;
   return schema ? `${quoteQualifiedIdentifier(schema)}.${table}` : table;
-}
-
-function requirePrimaryColumn(metadata: EntityMetadata) {
-  if (!metadata.primaryColumn) {
-    throw new Error(`Entity ${metadata.target.name} requires an @Id column.`);
-  }
-
-  return metadata.primaryColumn;
 }
 
 function findMappedOwningToOne(

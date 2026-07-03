@@ -170,6 +170,7 @@ export function registerRelation(
     mappedBy: options.mappedBy,
     inversedBy: options.inversedBy,
     joinColumn: options.joinColumn,
+    joinColumns: options.joinColumns,
     joinTable: options.joinTable,
     foreignKeyName: options.foreignKeyName,
     onDelete: options.onDelete,

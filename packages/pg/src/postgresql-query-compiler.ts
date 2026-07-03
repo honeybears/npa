@@ -16,6 +16,7 @@ import {
 } from "./types";
 import {
   normalizePropertyValue,
+  normalizePropertyValues,
   primaryKeyProperty,
   quoteIdentifier,
 } from "./postgresql-identifiers";
@@ -136,7 +137,13 @@ class QueryCompiler {
     allIgnoreCase: boolean,
   ): string {
     const ignoreCase = shouldUseIgnoreCase(condition, allIgnoreCase);
-    const column = this.conditionColumn(condition, ignoreCase);
+    const columns = this.conditionColumns(condition, ignoreCase);
+
+    if (columns.length > 1) {
+      return this.compileCompositeCondition(columns, condition, ignoreCase);
+    }
+
+    const column = columns[0];
 
     switch (condition.operator) {
       case "equals":
@@ -342,8 +349,88 @@ class QueryCompiler {
     condition: QueryCondition,
     ignoreCase: boolean,
   ): string {
-    const column = this.column(condition.property);
-    return ignoreCase ? `LOWER(${column})` : column;
+    return this.conditionColumns(condition, ignoreCase)[0];
+  }
+
+  private conditionColumns(
+    condition: QueryCondition,
+    ignoreCase: boolean,
+  ): string[] {
+    const columns = this.columns(condition.property);
+    return ignoreCase ? columns.map((column) => `LOWER(${column})`) : columns;
+  }
+
+  private compileCompositeCondition(
+    columns: string[],
+    condition: QueryCondition,
+    ignoreCase: boolean,
+  ): string {
+    switch (condition.operator) {
+      case "equals":
+        return this.compositeComparison(columns, condition, ignoreCase);
+      case "not":
+        return `NOT (${this.compositeComparison(columns, condition, ignoreCase)})`;
+      case "in":
+        return this.compositeListCondition(columns, condition, "IN", ignoreCase);
+      case "notIn":
+        return this.compositeListCondition(columns, condition, "NOT IN", ignoreCase);
+      case "isNull":
+        return columns.map((column) => `${column} IS NULL`).join(" AND ");
+      case "isNotNull":
+        return `(${columns.map((column) => `${column} IS NOT NULL`).join(" OR ")})`;
+      default:
+        throw new Error(
+          `Query operator "${condition.operator}" does not support composite property "${condition.property}".`,
+        );
+    }
+  }
+
+  private compositeComparison(
+    columns: string[],
+    condition: QueryCondition,
+    ignoreCase: boolean,
+  ): string {
+    const values = this.normalizeConditionValues(
+      condition,
+      this.arg(condition, requireParameterIndex(condition)),
+    );
+
+    return columns.map((column, index) => {
+      const value = normalizeCaseValue(values[index], ignoreCase);
+      return value === null
+        ? `${column} IS NULL`
+        : `${column} = ${this.push(value)}`;
+    }).join(" AND ");
+  }
+
+  private compositeListCondition(
+    columns: string[],
+    condition: QueryCondition,
+    operator: "IN" | "NOT IN",
+    ignoreCase: boolean,
+  ): string {
+    const value = this.arg(condition, requireParameterIndex(condition));
+
+    if (!Array.isArray(value)) {
+      throw new Error(
+        `Query operator "${condition.operator}" expects an array parameter.`,
+      );
+    }
+
+    if (value.length === 0) {
+      throw new Error(
+        `Query operator "${condition.operator}" expects a non-empty array parameter.`,
+      );
+    }
+
+    const placeholders = value.map((item) => {
+      const values = this.normalizeConditionValues(condition, item);
+      return `(${values.map((part) =>
+        this.push(normalizeCaseValue(part, ignoreCase)),
+      ).join(", ")})`;
+    }).join(", ");
+
+    return `${tupleExpression(columns)} ${operator} (${placeholders})`;
   }
 
   private value(
@@ -380,6 +467,10 @@ class QueryCompiler {
     return normalizePropertyValue(condition.property, value, this.options);
   }
 
+  private normalizeConditionValues(condition: QueryCondition, value: unknown): unknown[] {
+    return normalizePropertyValues(condition.property, value, this.options);
+  }
+
   private arrayValue(condition: QueryCondition, ignoreCase: boolean): string {
     const value = this.arg(condition, requireParameterIndex(condition));
 
@@ -402,6 +493,10 @@ class QueryCompiler {
 
   private column(property: string): string {
     return this.relationQuery.column(property);
+  }
+
+  private columns(property: string): string[] {
+    return this.relationQuery.columns(property);
   }
 
   private arg(condition: QueryCondition, index: number): unknown {
@@ -453,6 +548,10 @@ function reverseOrders(orderBy: QueryOrder[]): QueryOrder[] {
     ...order,
     direction: order.direction === "asc" ? "desc" : "asc",
   }));
+}
+
+function tupleExpression(columns: string[]): string {
+  return columns.length === 1 ? columns[0] : `(${columns.join(", ")})`;
 }
 
 function compileCursorPredicate(

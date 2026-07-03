@@ -11,11 +11,40 @@ export interface RelationLoadTree {
   [propertyName: string]: true | RelationLoadTree;
 }
 
-export function relationJoinColumnName(relation: RelationMetadata): string {
-  const targetMetadata = getEntityMetadata(relation.target());
-  const targetPrimaryColumn = requireSinglePrimaryColumn(targetMetadata, `Relation ${relation.propertyName}`);
+export interface RelationJoinColumn {
+  column: ColumnMetadata;
+  joinColumnName: string;
+}
 
-  return relation.joinColumn ?? `${relation.propertyName}_${targetPrimaryColumn.columnName}`;
+export function relationJoinColumnName(relation: RelationMetadata): string {
+  const joinColumns = relationJoinColumns(relation);
+
+  if (joinColumns.length !== 1) {
+    throw new Error(
+      `Relation ${relation.propertyName} targets a composite @Id. Use relationJoinColumns() instead.`,
+    );
+  }
+
+  return joinColumns[0].joinColumnName;
+}
+
+export function relationJoinColumns(relation: RelationMetadata): RelationJoinColumn[] {
+  const targetMetadata = getEntityMetadata(relation.target());
+  const targetPrimaryColumns = requirePrimaryColumns(targetMetadata, `Relation ${relation.propertyName}`);
+  const explicit = relation.joinColumns ?? (
+    relation.joinColumn ? [relation.joinColumn] : undefined
+  );
+
+  if (explicit && explicit.length !== targetPrimaryColumns.length) {
+    throw new Error(
+      `Relation ${relation.propertyName} defines ${explicit.length} join column(s), but ${targetMetadata.target.name} has ${targetPrimaryColumns.length} @Id column(s).`,
+    );
+  }
+
+  return targetPrimaryColumns.map((column, index) => ({
+    column,
+    joinColumnName: explicit?.[index] ?? `${relation.propertyName}_${column.columnName}`,
+  }));
 }
 
 export function readRelationForeignKeyValue(
@@ -27,9 +56,17 @@ export function readRelationForeignKeyValue(
   }
 
   const targetMetadata = getEntityMetadata(relation.target());
-  const targetPrimaryColumn = requireSinglePrimaryColumn(targetMetadata, `Relation ${relation.propertyName}`);
-
   const record = value as Record<string, unknown>;
+  const targetPrimaryColumns = requirePrimaryColumns(targetMetadata, `Relation ${relation.propertyName}`);
+
+  if (targetPrimaryColumns.length > 1) {
+    return Object.fromEntries(targetPrimaryColumns.map((primaryColumn) => [
+      primaryColumn.propertyName,
+      readRequiredRelationPrimaryValue(record, relation, targetMetadata, primaryColumn),
+    ]));
+  }
+
+  const targetPrimaryColumn = targetPrimaryColumns[0];
 
   if (targetPrimaryColumn.propertyName in record) {
     return requireRelationPrimaryValue(
@@ -94,13 +131,29 @@ export function defaultJoinTableName(
 export function joinTableColumnName(
   entity: EntityMetadata,
 ): string {
-  const primaryColumn = requireSinglePrimaryColumn(entity, `Entity ${entity.target.name}`);
+  const joinColumns = joinTableColumnNames(entity);
 
+  if (joinColumns.length !== 1) {
+    throw new Error(
+      `Entity ${entity.target.name} has a composite @Id. Use joinTableColumnNames() instead.`,
+    );
+  }
+
+  return joinColumns[0].joinColumnName;
+}
+
+export function joinTableColumnNames(
+  entity: EntityMetadata,
+): RelationJoinColumn[] {
+  const primaryColumns = requirePrimaryColumns(entity, `Entity ${entity.target.name}`);
   const prefix = `${toSnakeCase(entity.target.name)}_`;
 
-  return primaryColumn.columnName.startsWith(prefix)
-    ? primaryColumn.columnName
-    : `${prefix}${primaryColumn.columnName}`;
+  return primaryColumns.map((column) => ({
+    column,
+    joinColumnName: column.columnName.startsWith(prefix)
+      ? column.columnName
+      : `${prefix}${column.columnName}`,
+  }));
 }
 
 export function primaryColumnsOf(metadata: EntityMetadata): ColumnMetadata[] {
@@ -157,21 +210,46 @@ function toSnakeCase(value: string): string {
   );
 }
 
-function requireSinglePrimaryColumn(
+function requirePrimaryColumns(
   metadata: EntityMetadata,
   context: string,
-): ColumnMetadata {
+): ColumnMetadata[] {
   const primaryColumns = primaryColumnsOf(metadata);
 
   if (primaryColumns.length === 0) {
     throw new Error(`${context} targets entity ${metadata.target.name} without an @Id column.`);
   }
 
-  if (primaryColumns.length > 1) {
-    throw new Error(`${context} targets entity ${metadata.target.name} with a composite @Id, which is not supported for relations yet.`);
+  return primaryColumns;
+}
+
+function readRequiredRelationPrimaryValue(
+  record: Record<string, unknown>,
+  relation: RelationMetadata,
+  targetMetadata: EntityMetadata,
+  primaryColumn: ColumnMetadata,
+): unknown {
+  if (primaryColumn.propertyName in record) {
+    return requireRelationPrimaryValue(
+      relation,
+      targetMetadata,
+      primaryColumn.propertyName,
+      record[primaryColumn.propertyName],
+    );
   }
 
-  return primaryColumns[0];
+  if (primaryColumn.columnName in record) {
+    return requireRelationPrimaryValue(
+      relation,
+      targetMetadata,
+      primaryColumn.columnName,
+      record[primaryColumn.columnName],
+    );
+  }
+
+  throw new Error(
+    `Relation ${relation.propertyName} requires ${targetMetadata.target.name}.${primaryColumn.propertyName} or ${primaryColumn.columnName}.`,
+  );
 }
 
 function requireRelationPrimaryValue(

@@ -37,6 +37,7 @@ export interface RelationOptions {
   mappedBy?: string;
   inversedBy?: string;
   joinColumn?: string;
+  joinColumns?: string[];
   joinTable?: string;
   foreignKeyName?: string;
   onDelete?: ReferentialAction;
@@ -91,6 +92,7 @@ export interface RelationMetadata {
   mappedBy?: string;
   inversedBy?: string;
   joinColumn?: string;
+  joinColumns?: string[];
   joinTable?: string;
   foreignKeyName?: string;
   onDelete?: ReferentialAction;

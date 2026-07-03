@@ -125,12 +125,14 @@ unique indexes. `@Column({ index: true })` and
 `@Column({ unique: true })` are shorthand for single-column indexes.
 Multiple `@Id` columns define a composite primary key for direct CRUD calls;
 pass an object id such as `{ tenantId, userId }` to `findById`, `updateById`,
-`existsById`, or `deleteById`. Composite ids are not yet supported for relation
-foreign keys or join tables.
+`existsById`, or `deleteById`. Composite ids are also supported for owning
+relation foreign keys and many-to-many join tables.
 `@ManyToOne` and owning `@OneToOne` create a nullable foreign-key column using
 `joinColumn` or the default `<property>_<targetIdColumn>` name. Owning
 `@OneToOne` also creates a unique index for that foreign key in migrations. Use
-`foreignKeyName`, `onDelete`, and `onUpdate` to control generated constraints.
+`joinColumns` when a relation targets a composite id and needs explicit foreign
+key column names. Use `foreignKeyName`, `onDelete`, and `onUpdate` to control
+generated constraints.
 Inverse `@OneToOne` and `@OneToMany` require `mappedBy`; `@ManyToMany` creates a
 join table. Use `cascade` with
 `[CascadeType.PERSIST]` or `CascadeType.REMOVE` for loaded or lazy relation
@@ -276,10 +278,11 @@ const team = await user.team;
 const roles = await user.roles;
 ```
 
-Derived query methods can also filter on relation fields. NPA joins relation
-targets when a method uses `relationProperty + TargetColumn`, while direct
-columns still take precedence if a matching column exists. Nested relation paths
-can chain the same rule.
+Derived query methods can also filter on relation fields. NPA compares direct
+owning relation properties against their foreign-key columns, including
+composite keys, and joins relation targets when a method uses
+`relationProperty + TargetColumn`. Direct columns still take precedence if a
+matching column exists. Nested relation paths can chain the same rule.
 
 ```ts
 @Repository(User)
@@ -393,9 +396,9 @@ Default TypeScript-to-DB mapping is intentionally small: `string`, `number`,
 `boolean`, and `Date`. Numeric `@Id` is a normal integer primary key unless
 `generationStrategy: GenerationStrategy.AUTO_INCREMENT` is specified.
 Use `@Column({ type: 'VARCHAR(80)' })` when you need an explicit database type.
-For many-to-many relations, NPA creates a join table with both primary-key
-columns, a composite primary key, and foreign keys back to each side, for
-example `@ManyToMany(() => Role, { joinTable: 'user_roles' })`. Dynamic
+For many-to-many relations, NPA creates a join table with all primary-key
+columns from both sides, a composite primary key, and foreign keys back to each
+side, for example `@ManyToMany(() => Role, { joinTable: 'user_roles' })`. Dynamic
 decorator expressions are rejected by migration parsing.
 
 ## Adapter Wiring
@@ -642,7 +645,7 @@ before treating NPA as a fuller ORM:
 - Query API: add aggregate/groupBy support and bulk update by condition.
 - Batching: add findUnique-style same-tick batching and relation-loading batching inside transaction-aware scopes.
 - Relations: support eager fetch strategies and safer relation mutation helpers.
-- Entity mapping: add composite relation keys, enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
+- Entity mapping: add enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
 - Migrations: add data migration hooks and richer DDL for defaults/generated columns/enums.
 - Transactions: add more propagation modes.
 - Operations: add SQL logging, slow-query hooks, metrics/tracing, normalized driver errors, retry policy hooks, and clearer connection ownership docs.

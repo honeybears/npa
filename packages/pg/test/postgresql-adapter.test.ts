@@ -82,6 +82,30 @@ class PgTenantUser {
   name!: string;
 }
 
+@Entity({ name: "tenant_teams" })
+class PgTenantTeam {
+  @Id({ name: "tenant_id" })
+  tenantId!: string;
+
+  @Id({ name: "team_id" })
+  teamId!: string;
+
+  @Column()
+  label!: string;
+}
+
+@Entity({ name: "tenant_members" })
+class PgTenantMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => PgTenantTeam)
+  team!: PgTenantTeam;
+}
+
 @Entity({ name: "products" })
 class PgTimestampedProduct {
   @Id({ name: "product_id" })
@@ -907,6 +931,67 @@ describe("PostgreSQL adapter", () => {
     expect(compilePostgresqlDeleteById(id, options)).toEqual({
       text: 'DELETE FROM "tenant_users" WHERE "tenant_id" = $1 AND "user_id" = $2',
       values: ["t1", "u1"],
+    });
+  });
+
+  test("compiles PostgreSQL composite relation key SQL", () => {
+    expect(
+      compilePostgresqlInsert(
+        {
+          name: "kim",
+          team: { tenantId: "t1", teamId: "team1" },
+        },
+        { entity: PgTenantMember },
+      ),
+    ).toEqual({
+      text:
+        'INSERT INTO "tenant_members" ("name", "team_tenant_id", "team_team_id") VALUES ($1, $2, $3) RETURNING *',
+      values: ["kim", "t1", "team1"],
+    });
+
+    expect(
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByTeam"),
+          args: [{ tenantId: "t1", teamId: "team1" }],
+        },
+        { entity: PgTenantMember },
+      ),
+    ).toEqual({
+      text:
+        'SELECT * FROM "tenant_members" WHERE ("team_tenant_id" = $1 AND "team_team_id" = $2)',
+      values: ["t1", "team1"],
+    });
+
+    expect(
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByTeamIn"),
+          args: [[
+            { tenantId: "t1", teamId: "team1" },
+            { tenantId: "t1", teamId: "team2" },
+          ]],
+        },
+        { entity: PgTenantMember },
+      ),
+    ).toEqual({
+      text:
+        'SELECT * FROM "tenant_members" WHERE (("team_tenant_id", "team_team_id") IN (($1, $2), ($3, $4)))',
+      values: ["t1", "team1", "t1", "team2"],
+    });
+
+    expect(
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByTeamLabel"),
+          args: ["platform"],
+        },
+        { entity: PgTenantMember },
+      ),
+    ).toEqual({
+      text:
+        'SELECT "t0".* FROM "tenant_members" AS "t0" JOIN "tenant_teams" AS "t1" ON "t0"."team_tenant_id" = "t1"."tenant_id" AND "t0"."team_team_id" = "t1"."team_id" WHERE ("t1"."label" = $1)',
+      values: ["platform"],
     });
   });
 

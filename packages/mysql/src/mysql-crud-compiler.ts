@@ -1,8 +1,8 @@
 import {
   mysqlEntityColumnProperties,
-  normalizeMysqlPropertyValue,
+  normalizeMysqlPropertyValues,
   mysqlPrimaryKeyProperties,
-  mysqlPropertyToColumn,
+  mysqlPropertyToColumns,
   mysqlVersionProperty,
   quoteMysqlTable,
 } from "./mysql-identifiers";
@@ -25,8 +25,9 @@ export function compileMysqlInsert<TEntity extends object>(
     throw new Error("Cannot insert an entity without values.");
   }
 
-  const columns = entries.map(([property]) => mysqlPropertyToColumn(property, options));
-  const values = entries.map(([property, value]) => normalizeMysqlPropertyValue(property, value, options));
+  const columnValues = expandMysqlColumnValues(entries, options);
+  const columns = columnValues.map((entry) => entry.column);
+  const values = columnValues.map((entry) => entry.value);
   const placeholders = values.map(() => "?");
 
   return {
@@ -54,9 +55,10 @@ export function compileMysqlUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([property, value]) => normalizeMysqlPropertyValue(property, value, options));
-  const assignments = entries.map(
-    ([property]) => `${mysqlPropertyToColumn(property, options)} = ?`,
+  const columnValues = expandMysqlColumnValues(entries, options);
+  const values = columnValues.map((entry) => entry.value);
+  const assignments = columnValues.map(
+    (entry) => `${entry.column} = ?`,
   );
   const where = compileIdWhere(id, options, values);
 
@@ -87,11 +89,12 @@ export function compileMysqlVersionedUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([property, value]) => normalizeMysqlPropertyValue(property, value, options));
-  const assignments = entries.map(
-    ([property]) => `${mysqlPropertyToColumn(property, options)} = ?`,
+  const columnValues = expandMysqlColumnValues(entries, options);
+  const values = columnValues.map((entry) => entry.value);
+  const assignments = columnValues.map(
+    (entry) => `${entry.column} = ?`,
   );
-  const versionColumn = mysqlPropertyToColumn(version, options);
+  const versionColumn = mysqlPropertyToColumns(version, options)[0];
   assignments.push(`${versionColumn} = ${versionColumn} + 1`);
   const where = compileIdWhere(id, options, values);
   values.push(expectedVersion);
@@ -189,6 +192,21 @@ export function getMysqlPrimaryKeyValue<TEntity extends object>(
     : Object.fromEntries(entries);
 }
 
+function expandMysqlColumnValues(
+  entries: Array<[string, unknown]>,
+  options: MysqlQueryCompilerOptions,
+): Array<{ column: string; value: unknown }> {
+  return entries.flatMap(([property, value]) => {
+    const columns = mysqlPropertyToColumns(property, options);
+    const values = normalizeMysqlPropertyValues(property, value, options);
+
+    return columns.map((column, index) => ({
+      column,
+      value: values[index],
+    }));
+  });
+}
+
 function withDefaultVersionEntry(
   entries: Array<[string, unknown]>,
   options: MysqlQueryCompilerOptions,
@@ -259,7 +277,7 @@ function compileIdWhere(
 ): string {
   return primaryKeyValueEntries(id, options).map(([property, value]) => {
     values.push(value);
-    return `${mysqlPropertyToColumn(property, options)} = ?`;
+    return `${mysqlPropertyToColumns(property, options)[0]} = ?`;
   }).join(" AND ");
 }
 

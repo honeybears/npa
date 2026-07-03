@@ -6,6 +6,7 @@ import type {
   MigrationFile,
   MigrationIndexSchema,
   MigrationRename,
+  MigrationRelationSchema,
   MigrationResult,
   MigrationRunOptions,
 } from "@node-persistence-api/core";
@@ -894,26 +895,29 @@ function entityTable(
       );
     }
 
-    const targetPrimary = primaryColumn(target);
-    const joinColumn = relation.joinColumn ?? `${relation.propertyName}_${targetPrimary.columnName}`;
-    const column = {
-      ...relationColumn(targetPrimary, joinColumn),
-      nullable: true,
-    };
+    const targetPrimaryColumns = primaryColumns(target);
+    const joinColumns = relationJoinColumnNames(relation, targetPrimaryColumns);
 
-    columns.set(joinColumn, column);
+    for (const [index, joinColumn] of joinColumns.entries()) {
+      const column = {
+        ...relationColumn(targetPrimaryColumns[index], joinColumn),
+        nullable: true,
+      };
+      columns.set(joinColumn, column);
+    }
+
     if (relation.kind === MigrationRelationKind.ONE_TO_ONE) {
       indexes.push({
-        columns: [joinColumn],
+        columns: joinColumns,
         unique: true,
       });
     }
     foreignKeys.push({
-      name: relation.foreignKeyName ?? foreignKeyName(entity.tableName, [joinColumn], target.tableName),
-      columns: [joinColumn],
+      name: relation.foreignKeyName ?? foreignKeyName(entity.tableName, joinColumns, target.tableName),
+      columns: joinColumns,
       referencedSchema: target.schema,
       referencedTable: target.tableName,
-      referencedColumns: [targetPrimary.columnName],
+      referencedColumns: targetPrimaryColumns.map((column) => column.columnName),
       onDelete: relation.onDelete,
       onUpdate: relation.onUpdate,
     });
@@ -951,41 +955,38 @@ function buildJoinTables(entities: MigrationEntitySchema[]): MigrationTableSchem
         );
       }
 
-      const sourcePrimary = primaryColumn(entity);
-      const targetPrimary = primaryColumn(target);
       const joinTable = resolveJoinTable(entity, target, relation.joinTable);
-      let sourceColumnName = joinColumnName(entity, sourcePrimary);
-      let targetColumnName = joinColumnName(target, targetPrimary);
-
-      if (sourceColumnName === targetColumnName) {
-        sourceColumnName = `${toSnakeCase(entity.className)}_${sourcePrimary.columnName}`;
-        targetColumnName = `${toSnakeCase(target.className)}_${targetPrimary.columnName}`;
-      }
+      const sourcePrimaryColumns = primaryColumns(entity);
+      const targetPrimaryColumns = primaryColumns(target);
+      const sourceColumnNames = joinColumnNames(entity, sourcePrimaryColumns);
+      const targetColumnNames = joinColumnNames(target, targetPrimaryColumns);
 
       tables.push({
         ...joinTable,
         columns: [
-          relationColumn(sourcePrimary, sourceColumnName),
-          relationColumn(targetPrimary, targetColumnName),
+          ...sourcePrimaryColumns.map((column, index) =>
+            relationColumn(column, sourceColumnNames[index])),
+          ...targetPrimaryColumns.map((column, index) =>
+            relationColumn(column, targetColumnNames[index])),
         ],
         indexes: [],
         foreignKeys: [
           {
-            name: foreignKeyName(joinTable.tableName, [sourceColumnName], entity.tableName),
-            columns: [sourceColumnName],
+            name: foreignKeyName(joinTable.tableName, sourceColumnNames, entity.tableName),
+            columns: sourceColumnNames,
             referencedSchema: entity.schema,
             referencedTable: entity.tableName,
-            referencedColumns: [sourcePrimary.columnName],
+            referencedColumns: sourcePrimaryColumns.map((column) => column.columnName),
           },
           {
-            name: foreignKeyName(joinTable.tableName, [targetColumnName], target.tableName),
-            columns: [targetColumnName],
+            name: foreignKeyName(joinTable.tableName, targetColumnNames, target.tableName),
+            columns: targetColumnNames,
             referencedSchema: target.schema,
             referencedTable: target.tableName,
-            referencedColumns: [targetPrimary.columnName],
+            referencedColumns: targetPrimaryColumns.map((column) => column.columnName),
           },
         ],
-        primaryKey: [sourceColumnName, targetColumnName],
+        primaryKey: [...sourceColumnNames, ...targetColumnNames],
       });
     }
   }
@@ -1030,21 +1031,44 @@ function resolveJoinTable(
   };
 }
 
-function joinColumnName(
+function relationJoinColumnNames(
+  relation: MigrationRelationSchema,
+  targetPrimaryColumns: MigrationColumnSchema[],
+): string[] {
+  const explicit = relation.joinColumns ?? (
+    relation.joinColumn ? [relation.joinColumn] : undefined
+  );
+
+  if (explicit && explicit.length !== targetPrimaryColumns.length) {
+    throw new Error(
+      `@${relation.kind === MigrationRelationKind.ONE_TO_ONE ? "OneToOne" : "ManyToOne"} ${relation.propertyName} defines ${explicit.length} join column(s), but target has ${targetPrimaryColumns.length} @Id column(s).`,
+    );
+  }
+
+  return targetPrimaryColumns.map((column, index) =>
+    explicit?.[index] ?? `${relation.propertyName}_${column.columnName}`);
+}
+
+function joinColumnNames(
   entity: MigrationEntitySchema,
-  primary: MigrationColumnSchema,
-): string {
+  primaryColumns: MigrationColumnSchema[],
+): string[] {
   const prefix = `${toSnakeCase(entity.className)}_`;
 
-  return primary.columnName.startsWith(prefix)
-    ? primary.columnName
-    : `${prefix}${primary.columnName}`;
+  return primaryColumns.map((primary) =>
+    primary.columnName.startsWith(prefix)
+      ? primary.columnName
+      : `${prefix}${primary.columnName}`);
 }
 
 function primaryColumn(entity: MigrationEntitySchema): MigrationColumnSchema {
-  const primary = entity.columns.find((column) => column.primary);
+  return primaryColumns(entity)[0];
+}
 
-  if (!primary) {
+function primaryColumns(entity: MigrationEntitySchema): MigrationColumnSchema[] {
+  const primary = entity.columns.filter((column) => column.primary);
+
+  if (primary.length === 0) {
     throw new Error(`${entity.className} must declare an @Id column before it can be migrated.`);
   }
 

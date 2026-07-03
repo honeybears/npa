@@ -6,8 +6,8 @@ import {
   entityColumnProperties,
   primaryKeyProperties as resolvePrimaryKeyProperties,
   primaryKeyProperty as resolvePrimaryKeyProperty,
-  normalizePropertyValue,
-  propertyToColumn,
+  normalizePropertyValues,
+  propertyToColumns,
   quoteTable,
   versionProperty as resolveVersionProperty,
 } from "./postgresql-identifiers";
@@ -29,8 +29,9 @@ export function compilePostgresqlInsert<TEntity extends object>(
     throw new Error("Cannot insert an entity without values.");
   }
 
-  const columns = entries.map(([property]) => propertyToColumn(property, options));
-  const values = entries.map(([property, value]) => normalizePropertyValue(property, value, options));
+  const columnValues = expandColumnValues(entries, options);
+  const columns = columnValues.map((entry) => entry.column);
+  const values = columnValues.map((entry) => entry.value);
   const placeholders = values.map((_, index) => `$${index + 1}`);
 
   return {
@@ -58,9 +59,10 @@ export function compilePostgresqlUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([property, value]) => normalizePropertyValue(property, value, options));
-  const assignments = entries.map(
-    ([property], index) => `${propertyToColumn(property, options)} = $${index + 1}`,
+  const columnValues = expandColumnValues(entries, options);
+  const values = columnValues.map((entry) => entry.value);
+  const assignments = columnValues.map(
+    (entry, index) => `${entry.column} = $${index + 1}`,
   );
   const where = compileIdWhere(id, options, values);
 
@@ -91,11 +93,12 @@ export function compilePostgresqlVersionedUpdate<TEntity extends object>(
     throw new Error("Cannot update an entity without changed values.");
   }
 
-  const values = entries.map(([property, value]) => normalizePropertyValue(property, value, options));
-  const assignments = entries.map(
-    ([property], index) => `${propertyToColumn(property, options)} = $${index + 1}`,
+  const columnValues = expandColumnValues(entries, options);
+  const values = columnValues.map((entry) => entry.value);
+  const assignments = columnValues.map(
+    (entry, index) => `${entry.column} = $${index + 1}`,
   );
-  const versionColumn = propertyToColumn(version, options);
+  const versionColumn = propertyToColumns(version, options)[0];
   assignments.push(`${versionColumn} = ${versionColumn} + 1`);
   const where = compileIdWhere(id, options, values);
   values.push(expectedVersion);
@@ -199,6 +202,21 @@ export function getPrimaryKeyValue<TEntity extends object>(
     : Object.fromEntries(entries);
 }
 
+function expandColumnValues(
+  entries: Array<[string, unknown]>,
+  options: PostgresqlQueryCompilerOptions,
+): Array<{ column: string; value: unknown }> {
+  return entries.flatMap(([property, value]) => {
+    const columns = propertyToColumns(property, options);
+    const values = normalizePropertyValues(property, value, options);
+
+    return columns.map((column, index) => ({
+      column,
+      value: values[index],
+    }));
+  });
+}
+
 function withDefaultVersionEntry(
   entries: Array<[string, unknown]>,
   options: PostgresqlQueryCompilerOptions,
@@ -249,7 +267,7 @@ function compileIdWhere(
 ): string {
   return primaryKeyValueEntries(id, options).map(([property, value]) => {
     values.push(value);
-    return `${propertyToColumn(property, options)} = $${values.length}`;
+    return `${propertyToColumns(property, options)[0]} = $${values.length}`;
   }).join(" AND ");
 }
 

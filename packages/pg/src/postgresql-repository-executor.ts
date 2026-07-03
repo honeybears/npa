@@ -1,5 +1,6 @@
 import {
   defaultJoinTableName,
+  ColumnMetadata,
   createCursorWindow,
   createPage,
   EntityMetadata,
@@ -9,8 +10,9 @@ import {
   type EntityTarget,
   isCursorPageable,
   isOffsetPageable,
-  joinTableColumnName,
+  joinTableColumnNames,
   needsOrmDelete,
+  primaryColumnsOf,
   NPAFindOptions,
   NPAEntityGraphMetadata,
   NPARepositoryAdapter,
@@ -651,32 +653,43 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
       syncManyToManyRelations: async (_targetEntity, id, relation, targetIds) => {
         const metadata = requireAdapterMetadata(entity, "sync many-to-many relations");
         const join = manyToManyJoin(metadata, relation);
-        const sourceColumn = relation.mappedBy ? join.targetColumn : join.sourceColumn;
-        const targetColumn = relation.mappedBy ? join.sourceColumn : join.targetColumn;
+        const targetMetadata = getEntityMetadata(relation.target());
+        const sourceIdColumns = primaryColumnsOf(metadata);
+        const targetIdColumns = primaryColumnsOf(targetMetadata);
+        const sourceColumns = relation.mappedBy ? join.targetColumns : join.sourceColumns;
+        const targetColumns = relation.mappedBy ? join.sourceColumns : join.targetColumns;
+        const sourceWhere = compileTupleWhere(sourceColumns, id, sourceIdColumns, 1);
         await this.options.queryable.query(
-          `DELETE FROM ${join.table} WHERE ${quoteIdentifier(sourceColumn)} = $1`,
-          [id],
+          `DELETE FROM ${join.table} WHERE ${sourceWhere.sql}`,
+          sourceWhere.values,
         );
 
         if (targetIds.length === 0) {
           return;
         }
 
-        const placeholders = targetIds.map((_, index) =>
-          `($1, $${index + 2})`,
-        );
+        const columns = [...sourceColumns, ...targetColumns];
+        const rows = targetIds.map((targetId) => [
+          ...idParts(id, sourceIdColumns),
+          ...idParts(targetId, targetIdColumns),
+        ]);
+        let index = 1;
+        const placeholders = rows.map((row) =>
+          `(${row.map(() => `$${index++}`).join(", ")})`);
         await this.options.queryable.query(
-          `INSERT INTO ${join.table} (${quoteIdentifier(sourceColumn)}, ${quoteIdentifier(targetColumn)}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`,
-          [id, ...targetIds],
+          `INSERT INTO ${join.table} (${columns.map(quoteIdentifier).join(", ")}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`,
+          rows.flat(),
         );
       },
       deleteManyToManyRelations: async (_targetEntity, id, relation) => {
         const metadata = requireAdapterMetadata(entity, "delete many-to-many relations");
         const join = manyToManyJoin(metadata, relation);
-        const column = relation.mappedBy ? join.targetColumn : join.sourceColumn;
+        const sourceIdColumns = primaryColumnsOf(metadata);
+        const columns = relation.mappedBy ? join.targetColumns : join.sourceColumns;
+        const where = compileTupleWhere(columns, id, sourceIdColumns, 1);
         await this.options.queryable.query(
-          `DELETE FROM ${join.table} WHERE ${quoteIdentifier(column)} = $1`,
-          [id],
+          `DELETE FROM ${join.table} WHERE ${where.sql}`,
+          where.values,
         );
       },
       forEntity: (target) => this.createDirtyCheckAdapter(target),
@@ -708,8 +721,8 @@ function firstColumn(row: object | null): unknown {
 
 interface ManyToManyJoin {
   table: string;
-  sourceColumn: string;
-  targetColumn: string;
+  sourceColumns: string[];
+  targetColumns: string[];
 }
 
 function manyToManyJoin(
@@ -730,16 +743,70 @@ function manyToManyJoin(
 
     return {
       table: qualifiedJoinTable(target, source, owner),
-      sourceColumn: joinTableColumnName(target),
-      targetColumn: joinTableColumnName(source),
+      sourceColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
+      targetColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
     };
   }
 
   return {
     table: qualifiedJoinTable(source, target, relation),
-    sourceColumn: joinTableColumnName(source),
-    targetColumn: joinTableColumnName(target),
+    sourceColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
+    targetColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
   };
+}
+
+function compileTupleWhere(
+  columns: string[],
+  id: unknown,
+  idColumns: ColumnMetadata[],
+  startIndex: number,
+): { sql: string; values: unknown[] } {
+  const values = idParts(id, idColumns);
+
+  if (columns.length !== values.length) {
+    throw new Error(
+      `Expected ${columns.length} id value(s), received ${values.length}.`,
+    );
+  }
+
+  if (columns.length === 1) {
+    return {
+      sql: `${quoteIdentifier(columns[0])} = $${startIndex}`,
+      values,
+    };
+  }
+
+  return {
+    sql: `(${columns.map(quoteIdentifier).join(", ")}) = (${values.map((_, index) => `$${startIndex + index}`).join(", ")})`,
+    values,
+  };
+}
+
+function idParts(id: unknown, columns: ColumnMetadata[] = []): unknown[] {
+  if (columns.length > 0) {
+    if (columns.length === 1 && !isRecord(id)) {
+      return [id];
+    }
+
+    if (!isRecord(id)) {
+      throw new Error(
+        `Expected object id with ${columns.length} value(s), received scalar id.`,
+      );
+    }
+
+    return columns.map((column) =>
+      column.propertyName in id ? id[column.propertyName] : id[column.columnName]);
+  }
+
+  if (!isRecord(id)) {
+    return [id];
+  }
+
+  return Object.keys(id).sort().map((key) => id[key]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function qualifiedJoinTable(

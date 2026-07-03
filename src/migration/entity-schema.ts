@@ -23,6 +23,7 @@ interface DecoratorOptions {
   columns?: string[];
   mappedBy?: string;
   joinColumn?: string;
+  joinColumns?: string[];
   joinTable?: string;
   foreignKeyName?: string;
   onDelete?: MigrationReferentialAction;
@@ -344,6 +345,7 @@ function parseRelations(
       targetClassName,
       mappedBy: relationOptions.mappedBy,
       joinColumn: relationOptions.joinColumn,
+      joinColumns: relationOptions.joinColumns,
       joinTable: relationOptions.joinTable ?? relationOptions.name,
       foreignKeyName: relationOptions.foreignKeyName,
       onDelete: relationOptions.onDelete,
@@ -424,6 +426,7 @@ function readRelationOptions(rawArguments: string, context: string): DecoratorOp
     "mappedBy",
     "inversedBy",
     "joinColumn",
+    "joinColumns",
     "joinTable",
     "foreignKeyName",
     "onDelete",
@@ -522,6 +525,11 @@ function parseDecoratorOptions(
 
     if (key === "columns") {
       options.columns = readStringArrayLiteral(rawPropertyValue, `${context}.${key}`);
+      continue;
+    }
+
+    if (key === "joinColumns") {
+      options.joinColumns = readStringArrayLiteral(rawPropertyValue, `${context}.${key}`);
       continue;
     }
 

@@ -58,6 +58,7 @@ describe("migration metadata", () => {
         targetClassName: "Category",
         mappedBy: undefined,
         joinColumn: "primary_category_id",
+        joinColumns: undefined,
         joinTable: undefined,
         foreignKeyName: "fk_products_primary_category",
         onDelete: "SET NULL",
@@ -69,6 +70,7 @@ describe("migration metadata", () => {
         targetClassName: "Category",
         mappedBy: undefined,
         joinColumn: undefined,
+        joinColumns: undefined,
         joinTable: "product_categories",
         foreignKeyName: undefined,
         onDelete: undefined,
@@ -442,6 +444,7 @@ describe("migration metadata", () => {
         targetClassName: "User",
         mappedBy: undefined,
         joinColumn: "user_id",
+        joinColumns: undefined,
         joinTable: undefined,
         foreignKeyName: "fk_profiles_user",
         onDelete: undefined,
@@ -459,6 +462,50 @@ describe("migration metadata", () => {
     );
     expect(compileMysqlMigrationStatements({ entities: schemas })).toContain(
       "ALTER TABLE `profiles` ADD CONSTRAINT `fk_profiles_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)",
+    );
+  });
+
+  test("creates composite relation foreign keys", () => {
+    const schemas = parseEntitySource(`
+      import { Column, Entity, Id, ManyToOne } from "@npa/test";
+
+      @Entity({ name: "tenant_teams" })
+      class TenantTeam {
+        @Id({ name: "tenant_id" })
+        tenantId!: string;
+
+        @Id({ name: "team_id" })
+        teamId!: string;
+
+        @Column()
+        label!: string;
+      }
+
+      @Entity({ name: "tenant_members" })
+      class TenantMember {
+        @Id({ name: "member_id" })
+        id!: number;
+
+        @Column()
+        name!: string;
+
+        @ManyToOne(() => TenantTeam)
+        team!: TenantTeam;
+      }
+    `);
+
+    const member = schemas.find((schema) => schema.className === "TenantMember");
+
+    expect(member?.relations[0]).toMatchObject({
+      propertyName: "team",
+      joinColumn: undefined,
+      joinColumns: undefined,
+    });
+    expect(compilePostgresqlMigrationStatements({ entities: schemas })).toContain(
+      'ALTER TABLE "tenant_members" ADD CONSTRAINT "fk_tenant_members_team_tenant_id_team_team_id_tenant_teams" FOREIGN KEY ("team_tenant_id", "team_team_id") REFERENCES "tenant_teams" ("tenant_id", "team_id")',
+    );
+    expect(compileMysqlMigrationStatements({ entities: schemas })).toContain(
+      "ALTER TABLE `tenant_members` ADD CONSTRAINT `fk_tenant_members_team_tenant_id_team_team_id_tenant_teams` FOREIGN KEY (`team_tenant_id`, `team_team_id`) REFERENCES `tenant_teams` (`tenant_id`, `team_id`)",
     );
   });
 

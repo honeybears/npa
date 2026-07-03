@@ -4,11 +4,11 @@ import {
   getEntityMetadata,
   NPALoadOptions,
   NPARelationLoadTree,
-  readEntityPrimaryValue,
-  relationJoinColumnName,
+  relationJoinColumns,
   RelationKind,
   RelationMetadata,
-  joinTableColumnName,
+  joinTableColumnNames,
+  primaryColumnsOf,
 } from "@node-persistence-api/core";
 import { quoteIdentifier, quoteQualifiedIdentifier } from "./postgresql-identifiers";
 import { PostgresqlQueryable } from "./types";
@@ -168,9 +168,9 @@ async function loadManyToOne<TEntity extends object>(
   queryable: PostgresqlQueryable,
 ): Promise<object[]> {
   const targetMetadata = getEntityMetadata(relation.target());
-  const targetPrimary = requirePrimaryColumn(targetMetadata);
-  const joinColumn = relationJoinColumnName(relation);
-  const ids = uniqueValues(entities.map((entity) => readValue(entity, joinColumn)));
+  const joinColumns = relationJoinColumns(relation);
+  const ids = uniqueValues(entities.map((entity) =>
+    readColumnValueSet(entity, joinColumns.map((column) => column.joinColumnName))));
 
   if (ids.length === 0) {
     for (const entity of entities) {
@@ -182,14 +182,17 @@ async function loadManyToOne<TEntity extends object>(
   const rows = await selectRowsByColumn(
     queryable,
     targetMetadata,
-    targetPrimary.columnName,
+    joinColumns.map((column) => column.column.columnName),
     ids,
   );
-  const rowById = new Map(rows.map((row) => [readValue(row, targetPrimary.columnName), row]));
+  const rowById = new Map(rows.map((row) => [
+    keyForValueSet(readColumnValueSet(row, joinColumns.map((column) => column.column.columnName))),
+    row,
+  ]));
 
   for (const entity of entities) {
-    const id = readValue(entity, joinColumn);
-    writeValue(entity, relation.propertyName, rowById.get(id) ?? null);
+    const id = readColumnValueSet(entity, joinColumns.map((column) => column.joinColumnName));
+    writeValue(entity, relation.propertyName, rowById.get(keyForValueSet(id)) ?? null);
   }
 
   return flattenRelationValues(entities, relation);
@@ -207,14 +210,22 @@ async function loadOneToOne<TEntity extends object>(
 
   const targetMetadata = getEntityMetadata(relation.target());
   const targetRelation = findMappedOwningToOne(metadata, targetMetadata, relation);
-  const sourceIds = uniqueValues(entities.map((entity) => readEntityPrimaryValue(entity, metadata)));
-  const joinColumn = relationJoinColumnName(targetRelation);
-  const rows = await selectRowsByColumn(queryable, targetMetadata, joinColumn, sourceIds);
-  const rowsBySourceId = groupRows(rows, joinColumn);
+  const sourceIds = uniqueValues(entities.map((entity) => readPrimaryValueSet(entity, metadata)));
+  const joinColumns = relationJoinColumns(targetRelation);
+  const rows = await selectRowsByColumn(
+    queryable,
+    targetMetadata,
+    joinColumns.map((column) => column.joinColumnName),
+    sourceIds,
+  );
+  const rowsBySourceId = groupRows(
+    rows,
+    joinColumns.map((column) => column.joinColumnName),
+  );
 
   for (const entity of entities) {
-    const id = readEntityPrimaryValue(entity, metadata);
-    writeValue(entity, relation.propertyName, rowsBySourceId.get(id)?.[0] ?? null);
+    const id = readPrimaryValueSet(entity, metadata);
+    writeValue(entity, relation.propertyName, rowsBySourceId.get(keyForValueSet(id))?.[0] ?? null);
   }
 
   return flattenRelationValues(entities, relation);
@@ -239,14 +250,22 @@ async function loadOneToMany<TEntity extends object>(
     throw new Error(`@OneToMany ${metadata.target.name}.${relation.propertyName} mappedBy relation was not found.`);
   }
 
-  const sourceIds = uniqueValues(entities.map((entity) => readEntityPrimaryValue(entity, metadata)));
-  const joinColumn = relationJoinColumnName(targetRelation);
-  const rows = await selectRowsByColumn(queryable, targetMetadata, joinColumn, sourceIds);
-  const rowsBySourceId = groupRows(rows, joinColumn);
+  const sourceIds = uniqueValues(entities.map((entity) => readPrimaryValueSet(entity, metadata)));
+  const joinColumns = relationJoinColumns(targetRelation);
+  const rows = await selectRowsByColumn(
+    queryable,
+    targetMetadata,
+    joinColumns.map((column) => column.joinColumnName),
+    sourceIds,
+  );
+  const rowsBySourceId = groupRows(
+    rows,
+    joinColumns.map((column) => column.joinColumnName),
+  );
 
   for (const entity of entities) {
-    const id = readEntityPrimaryValue(entity, metadata);
-    writeValue(entity, relation.propertyName, rowsBySourceId.get(id) ?? []);
+    const id = readPrimaryValueSet(entity, metadata);
+    writeValue(entity, relation.propertyName, rowsBySourceId.get(keyForValueSet(id)) ?? []);
   }
 
   return flattenRelationValues(entities, relation);
@@ -280,31 +299,41 @@ async function loadManyToMany<TEntity extends object>(
   queryable: PostgresqlQueryable,
 ): Promise<object[]> {
   const targetMetadata = getEntityMetadata(relation.target());
-  const sourceIds = uniqueValues(entities.map((entity) => readEntityPrimaryValue(entity, metadata)));
+  const sourceIds = uniqueValues(entities.map((entity) => readPrimaryValueSet(entity, metadata)));
 
   if (sourceIds.length === 0) {
     return [];
   }
 
   const join = manyToManyJoin(metadata, relation);
-  const targetPrimary = requirePrimaryColumn(targetMetadata);
-  const placeholders = sourceIds.map((_, index) => `$${index + 1}`).join(", ");
+  const targetPrimaryColumns = requirePrimaryColumns(targetMetadata);
+  const placeholders = tuplePlaceholders(sourceIds, 1);
+  const sourceColumns = relation.mappedBy ? join.targetColumns : join.sourceColumns;
+  const targetColumns = relation.mappedBy ? join.sourceColumns : join.targetColumns;
+  const sourceAliases = sourceAliasNames(sourceColumns);
+  const sourceSelect = sourceColumns.map((column, index) =>
+    `j.${quoteIdentifier(column)} AS ${quoteIdentifier(sourceAliases[index])}`);
+  const targetJoinPredicate = targetPrimaryColumns.map((column, index) =>
+    `t.${quoteIdentifier(column.columnName)} = j.${quoteIdentifier(targetColumns[index])}`)
+    .join(" AND ");
   const result = await queryable.query<Record<string, unknown>>(
     [
-      `SELECT j.${quoteIdentifier(join.currentColumn)} AS "__source_id", t.*`,
+      `SELECT ${sourceSelect.join(", ")}, t.*`,
       `FROM ${join.table} j`,
-      `JOIN ${qualifiedTable(targetMetadata)} t ON t.${quoteIdentifier(targetPrimary.columnName)} = j.${quoteIdentifier(join.relatedColumn)}`,
-      `WHERE j.${quoteIdentifier(join.currentColumn)} IN (${placeholders})`,
+      `JOIN ${qualifiedTable(targetMetadata)} t ON ${targetJoinPredicate}`,
+      `WHERE ${tupleExpression(sourceColumns, "j")} IN (${placeholders})`,
     ].join("\n"),
-    sourceIds,
+    flattenValueSets(sourceIds),
   );
-  const rowsBySourceId = groupRows(result.rows, "__source_id", {
-    omitGroupColumn: true,
-  });
+  const rowsBySourceId = groupRows(
+    result.rows,
+    sourceAliases,
+    { omitGroupColumns: true },
+  );
 
   for (const entity of entities) {
-    const id = readEntityPrimaryValue(entity, metadata);
-    writeValue(entity, relation.propertyName, rowsBySourceId.get(id) ?? []);
+    const id = readPrimaryValueSet(entity, metadata);
+    writeValue(entity, relation.propertyName, rowsBySourceId.get(keyForValueSet(id)) ?? []);
   }
 
   return flattenRelationValues(entities, relation);
@@ -312,8 +341,8 @@ async function loadManyToMany<TEntity extends object>(
 
 interface ManyToManyJoin {
   table: string;
-  currentColumn: string;
-  relatedColumn: string;
+  sourceColumns: string[];
+  targetColumns: string[];
 }
 
 function manyToManyJoin(
@@ -334,32 +363,32 @@ function manyToManyJoin(
 
     return {
       table: qualifiedJoinTable(target, source, owner),
-      currentColumn: joinTableColumnName(source),
-      relatedColumn: joinTableColumnName(target),
+      sourceColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
+      targetColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
     };
   }
 
   return {
     table: qualifiedJoinTable(source, target, relation),
-    currentColumn: joinTableColumnName(source),
-    relatedColumn: joinTableColumnName(target),
+    sourceColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
+    targetColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
   };
 }
 
 async function selectRowsByColumn(
   queryable: PostgresqlQueryable,
   metadata: EntityMetadata,
-  columnName: string,
+  columnNames: string[],
   values: unknown[],
 ): Promise<Record<string, unknown>[]> {
   if (values.length === 0) {
     return [];
   }
 
-  const placeholders = values.map((_, index) => `$${index + 1}`).join(", ");
+  const placeholders = tuplePlaceholders(values, 1);
   const result = await queryable.query<Record<string, unknown>>(
-    `SELECT * FROM ${qualifiedTable(metadata)} WHERE ${quoteIdentifier(columnName)} IN (${placeholders})`,
-    values,
+    `SELECT * FROM ${qualifiedTable(metadata)} WHERE ${tupleExpression(columnNames)} IN (${placeholders})`,
+    flattenValueSets(values),
   );
 
   return result.rows;
@@ -367,27 +396,28 @@ async function selectRowsByColumn(
 
 function groupRows(
   rows: Record<string, unknown>[],
-  columnName: string,
-  options: { omitGroupColumn?: boolean } = {},
-): Map<unknown, Record<string, unknown>[]> {
-  const grouped = new Map<unknown, Record<string, unknown>[]>();
+  columnNames: string[],
+  options: { omitGroupColumns?: boolean } = {},
+): Map<string, Record<string, unknown>[]> {
+  const grouped = new Map<string, Record<string, unknown>[]>();
 
   for (const row of rows) {
-    const key = readValue(row, columnName);
+    const key = keyForValueSet(readColumnValueSet(row, columnNames));
     const current = grouped.get(key) ?? [];
-    current.push(options.omitGroupColumn ? omitProperty(row, columnName) : row);
+    current.push(options.omitGroupColumns ? omitProperties(row, columnNames) : row);
     grouped.set(key, current);
   }
 
   return grouped;
 }
 
-function omitProperty(
+function omitProperties(
   row: Record<string, unknown>,
-  propertyName: string,
+  propertyNames: string[],
 ): Record<string, unknown> {
-  const { [propertyName]: _omitted, ...rest } = row;
-  return rest;
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => !propertyNames.includes(key)),
+  );
 }
 
 function qualifiedTable(metadata: EntityMetadata): string {
@@ -412,16 +442,28 @@ function qualifiedJoinTable(
   return schema ? `${quoteQualifiedIdentifier(schema)}.${table}` : table;
 }
 
-function requirePrimaryColumn(metadata: EntityMetadata) {
-  if (!metadata.primaryColumn) {
+function requirePrimaryColumns(metadata: EntityMetadata) {
+  const primaryColumns = primaryColumnsOf(metadata);
+
+  if (primaryColumns.length === 0) {
     throw new Error(`Entity ${metadata.target.name} requires an @Id column.`);
   }
 
-  return metadata.primaryColumn;
+  return primaryColumns;
 }
 
 function uniqueValues(values: unknown[]): unknown[] {
-  return [...new Set(values.filter((value) => value !== null && value !== undefined))];
+  const unique = new Map<string, unknown>();
+
+  for (const value of values) {
+    if (!hasCompleteValueSet(value)) {
+      continue;
+    }
+
+    unique.set(keyForValueSet(value), value);
+  }
+
+  return [...unique.values()];
 }
 
 function readValue(entity: object, propertyOrColumn: string): unknown {
@@ -430,4 +472,77 @@ function readValue(entity: object, propertyOrColumn: string): unknown {
 
 function writeValue(entity: object, propertyName: string, value: unknown): void {
   (entity as Record<string, unknown>)[propertyName] = value;
+}
+
+function readColumnValueSet(entity: object, columns: string[]): unknown {
+  if (columns.length === 1) {
+    return readValue(entity, columns[0]);
+  }
+
+  const record = entity as Record<string, unknown>;
+  return columns.map((column) => record[column]);
+}
+
+function readPrimaryValueSet(entity: object, metadata: EntityMetadata): unknown {
+  const columns = requirePrimaryColumns(metadata);
+
+  if (columns.length === 1) {
+    return readValue(entity, columns[0].propertyName) ??
+      readValue(entity, columns[0].columnName);
+  }
+
+  return columns.map((column) =>
+    readValue(entity, column.propertyName) ?? readValue(entity, column.columnName));
+}
+
+function hasCompleteValueSet(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (!Array.isArray(value)) {
+    return true;
+  }
+
+  return value.every((part) => part !== null && part !== undefined);
+}
+
+function keyForValueSet(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return `${typeof value}:${String(value)}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function flattenValueSets(values: unknown[]): unknown[] {
+  return values.flatMap((value) => Array.isArray(value)
+    ? value
+    : [value]);
+}
+
+function tupleExpression(columns: string[], alias?: string): string {
+  const qualified = columns.map((column) =>
+    alias ? `${alias}.${quoteIdentifier(column)}` : quoteIdentifier(column));
+  return qualified.length === 1 ? qualified[0] : `(${qualified.join(", ")})`;
+}
+
+function tuplePlaceholders(values: unknown[], startIndex: number): string {
+  let index = startIndex;
+  return values.map((value) => {
+    if (!Array.isArray(value)) {
+      return `$${index++}`;
+    }
+
+    const placeholders = value.map(() => `$${index++}`);
+    return `(${placeholders.join(", ")})`;
+  }).join(", ");
+}
+
+function sourceAlias(columnName: string): string {
+  return `__source_${columnName}`;
+}
+
+function sourceAliasNames(columnNames: string[]): string[] {
+  return columnNames.length === 1 ? ["__source_id"] : columnNames.map(sourceAlias);
 }
