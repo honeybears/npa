@@ -324,6 +324,41 @@ describe("PostgreSQL adapter", () => {
       ],
       cursor: expect.any(Object),
     });
+
+    expect(
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByStatusOrderByCreatedAtDesc"),
+          args: ["active"],
+          select: ["name"],
+          pageable: Pageable.cursor({
+            after: cursorToken(["2026-01-01T00:00:00.000Z", 10]),
+            size: 2,
+          }),
+        },
+        { entity: PgProduct },
+      ),
+    ).toEqual({
+      text: 'SELECT "product_name" AS "name", "created_at" AS "__cursor_0", "product_id" AS "__cursor_1" FROM "products" WHERE ("status" = $1) AND (("created_at" < $2) OR ("created_at" = $3 AND "product_id" > $4)) ORDER BY "created_at" DESC, "product_id" ASC LIMIT 3',
+      values: [
+        "active",
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z",
+        10,
+      ],
+      cursor: expect.any(Object),
+    });
+
+    expect(() =>
+      compilePostgresqlQuery(
+        {
+          query: parseQueryMethod("findByStatus"),
+          args: ["active"],
+          select: [],
+        },
+        { entity: PgProduct },
+      ),
+    ).toThrow(/Select projection requires at least one property/);
   });
 
   test("preserves AND precedence by grouping OR predicate parts", () => {
@@ -1523,6 +1558,16 @@ describe("PostgreSQL adapter", () => {
           };
         }
 
+        if (
+          text ===
+          'SELECT * FROM "members" WHERE ("name" = $1) ORDER BY "member_id" ASC LIMIT 2'
+        ) {
+          return {
+            rows: [{ member_id: 10, name: values[0], team_id: 2 }],
+            rowCount: 1,
+          };
+        }
+
         if (text === 'SELECT * FROM "teams" WHERE "team_id" IN ($1)') {
           return {
             rows: [{ team_id: 2, label: "core", organization_id: 3 }],
@@ -1569,6 +1614,24 @@ describe("PostgreSQL adapter", () => {
       { role_id: 7, name: "admin" },
       { role_id: 8, name: "writer" },
     ]);
+    expect(calls.length).toEqual(4);
+
+    calls.length = 0;
+    const page = await (repository as DynamicRepository).findByName(
+      "kim",
+      Pageable.cursor({ size: 1 }),
+    ) as any;
+    expect(page.content[0].team).toEqual({
+      organization: { organization_id: 3, name: "platform" },
+      organization_id: 3,
+      team_id: 2,
+      label: "core",
+    });
+    expect(page.content[0].roles).toEqual([
+      { role_id: 7, name: "admin" },
+      { role_id: 8, name: "writer" },
+    ]);
+    expect(page.hasNextPage).toEqual(false);
     expect(calls.length).toEqual(4);
   });
 

@@ -37,6 +37,10 @@ class MysqlQueryCompiler {
 
   compile(): MysqlCompiledQuery {
     const { query } = this.invocation;
+    if (this.invocation.select && this.invocation.select.length === 0) {
+      throw new Error("Select projection requires at least one property.");
+    }
+
     this.relationQuery.prepare(query, this.invocation.select ?? []);
     const page = this.compilePage(query);
     const from = this.relationQuery.selectFrom();
@@ -253,10 +257,6 @@ class MysqlQueryCompiler {
       return undefined;
     }
 
-    if (this.invocation.select?.length) {
-      throw new Error("Cursor pagination does not support select projections yet.");
-    }
-
     const reverse = Boolean(pageable.before);
     const queryOrders = reverse ? reverseOrders(orders) : orders;
     const cursorOrders = queryOrders.map((order, index) => {
@@ -264,6 +264,28 @@ class MysqlQueryCompiler {
         order.property,
         `__cursor_${index}`,
       );
+      const selected = this.invocation.select ?? [];
+
+      if (selected.length > 0 && !cursorOrder.hidden) {
+        if (selected.includes(order.property)) {
+          return {
+            property: order.property,
+            direction: order.direction,
+            ...cursorOrder,
+            resultKey: order.property,
+          };
+        }
+
+        const resultKey = `__cursor_${index}`;
+        return {
+          property: order.property,
+          direction: order.direction,
+          ...cursorOrder,
+          resultKey,
+          hidden: true,
+          select: `${cursorOrder.expression} AS ${quoteMysqlIdentifier(resultKey)}`,
+        };
+      }
 
       return {
         property: order.property,

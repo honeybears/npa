@@ -3,6 +3,7 @@ import { getEntityGraphMetadata } from "./entity-graph-decorator";
 import {
   NPARepository,
   NPARepositoryAdapter,
+  NPABaseFindOptions,
   NPAFindOptions,
   NPALoadOptions,
   NPARelationLoadTree,
@@ -74,30 +75,36 @@ function mergeLoadOptions<TEntity extends object>(
   left: NPALoadOptions<TEntity> | undefined,
   right: NPAFindOptions<TEntity> | undefined,
 ): NPAFindOptions<TEntity> | undefined {
+  if (right?.select?.length && left?.relations) {
+    throw new Error("findAll select projections cannot be combined with relation loading.");
+  }
+
+  const loadRight = right as NPABaseFindOptions<TEntity> | undefined;
+
   if (!left?.relations) {
     return right;
   }
 
-  if (!right?.relations) {
-    return { ...right, relations: left.relations };
+  if (!loadRight?.relations) {
+    return { ...loadRight, relations: left.relations };
   }
 
   const leftRelations = left.relations;
-  const rightRelations = right.relations;
+  const rightRelations = loadRight.relations;
 
   if (leftRelations === true || rightRelations === true) {
-    return { ...right, relations: true };
+    return { ...loadRight, relations: true };
   }
 
   if (Array.isArray(leftRelations) && Array.isArray(rightRelations)) {
     return {
-      ...right,
+      ...loadRight,
       relations: [...new Set([...leftRelations, ...rightRelations])],
     };
   }
 
   return {
-    ...right,
+    ...loadRight,
     relations: {
       ...toRelationTree(leftRelations),
       ...toRelationTree(rightRelations),

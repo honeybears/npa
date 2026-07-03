@@ -668,5 +668,56 @@ describe("derived query methods", () => {
       totalElements: 3,
       totalPages: 3,
     });
+
+    const firstCursorPage = executor.execute({
+      query: {
+        methodName: "findAll",
+        action: "find",
+        predicate: [],
+        orderBy: [{ property: "name", direction: "asc" }],
+        parameterCount: 0,
+      },
+      args: [],
+      select: ["name"],
+      pageable: Pageable.cursor({ size: 2 }),
+    });
+
+    expect((firstCursorPage as { content: unknown[] }).content).toEqual([
+      { name: "kim" },
+      { name: "lee" },
+    ]);
+    expect((firstCursorPage as { hasNextPage: boolean }).hasNextPage).toEqual(true);
+
+    const secondCursorPage = executor.execute({
+      query: {
+        methodName: "findAll",
+        action: "find",
+        predicate: [],
+        orderBy: [{ property: "name", direction: "asc" }],
+        parameterCount: 0,
+      },
+      args: [],
+      select: ["name"],
+      pageable: Pageable.cursor({
+        after: (firstCursorPage as { nextCursor: string }).nextCursor,
+        size: 2,
+      }),
+    }) as { content: unknown[]; hasNextPage: boolean };
+    expect(secondCursorPage.content).toEqual([{ name: "park" }]);
+    expect(secondCursorPage.hasNextPage).toEqual(false);
+
+    expect(() =>
+      executor.execute({
+        query: {
+          methodName: "findAll",
+          action: "find",
+          predicate: [],
+          orderBy: [],
+          parameterCount: 0,
+        },
+        args: [],
+        select: [],
+      }),
+    ).toThrow(/Select projection requires at least one property/);
   });
 });

@@ -157,6 +157,10 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
   findAll = async (
     load?: NPAFindOptions<TEntity>,
   ): Promise<TEntity[] | Page<TEntity> | CursorPage<TEntity>> => {
+    if (load?.select && load.select.length === 0) {
+      throw new Error("Select projection requires at least one property.");
+    }
+
     if (load?.select?.length && load.relations) {
       throw new Error("findAll select projections cannot be combined with relation loading.");
     }
@@ -400,6 +404,14 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
 
     const window = createCursorWindow(result.rows, query.cursor);
     const rows = stripCursorKeys(window.content, query.cursor);
+
+    if (invocation.select?.length) {
+      return {
+        ...window,
+        content: rows,
+      };
+    }
+
     const loaded = await this.loadRelations(rows, load);
 
     return {

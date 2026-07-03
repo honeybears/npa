@@ -220,6 +220,29 @@ async function assertRepositoryContract(
   ]);
   expect(projectionPage.totalElements).toEqual(3);
 
+  const projectionCursorPage = await repository.findAll({
+    select: ["name"],
+    orderBy: [{ property: "name", direction: "asc" }],
+    pageable: Pageable.cursor({ size: 2 }),
+  });
+  expect(projectionCursorPage.content).toEqual([
+    { name: "chair beta" },
+    { name: "desk beta" },
+  ]);
+  expect(projectionCursorPage.nextCursor).toEqual(expect.any(String));
+
+  const nextProjectionCursorPage = await repository.findAll({
+    select: ["name"],
+    orderBy: [{ property: "name", direction: "asc" }],
+    pageable: Pageable.cursor({
+      after: projectionCursorPage.nextCursor!,
+      size: 2,
+    }),
+  });
+  expect(nextProjectionCursorPage.content).toEqual([
+    { name: "desk gamma" },
+  ]);
+
   const desks =
     await repository.findTop2ByNameContainingAndPriceGreaterThanOrderByCreatedAtDesc(
       "desk",

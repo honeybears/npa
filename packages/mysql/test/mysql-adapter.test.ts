@@ -298,6 +298,39 @@ describe("MySQL adapter", () => {
         ],
         cursor: expect.any(Object),
       });
+
+    expect(compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByStatusOrderByCreatedAtDesc"),
+          args: ["active"],
+          select: ["name"],
+          pageable: Pageable.cursor({
+            after: cursorToken(["2026-01-01T00:00:00.000Z", 10]),
+            size: 2,
+          }),
+        },
+        { entity: Product },
+      )).toEqual({
+        text:
+          "SELECT `product_name` AS `name`, `created_at` AS `__cursor_0`, `product_id` AS `__cursor_1` FROM `shop`.`products` WHERE (`status` = ?) AND ((`created_at` < ?) OR (`created_at` = ? AND `product_id` > ?)) ORDER BY `created_at` DESC, `product_id` ASC LIMIT 3",
+        values: [
+          "active",
+          "2026-01-01T00:00:00.000Z",
+          "2026-01-01T00:00:00.000Z",
+          10,
+        ],
+        cursor: expect.any(Object),
+      });
+
+    expect(() =>
+      compileMysqlQuery(
+        {
+          query: parseQueryMethod("findByStatus"),
+          args: ["active"],
+          select: [],
+        },
+        { entity: Product },
+      )).toThrow(/Select projection requires at least one property/);
   });
 
   test("compiles MySQL null and empty-list derived query parameters", () => {
@@ -1373,6 +1406,10 @@ describe("MySQL adapter", () => {
           return [[{ member_id: 10, name: values[0], team_id: 2 }], []];
         }
 
+        if (text === "SELECT * FROM `members` WHERE (`name` = ?) ORDER BY `member_id` ASC LIMIT 2") {
+          return [[{ member_id: 10, name: values[0], team_id: 2 }], []];
+        }
+
         if (text === "SELECT * FROM `teams` WHERE `team_id` IN (?)") {
           return [[{ team_id: 2, label: "core", organization_id: 3 }], []];
         }
@@ -1407,6 +1444,24 @@ describe("MySQL adapter", () => {
       { role_id: 7, name: "admin" },
       { role_id: 8, name: "writer" },
     ]);
+    expect(calls.length).toEqual(4);
+
+    calls.length = 0;
+    const page = await (repository as DynamicRepository).findByName(
+      "kim",
+      Pageable.cursor({ size: 1 }),
+    ) as any;
+    expect(page.content[0].team).toEqual({
+      organization: { organization_id: 3, name: "platform" },
+      organization_id: 3,
+      team_id: 2,
+      label: "core",
+    });
+    expect(page.content[0].roles).toEqual([
+      { role_id: 7, name: "admin" },
+      { role_id: 8, name: "writer" },
+    ]);
+    expect(page.hasNextPage).toEqual(false);
     expect(calls.length).toEqual(4);
   });
 

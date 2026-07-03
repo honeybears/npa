@@ -17,6 +17,10 @@ export class InMemoryRepositoryExecutor<TEntity extends object> {
   constructor(private readonly rows: TEntity[]) {}
 
   execute = ({ query, args, pageable, select }: RepositoryMethodInvocation): unknown => {
+    if (select && select.length === 0) {
+      throw new Error("Select projection requires at least one property.");
+    }
+
     const matchedRows = this.rows.filter((row) =>
       matchesPredicate(row, query.predicate, args, query.allIgnoreCase === true),
     );
@@ -41,14 +45,14 @@ export class InMemoryRepositoryExecutor<TEntity extends object> {
         }
 
         if (pageable && isCursorPageable(pageable)) {
-          if (select?.length) {
-            throw new Error("Cursor pagination does not support select projections yet.");
-          }
-
-          return createCursorWindow(
+          const window = createCursorWindow(
             selectedRows,
             cursorMetadata(query.orderBy, pageable),
           );
+
+          return select?.length
+            ? { ...window, content: window.content.map((row) => projectRow(row, select)) }
+            : window;
         }
 
         return projectedRows;

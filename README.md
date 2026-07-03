@@ -241,8 +241,11 @@ const names = await users.findAll({
 ```
 
 `select` projection returns plain partial rows keyed by entity property names.
-It cannot be combined with relation loading, and cursor pagination currently
-requires full rows so cursor tokens can include the ordered values.
+`select` cannot be combined with relation loading or `@EntityGraph`. Cursor
+pagination can use projection rows; NPA adds any ordered cursor values as hidden
+select aliases and removes them before returning content. Cursor pagination can
+also be combined with relation loading or `@EntityGraph` when returning full
+entity rows.
 
 Use `@EntityGraph` on a repository method when that method should always load
 specific relations. Undecorated query methods do not receive entity graph
