@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { NPAConfigurationError, NPAMigrationError } from "../error";
 import {
   LoadMigrationConfigOptions,
   MigrationAdapterName,
@@ -63,7 +64,10 @@ async function loadConfigFile(
 
   if (!fs.existsSync(resolvedPath)) {
     if (configPath) {
-      throw new Error(`NPA config file was not found: ${resolvedPath}`);
+      throw new NPAConfigurationError(`NPA config file was not found: ${resolvedPath}`, {
+        code: "NPA_CONFIG_NOT_FOUND",
+        details: { configPath: resolvedPath },
+      });
     }
 
     return {};
@@ -73,7 +77,10 @@ async function loadConfigFile(
   const config = imported.default ?? imported;
 
   if (!isObject(config)) {
-    throw new Error("NPA config must export an object.");
+    throw new NPAConfigurationError("NPA config must export an object.", {
+      code: "NPA_INVALID_CONFIG",
+      details: { configPath: resolvedPath },
+    });
   }
 
   return config as MigrationConfigFile;
@@ -86,15 +93,22 @@ function resolveAdapter(
   const inferredAdapter = inferAdapterFromUrl(url);
 
   if (!value && url && !inferredAdapter) {
-    throw new Error(
+    throw new NPAMigrationError(
       "Migration url must start with postgres://, postgresql://, or mysql://.",
+      {
+        code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+        details: { url },
+      },
     );
   }
 
   const adapter = value ?? inferredAdapter;
 
   if (adapter !== "postgresql" && adapter !== "mysql") {
-    throw new Error("Migration adapter must be postgresql or mysql.");
+    throw new NPAConfigurationError("Migration adapter must be postgresql or mysql.", {
+      code: value ? "NPA_UNSUPPORTED_ADAPTER" : "NPA_ADAPTER_REQUIRED",
+      details: { adapter },
+    });
   }
 
   return adapter;
@@ -107,14 +121,22 @@ function assertUrlMatchesAdapter(
   const inferredAdapter = inferAdapterFromUrl(url);
 
   if (url && !inferredAdapter) {
-    throw new Error(
+    throw new NPAMigrationError(
       "Migration url must start with postgres://, postgresql://, or mysql://.",
+      {
+        code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+        details: { url },
+      },
     );
   }
 
   if (inferredAdapter && inferredAdapter !== adapter) {
-    throw new Error(
+    throw new NPAConfigurationError(
       `Migration adapter ${adapter} does not match ${inferredAdapter} url.`,
+      {
+        code: "NPA_INVALID_CONFIG",
+        details: { adapter, inferredAdapter },
+      },
     );
   }
 }

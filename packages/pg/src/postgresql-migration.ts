@@ -13,6 +13,7 @@ import type {
 import {
   assertSafeMigrationStatements,
   createDownMigrationStatements,
+  NPAMigrationError,
 } from "@node-persistence-api/core";
 import { MigrationRelationKind } from "@node-persistence-api/core";
 import { createHash } from "node:crypto";
@@ -142,7 +143,9 @@ export async function planPostgresqlMigration(
 ): Promise<MigrationResult> {
   if (!options.url) {
     if (options.renames?.length) {
-      throw new Error("PostgreSQL migration renames require a database url.");
+      throw new NPAMigrationError("PostgreSQL migration renames require a database url.", {
+        code: "NPA_MIGRATION_RENAME_DATABASE_URL_REQUIRED",
+      });
     }
 
     const statements = compilePostgresqlSchemaStatements(options.entities);
@@ -213,7 +216,9 @@ export async function migratePostgresql(
   }
 
   if (!options.url) {
-    throw new Error("PostgreSQL migration requires a database url.");
+    throw new NPAMigrationError("PostgreSQL migration requires a database url.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   const connection = new PostgresqlConnection(await createPool(options.url));
@@ -312,7 +317,9 @@ export async function deployPostgresqlMigrations(
   options: MigrationDeployOptions,
 ): Promise<MigrationDeployResult> {
   if (!options.url) {
-    throw new Error("PostgreSQL migration deploy requires a database url.");
+    throw new NPAMigrationError("PostgreSQL migration deploy requires a database url.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   const connection = new PostgresqlConnection(await createPool(options.url));
@@ -337,8 +344,16 @@ export async function deployPostgresqlMigrations(
 
         if (existing) {
           if (existing.checksum !== migration.checksum) {
-            throw new Error(
+            throw new NPAMigrationError(
               `Migration ${migration.name} checksum mismatch. The migration file changed after it was applied.`,
+              {
+                code: "NPA_MIGRATION_CHECKSUM_MISMATCH",
+                details: {
+                  migrationName: migration.name,
+                  historyChecksum: existing.checksum,
+                  fileChecksum: migration.checksum,
+                },
+              },
             );
           }
 
@@ -1261,8 +1276,14 @@ async function assertNoPostgresqlHistoryDrift(
     return;
   }
 
-  throw new Error(
+  throw new NPAMigrationError(
     `Migration history drift detected. Applied migration(s) missing locally: ${unknown.map((record) => record.name).join(", ")}. Use --allow-drift to bypass.`,
+    {
+      code: "NPA_MIGRATION_HISTORY_MISMATCH",
+      details: {
+        missingMigrations: unknown.map((record) => record.name),
+      },
+    },
   );
 }
 

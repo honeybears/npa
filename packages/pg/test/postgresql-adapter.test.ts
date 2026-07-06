@@ -287,6 +287,27 @@ class TestTransactionManager extends AbstractTransactionManager<object> {
   protected rollbackTransaction() {}
 }
 describe("PostgreSQL adapter", () => {
+  test("maps constraint driver errors to database error codes", async () => {
+    const cases = [
+      { driver: { code: "23505" }, code: "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED" },
+      { driver: { code: "23503" }, code: "NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED" },
+      { driver: { code: "23502" }, code: "NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED" },
+    ];
+
+    for (const testCase of cases) {
+      const connection = new PostgresqlConnection({
+        query() {
+          throw Object.assign(new Error("driver failed"), testCase.driver);
+        },
+      });
+
+      await expect(connection.query("SELECT 1")).rejects.toBeInstanceOf(NPADatabaseError);
+      await expect(connection.query("SELECT 1")).rejects.toMatchObject({
+        code: testCase.code,
+      });
+    }
+  });
+
   test("compiles a derived query method into parameterized PostgreSQL SQL", () => {
     expect(
       compilePostgresqlQuery(

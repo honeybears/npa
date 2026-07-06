@@ -4,14 +4,19 @@ import {
   MysqlRawQueryResult,
   MysqlRepositoryOptions,
 } from "./types";
+import { toMysqlDatabaseError } from "./mysql-database-error";
 
 export async function executeMysqlQuery<TRow = Record<string, unknown>>(
   options: MysqlRepositoryOptions,
   text: string,
   values: unknown[],
 ): Promise<MysqlQueryResult<TRow>> {
-  const raw = await callQueryable<TRow>(options, text, values);
-  return normalizeMysqlResult(raw);
+  try {
+    const raw = await callQueryable<TRow>(options, text, values);
+    return normalizeMysqlResult(raw);
+  } catch (error) {
+    throw toMysqlDatabaseError(error);
+  }
 }
 
 function callQueryable<TRow>(

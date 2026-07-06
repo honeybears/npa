@@ -1,3 +1,5 @@
+import { NPAMigrationError } from "../error";
+
 export interface MigrationSafetyIssue {
   statement: string;
   reason: string;
@@ -60,8 +62,12 @@ export function assertSafeMigrationStatements(
     .map((issue) => `${issue.reason}: ${issue.statement}`)
     .join("\n");
 
-  throw new Error(
+  throw new NPAMigrationError(
     `Destructive migration statements require --allow-destructive.\n${details}`,
+    {
+      code: "NPA_MIGRATION_UNSAFE_STATEMENT",
+      details: { issues },
+    },
   );
 }
 

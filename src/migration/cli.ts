@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { NPAMetadataError, NPAMigrationError } from "../error";
 import { loadMigrationAdapter, loadMigrationAdapterRunner } from "./adapter-loader";
 import { createMigrationChecksum } from "./checksum";
 import { loadMigrationConfig } from "./config";
@@ -27,7 +28,10 @@ export async function runMigrateCommand(args: string[], cwd: string): Promise<vo
   }
 
   if (subcommand && !subcommand.startsWith("--")) {
-    throw new Error(`Unsupported migrate command "${subcommand}". Use dev or deploy.`);
+    throw new NPAMigrationError(`Unsupported migrate command "${subcommand}". Use dev or deploy.`, {
+      code: "NPA_MIGRATION_UNSUPPORTED_COMMAND",
+      details: { subcommand },
+    });
   }
 
   await runDbPushCommand(args, cwd, { legacy: true });
@@ -37,7 +41,10 @@ export async function runDbCommand(args: string[], cwd: string): Promise<void> {
   const [subcommand, ...subcommandArgs] = args;
 
   if (subcommand !== "push") {
-    throw new Error("Unsupported db command. Use `npa db push`.");
+    throw new NPAMigrationError("Unsupported db command. Use `npa db push`.", {
+      code: "NPA_MIGRATION_UNSUPPORTED_COMMAND",
+      details: { subcommand },
+    });
   }
 
   await runDbPushCommand(subcommandArgs, cwd);
@@ -55,18 +62,26 @@ async function runDbPushCommand(
   const config = await loadConfig(cwd, values);
 
   if (!dryRun && !config.url) {
-    throw new Error("Database push requires database url unless --dry-run is used.");
+    throw new NPAMigrationError("Database push requires database url unless --dry-run is used.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   if (renames.length > 0 && !config.url) {
-    throw new Error("Migration renames require database url.");
+    throw new NPAMigrationError("Migration renames require database url.", {
+      code: "NPA_MIGRATION_RENAME_DATABASE_URL_REQUIRED",
+    });
   }
 
   const entities = discoverEntitySchemas(cwd, config.entities);
 
   if (entities.length === 0) {
-    throw new Error(
+    throw new NPAMetadataError(
       `No @Entity classes found for migration pattern(s): ${config.entities.join(", ")}`,
+      {
+        code: "NPA_ENTITY_METADATA_NOT_FOUND",
+        details: { patterns: config.entities },
+      },
     );
   }
 
@@ -101,18 +116,26 @@ async function runMigrateDevCommand(args: string[], cwd: string): Promise<void> 
   const config = await loadConfig(cwd, values);
 
   if (!dryRun && !config.url) {
-    throw new Error("Migration dev requires database url unless --dry-run is used.");
+    throw new NPAMigrationError("Migration dev requires database url unless --dry-run is used.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   if (renames.length > 0 && !config.url) {
-    throw new Error("Migration renames require database url.");
+    throw new NPAMigrationError("Migration renames require database url.", {
+      code: "NPA_MIGRATION_RENAME_DATABASE_URL_REQUIRED",
+    });
   }
 
   const entities = discoverEntitySchemas(cwd, config.entities);
 
   if (entities.length === 0) {
-    throw new Error(
+    throw new NPAMetadataError(
       `No @Entity classes found for migration pattern(s): ${config.entities.join(", ")}`,
+      {
+        code: "NPA_ENTITY_METADATA_NOT_FOUND",
+        details: { patterns: config.entities },
+      },
     );
   }
 
@@ -195,7 +218,9 @@ async function runMigrateDeployCommand(args: string[], cwd: string): Promise<voi
   const config = await loadConfig(cwd, values);
 
   if (!config.url) {
-    throw new Error("Migration deploy requires database url.");
+    throw new NPAMigrationError("Migration deploy requires database url.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   const migrations = loadMigrationFiles(cwd, config.migrations.dir);
@@ -325,7 +350,10 @@ function parseFlags(args: string[], booleanFlags = new Set<string>()): Record<st
     const arg = args[index];
 
     if (!arg.startsWith("--")) {
-      throw new Error(`Unexpected argument "${arg}".`);
+      throw new NPAMigrationError(`Unexpected argument "${arg}".`, {
+        code: "NPA_MIGRATION_INVALID_ARGUMENT",
+        details: { argument: arg },
+      });
     }
 
     const [rawName, inlineValue] = arg.slice(2).split("=", 2);
@@ -344,7 +372,10 @@ function parseFlags(args: string[], booleanFlags = new Set<string>()): Record<st
     const value = inlineValue ?? args[index + 1];
 
     if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value for --${rawName}.`);
+      throw new NPAMigrationError(`Missing value for --${rawName}.`, {
+        code: "NPA_MIGRATION_INVALID_ARGUMENT",
+        details: { flag: rawName },
+      });
     }
 
     values[name] = value;
@@ -359,7 +390,10 @@ function parseFlags(args: string[], booleanFlags = new Set<string>()): Record<st
 
 function parseBoolean(name: string, value: string): string {
   if (value !== "true" && value !== "false") {
-    throw new Error(`--${name} must be true or false.`);
+    throw new NPAMigrationError(`--${name} must be true or false.`, {
+      code: "NPA_MIGRATION_INVALID_ARGUMENT",
+      details: { flag: name, value },
+    });
   }
 
   return value;
@@ -381,8 +415,12 @@ function parseRename(value: string): MigrationRename {
   const [from, to] = mapping?.split("=", 2) ?? [];
 
   if (!from || !to) {
-    throw new Error(
+    throw new NPAMigrationError(
       `Invalid --rename value "${value}". Use table:old=new or column:table.old=new.`,
+      {
+        code: "NPA_MIGRATION_INVALID_RENAME",
+        details: { value },
+      },
     );
   }
 
@@ -399,7 +437,10 @@ function parseRename(value: string): MigrationRename {
     const target = to.includes(".") ? parseColumnReference(to) : undefined;
 
     if (target && tableKey(source.table) !== tableKey(target.table)) {
-      throw new Error("Column rename source and target must be on the same table.");
+      throw new NPAMigrationError("Column rename source and target must be on the same table.", {
+        code: "NPA_MIGRATION_INVALID_RENAME",
+        details: { value },
+      });
     }
 
     return {
@@ -410,8 +451,12 @@ function parseRename(value: string): MigrationRename {
     };
   }
 
-  throw new Error(
+  throw new NPAMigrationError(
     `Invalid --rename kind "${kind}". Use table:old=new or column:table.old=new.`,
+    {
+      code: "NPA_MIGRATION_INVALID_RENAME",
+      details: { kind, value },
+    },
   );
 }
 
@@ -426,7 +471,10 @@ function parseTableReference(value: string): MigrationTableReference {
     return { schema: parts[0], tableName: parts[1] };
   }
 
-  throw new Error(`Invalid table reference "${value}".`);
+  throw new NPAMigrationError(`Invalid table reference "${value}".`, {
+    code: "NPA_MIGRATION_INVALID_RENAME",
+    details: { value },
+  });
 }
 
 function parseColumnReference(value: string): {
@@ -449,7 +497,10 @@ function parseColumnReference(value: string): {
     };
   }
 
-  throw new Error(`Invalid column reference "${value}".`);
+  throw new NPAMigrationError(`Invalid column reference "${value}".`, {
+    code: "NPA_MIGRATION_INVALID_RENAME",
+    details: { value },
+  });
 }
 
 function tableKey(table: MigrationTableReference): string {

@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { createRequire } from "node:module";
+import { NPAConfigurationError } from "../error";
 import {
   MigrationAdapter,
   MigrationAdapterName,
@@ -28,15 +29,24 @@ export function loadMigrationAdapter(
   const deploy = exports[deployName];
 
   if (typeof push !== "function") {
-    throw new Error(`Connector package does not export ${pushName}.`);
+    throw new NPAConfigurationError(`Connector package does not export ${pushName}.`, {
+      code: "NPA_CONNECTOR_EXPORT_MISSING",
+      details: { exportName: pushName },
+    });
   }
 
   if (typeof plan !== "function") {
-    throw new Error(`Connector package does not export ${planName}.`);
+    throw new NPAConfigurationError(`Connector package does not export ${planName}.`, {
+      code: "NPA_CONNECTOR_EXPORT_MISSING",
+      details: { exportName: planName },
+    });
   }
 
   if (typeof deploy !== "function") {
-    throw new Error(`Connector package does not export ${deployName}.`);
+    throw new NPAConfigurationError(`Connector package does not export ${deployName}.`, {
+      code: "NPA_CONNECTOR_EXPORT_MISSING",
+      details: { exportName: deployName },
+    });
   }
 
   return {
@@ -74,7 +84,11 @@ function loadAdapterModule(adapter: MigrationAdapterName, cwd: string): unknown 
     }
   }
 
-  throw new Error(
+  throw new NPAConfigurationError(
     `Unable to load ${packageName}. Install the selected NPA connector package. ${errors.join(" ")}`,
+    {
+      code: "NPA_UNSUPPORTED_ADAPTER",
+      details: { adapter, packageName, errors },
+    },
   );
 }

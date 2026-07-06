@@ -3,6 +3,7 @@ import {
   QueryOrder,
   QueryPredicatePart,
 } from "../query-method";
+import { NPAPaginationError, NPAQueryError } from "../error";
 import {
   createCursorWindow,
   createPage,
@@ -199,8 +200,12 @@ function assertDefinedQueryParameter(
   value: unknown,
 ): void {
   if (value === undefined) {
-    throw new Error(
+    throw new NPAQueryError(
       `Query parameter for "${condition.property}" must not be undefined.`,
+      {
+        code: "NPA_INVALID_QUERY_PREDICATE",
+        details: { property: condition.property },
+      },
     );
   }
 }
@@ -210,14 +215,22 @@ function assertNonEmptyArrayQueryParameter(
   value: unknown,
 ): asserts value is unknown[] {
   if (!Array.isArray(value)) {
-    throw new Error(
+    throw new NPAQueryError(
       `Query operator "${condition.operator}" expects an array parameter.`,
+      {
+        code: "NPA_INVALID_QUERY_PREDICATE",
+        details: { operator: condition.operator },
+      },
     );
   }
 
   if (value.length === 0) {
-    throw new Error(
+    throw new NPAQueryError(
       `Query operator "${condition.operator}" expects a non-empty array parameter.`,
+      {
+        code: "NPA_INVALID_QUERY_PREDICATE",
+        details: { operator: condition.operator },
+      },
     );
   }
 }
@@ -281,7 +294,9 @@ function cursorMetadata(
   pageable: NonNullable<RepositoryMethodInvocation["pageable"]>,
 ): CursorQueryMetadata {
   if (!isCursorPageable(pageable)) {
-    throw new Error("Cursor metadata requires cursor pagination.");
+    throw new NPAPaginationError("Cursor metadata requires cursor pagination.", {
+      code: "NPA_CURSOR_METADATA_REQUIRED",
+    });
   }
 
   return {

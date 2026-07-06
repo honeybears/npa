@@ -1,4 +1,5 @@
 import type { EntityTarget } from "../entity";
+import { NPAConfigurationError } from "../error";
 
 export type NPARepositoryTarget<TRepository extends object = object> =
   (abstract new (...args: any[]) => TRepository) & {
@@ -41,8 +42,12 @@ export function getRepositoryMetadata<
   const metadata = repositoryMetadata.get(repository);
 
   if (!metadata) {
-    throw new Error(
+    throw new NPAConfigurationError(
       `Repository ${getRepositoryTargetName(repository)} is missing @Repository(Entity).`,
+      {
+        code: "NPA_REPOSITORY_METADATA_REQUIRED",
+        details: { repository: getRepositoryTargetName(repository) },
+      },
     );
   }
 

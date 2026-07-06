@@ -2,6 +2,7 @@ import {
   PostgresqlQueryable,
   PostgresqlQueryResult,
 } from "./types";
+import { toPostgresqlDatabaseError } from "./postgresql-database-error";
 
 export interface PostgresqlDriverConnection {
   query<TRow = Record<string, unknown>>(
@@ -16,11 +17,15 @@ export interface PostgresqlDriverConnection {
 export class PostgresqlConnection implements PostgresqlQueryable {
   constructor(private readonly connection: PostgresqlDriverConnection) {}
 
-  query<TRow = Record<string, unknown>>(
+  async query<TRow = Record<string, unknown>>(
     text: string,
     values?: unknown[],
-  ): Promise<PostgresqlQueryResult<TRow>> | PostgresqlQueryResult<TRow> {
-    return this.connection.query<TRow>(text, values);
+  ): Promise<PostgresqlQueryResult<TRow>> {
+    try {
+      return await this.connection.query<TRow>(text, values);
+    } catch (error) {
+      throw toPostgresqlDatabaseError(error);
+    }
   }
 
   async close(): Promise<void> {

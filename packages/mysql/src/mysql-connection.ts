@@ -2,6 +2,7 @@ import {
   MysqlQueryable,
   MysqlRawQueryResult,
 } from "./types";
+import { toMysqlDatabaseError } from "./mysql-database-error";
 
 export interface MysqlDriverConnection {
   query?<TRow = Record<string, unknown>>(
@@ -20,31 +21,39 @@ export interface MysqlDriverConnection {
 export class MysqlConnection implements MysqlQueryable {
   constructor(private readonly connection: MysqlDriverConnection) {}
 
-  query<TRow = Record<string, unknown>>(
+  async query<TRow = Record<string, unknown>>(
     text: string,
     values?: unknown[],
-  ): Promise<MysqlRawQueryResult<TRow>> | MysqlRawQueryResult<TRow> {
-    if (this.connection.query) {
-      return this.connection.query<TRow>(text, values);
-    }
+  ): Promise<MysqlRawQueryResult<TRow>> {
+    try {
+      if (this.connection.query) {
+        return await this.connection.query<TRow>(text, values);
+      }
 
-    if (this.connection.execute) {
-      return this.connection.execute<TRow>(text, values);
+      if (this.connection.execute) {
+        return await this.connection.execute<TRow>(text, values);
+      }
+    } catch (error) {
+      throw toMysqlDatabaseError(error);
     }
 
     throw new Error("MySQL connection requires query() or execute().");
   }
 
-  execute<TRow = Record<string, unknown>>(
+  async execute<TRow = Record<string, unknown>>(
     text: string,
     values?: unknown[],
-  ): Promise<MysqlRawQueryResult<TRow>> | MysqlRawQueryResult<TRow> {
-    if (this.connection.execute) {
-      return this.connection.execute<TRow>(text, values);
-    }
+  ): Promise<MysqlRawQueryResult<TRow>> {
+    try {
+      if (this.connection.execute) {
+        return await this.connection.execute<TRow>(text, values);
+      }
 
-    if (this.connection.query) {
-      return this.connection.query<TRow>(text, values);
+      if (this.connection.query) {
+        return await this.connection.query<TRow>(text, values);
+      }
+    } catch (error) {
+      throw toMysqlDatabaseError(error);
     }
 
     throw new Error("MySQL connection requires query() or execute().");

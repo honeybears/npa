@@ -1,7 +1,8 @@
-import { parseQueryMethod } from "./parse-query-method";
-import { assertNoDuplicateQueryPredicates } from "./validation";
-import { QueryMethodExecutor } from "./types";
+import { NPAQueryError } from "../error";
 import { isPageable } from "../repository/pagination";
+import { parseQueryMethod } from "./parse-query-method";
+import { QueryMethodExecutor } from "./types";
+import { assertNoDuplicateQueryPredicates } from "./validation";
 
 export function createQueryMethodProxy<TTarget extends object>(
   target: TTarget,
@@ -36,19 +37,33 @@ function splitQueryArgs(
 
   if (pageable) {
     if (query.action !== "find") {
-      throw new Error(`Query method "${methodName}" only supports Pageable on find queries.`);
+      throw new NPAQueryError(`Query method "${methodName}" only supports Pageable on find queries.`, {
+        code: "NPA_PAGEABLE_UNSUPPORTED_QUERY",
+        details: { methodName, action: query.action },
+      });
     }
 
     if (query.limit !== undefined) {
-      throw new Error(`Query method "${methodName}" cannot combine First/Top with Pageable.`);
+      throw new NPAQueryError(`Query method "${methodName}" cannot combine First/Top with Pageable.`, {
+        code: "NPA_TOP_PAGEABLE_CONFLICT",
+        details: { methodName },
+      });
     }
   }
 
   const queryArgs = pageable ? args.slice(0, -1) : args;
 
   if (queryArgs.length !== query.parameterCount) {
-    throw new Error(
+    throw new NPAQueryError(
       `Query method "${methodName}" expects ${query.parameterCount} parameter(s), received ${args.length}.`,
+      {
+        code: "NPA_QUERY_ARGUMENT_COUNT_MISMATCH",
+        details: {
+          methodName,
+          expected: query.parameterCount,
+          received: args.length,
+        },
+      },
     );
   }
 

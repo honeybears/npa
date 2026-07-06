@@ -257,6 +257,27 @@ class TestTransactionManager extends AbstractTransactionManager<object> {
   protected rollbackTransaction() {}
 }
 describe("MySQL adapter", () => {
+  test("maps constraint driver errors to database error codes", async () => {
+    const cases = [
+      { driver: { code: "ER_DUP_ENTRY", errno: 1062 }, code: "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED" },
+      { driver: { code: "ER_NO_REFERENCED_ROW_2", errno: 1452 }, code: "NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED" },
+      { driver: { code: "ER_BAD_NULL_ERROR", errno: 1048 }, code: "NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED" },
+    ];
+
+    for (const testCase of cases) {
+      const connection = new MysqlConnection({
+        query() {
+          throw Object.assign(new Error("driver failed"), testCase.driver);
+        },
+      });
+
+      await expect(connection.query("SELECT 1")).rejects.toBeInstanceOf(NPADatabaseError);
+      await expect(connection.query("SELECT 1")).rejects.toMatchObject({
+        code: testCase.code,
+      });
+    }
+  });
+
   test("compiles derived query methods into parameterized MySQL SQL", () => {
     expect(compileMysqlQuery(
         {

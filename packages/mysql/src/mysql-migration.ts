@@ -13,6 +13,7 @@ import type {
 import {
   assertSafeMigrationStatements,
   createDownMigrationStatements,
+  NPAMigrationError,
 } from "@node-persistence-api/core";
 import { MigrationRelationKind } from "@node-persistence-api/core";
 import { createHash } from "node:crypto";
@@ -143,7 +144,9 @@ export async function planMysqlMigration(
 ): Promise<MigrationResult> {
   if (!options.url) {
     if (options.renames?.length) {
-      throw new Error("MySQL migration renames require a database url.");
+      throw new NPAMigrationError("MySQL migration renames require a database url.", {
+        code: "NPA_MIGRATION_RENAME_DATABASE_URL_REQUIRED",
+      });
     }
 
     const statements = compileMysqlSchemaStatements(options.entities);
@@ -214,7 +217,9 @@ export async function migrateMysql(
   }
 
   if (!options.url) {
-    throw new Error("MySQL migration requires a database url.");
+    throw new NPAMigrationError("MySQL migration requires a database url.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   const connection = new MysqlConnection(await createPool(options.url));
@@ -300,7 +305,9 @@ export async function deployMysqlMigrations(
   options: MigrationDeployOptions,
 ): Promise<MigrationDeployResult> {
   if (!options.url) {
-    throw new Error("MySQL migration deploy requires a database url.");
+    throw new NPAMigrationError("MySQL migration deploy requires a database url.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   const connection = new MysqlConnection(await createPool(options.url));
@@ -322,8 +329,16 @@ export async function deployMysqlMigrations(
 
       if (existing) {
         if (existing.checksum !== migration.checksum) {
-          throw new Error(
+          throw new NPAMigrationError(
             `Migration ${migration.name} checksum mismatch. The migration file changed after it was applied.`,
+            {
+              code: "NPA_MIGRATION_CHECKSUM_MISMATCH",
+              details: {
+                migrationName: migration.name,
+                historyChecksum: existing.checksum,
+                fileChecksum: migration.checksum,
+              },
+            },
           );
         }
 
@@ -1124,7 +1139,9 @@ async function acquireLock(connection: MysqlConnection): Promise<void> {
   const acquired = result.rows[0]?.acquired;
 
   if (acquired !== 1) {
-    throw new Error("Could not acquire NPA MySQL migration lock.");
+    throw new NPAMigrationError("Could not acquire NPA MySQL migration lock.", {
+      code: "NPA_MIGRATION_LOCK_FAILED",
+    });
   }
 }
 
@@ -1184,8 +1201,14 @@ async function assertNoMysqlHistoryDrift(
     return;
   }
 
-  throw new Error(
+  throw new NPAMigrationError(
     `Migration history drift detected. Applied migration(s) missing locally: ${unknown.map((record) => record.name).join(", ")}. Use --allow-drift to bypass.`,
+    {
+      code: "NPA_MIGRATION_HISTORY_MISMATCH",
+      details: {
+        missingMigrations: unknown.map((record) => record.name),
+      },
+    },
   );
 }
 

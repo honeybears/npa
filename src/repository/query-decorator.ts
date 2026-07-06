@@ -1,3 +1,5 @@
+import { NPAQueryError } from "../error";
+
 export type NPARawQueryResult = "many" | "one" | "scalar" | "execute";
 
 export interface NPARawQueryOptions {
@@ -22,7 +24,10 @@ export function Query(
 ): MethodDecorator & PropertyDecorator {
   return (target: object, propertyKey: string | symbol) => {
     if (typeof text !== "string" || text.trim().length === 0) {
-      throw new Error("@Query requires a non-empty SQL string.");
+      throw new NPAQueryError("@Query requires a non-empty SQL string.", {
+        code: "NPA_INVALID_QUERY_PREDICATE",
+        details: { propertyKey: String(propertyKey) },
+      });
     }
 
     let metadata = rawQueryMetadata.get(target);

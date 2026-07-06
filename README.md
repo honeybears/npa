@@ -605,6 +605,176 @@ fast because the aggregation policy is not part of the v1 contract. `after` and
 `before` cannot be used together, and `Top`/`First` cannot be combined with
 `Pageable`.
 
+## Errors
+
+Public NPA failures extend `NPAError`. Branch on either `instanceof` or the
+stable `error.code` value.
+
+```ts
+import { NPAError, NPAPaginationError } from '@node-persistence-api/core';
+
+try {
+  await users.findAll({ pageable: Pageable.cursor({ after: cursor, size: 20 }) });
+} catch (error) {
+  if (error instanceof NPAPaginationError && error.code === 'NPA_INVALID_CURSOR') {
+    // handle bad cursor
+  }
+
+  if (error instanceof NPAError) {
+    console.error(error.code, error.details);
+  }
+}
+```
+
+Every NPA error has this shape:
+
+```ts
+interface NPAErrorOptions {
+  code: NPAErrorCode;
+  cause?: unknown;
+  details?: Record<string, unknown>;
+}
+```
+
+Error classes:
+
+| Class | Domain |
+| --- | --- |
+| `NPAError` | base class |
+| `NPAConfigurationError` | config, adapter loading, repository registration |
+| `NPAMetadataError` | entity mapping, decorators, relation metadata |
+| `NPAQueryError` | derived queries, raw queries, repository query validation |
+| `NPAPaginationError` | offset and cursor pagination |
+| `NPAMigrationError` | migration config, CLI args, safety, deploy history |
+| `NPATransactionError` | transaction managers, decorators, propagation |
+| `NPAPersistenceError` | persistence context, dirty checking, optimistic locking |
+| `NPADatabaseError` | database and driver failures |
+| `OptimisticLockError` | extends `NPAPersistenceError` |
+| `RollbackOnlyError` | extends `NPATransactionError` |
+
+Configuration codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_CONFIG_NOT_FOUND` | explicit config file was not found |
+| `NPA_INVALID_CONFIG` | config shape or adapter/url pairing is invalid |
+| `NPA_UNSUPPORTED_ADAPTER` | selected adapter cannot be used |
+| `NPA_ADAPTER_REQUIRED` | adapter could not be resolved |
+| `NPA_CONNECTOR_EXPORT_MISSING` | connector package is missing a required export |
+| `NPA_REPOSITORY_METADATA_REQUIRED` | repository metadata or registration is missing |
+| `NPA_DUPLICATE_REPOSITORY` | repository was registered more than once |
+
+Metadata and mapping codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_ENTITY_METADATA_NOT_FOUND` | entity metadata was not registered |
+| `NPA_ENTITY_ID_REQUIRED` | entity requires an `@Id` column |
+| `NPA_COMPOSITE_RELATION_KEY_UNSUPPORTED` | relation target has a composite id |
+| `NPA_INVALID_DECORATOR_TARGET` | decorator was used on the wrong target |
+| `NPA_INVALID_DECORATOR_OPTIONS` | decorator options are invalid |
+| `NPA_DUPLICATE_ENTITY_METADATA` | entity metadata was registered twice |
+| `NPA_UNSUPPORTED_CASCADE_TYPE` | relation cascade option is not supported |
+| `NPA_UNSUPPORTED_FETCH_TYPE` | relation fetch option is not supported |
+| `NPA_UNSUPPORTED_GENERATION_STRATEGY` | id generation strategy is not supported |
+| `NPA_SYMBOL_PROPERTY_UNSUPPORTED` | symbol properties cannot be mapped |
+
+Query and repository codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_INVALID_QUERY_METHOD` | derived query method name is invalid |
+| `NPA_INVALID_QUERY_PREDICATE` | query predicate or parameter is invalid |
+| `NPA_QUERY_ARGUMENT_COUNT_MISMATCH` | method arguments do not match parsed query |
+| `NPA_DUPLICATE_QUERY_PREDICATE` | derived query repeats the same predicate |
+| `NPA_PAGEABLE_UNSUPPORTED_QUERY` | pageable was used with a non-find query |
+| `NPA_TOP_PAGEABLE_CONFLICT` | `Top` or `First` was combined with pageable |
+| `NPA_RAW_QUERY_PLACEHOLDER_MISMATCH` | raw query placeholders do not match args |
+| `NPA_RAW_QUERY_RESULT_MODE_UNSUPPORTED` | raw query result mode is unsupported |
+| `NPA_ORDER_DIRECTION_UNSUPPORTED` | order clause is invalid or unsupported |
+
+Pagination codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_INVALID_PAGE_SIZE` | page size is not valid |
+| `NPA_INVALID_OFFSET_PAGE` | offset page is not valid |
+| `NPA_INVALID_CURSOR` | cursor cannot be decoded or has invalid shape |
+| `NPA_CURSOR_METADATA_REQUIRED` | cursor query metadata is missing |
+| `NPA_CURSOR_ORDER_UNSUPPORTED` | cursor order cannot be represented |
+| `NPA_CURSOR_DIRECTION_CONFLICT` | `after` and `before` were both provided |
+
+Relation codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_RELATION_NOT_FOUND` | requested relation metadata does not exist |
+| `NPA_RELATION_MAPPED_BY_REQUIRED` | inverse relation requires `mappedBy` |
+| `NPA_RELATION_MAPPED_BY_NOT_FOUND` | `mappedBy` relation could not be found |
+| `NPA_RELATION_TARGET_ID_REQUIRED` | relation target id is missing |
+| `NPA_RELATION_PRIMARY_VALUE_REQUIRED` | relation primary value is missing |
+| `NPA_TO_MANY_RELATION_ARRAY_REQUIRED` | to-many relation value is not an array |
+| `NPA_UNRESOLVED_TO_ONE_DEPENDENCY` | persisted graph has unresolved to-one dependencies |
+| `NPA_RELATION_LOAD_METADATA_REQUIRED` | relation loading requires entity metadata |
+
+Persistence codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_PRIMARY_KEY_REQUIRED` | operation requires a primary key value |
+| `NPA_COMPOSITE_ID_OBJECT_REQUIRED` | composite id must be passed as an object |
+| `NPA_INSERT_VALUES_REQUIRED` | insert has no values |
+| `NPA_UPDATE_VALUES_REQUIRED` | update has no changed values |
+| `NPA_VERSION_COLUMN_REQUIRED` | versioned update requires a version column |
+| `NPA_VERSION_VALUE_REQUIRED` | versioned entity is missing its version value |
+| `NPA_OPTIMISTIC_LOCK_FAILED` | optimistic lock update affected no rows |
+| `NPA_READ_ONLY_TRANSACTION_WRITE` | write attempted inside a read-only transaction |
+| `NPA_PERSIST_UNSUPPORTED` | adapter does not support persist for this path |
+| `NPA_REMOVE_UNSUPPORTED` | adapter does not support remove for this path |
+| `NPA_RELATION_SYNC_UNSUPPORTED` | adapter cannot sync relation changes |
+
+Transaction codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_TRANSACTION_MANAGER_NOT_FOUND` | transaction manager could not be resolved |
+| `NPA_TRANSACTION_MANAGER_DUPLICATED` | named transaction manager is duplicated |
+| `NPA_TRANSACTION_MANAGER_AMBIGUOUS` | multiple default transaction managers exist |
+| `NPA_TRANSACTION_DECORATOR_INVALID_TARGET` | `@Transaction` was not used on a method |
+| `NPA_TRANSACTION_PROPAGATION_UNSUPPORTED` | propagation mode is unsupported |
+| `NPA_NESTED_TRANSACTION_UNSUPPORTED` | nested transaction savepoints are unavailable |
+| `NPA_ROLLBACK_ONLY` | joined transaction was marked rollback-only |
+
+Migration codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_MIGRATION_DATABASE_URL_REQUIRED` | migration command requires a database url |
+| `NPA_MIGRATION_RENAME_DATABASE_URL_REQUIRED` | rename planning requires a database url |
+| `NPA_MIGRATION_UNSUPPORTED_COMMAND` | migration CLI command is unsupported |
+| `NPA_MIGRATION_INVALID_ARGUMENT` | migration CLI argument is invalid |
+| `NPA_MIGRATION_INVALID_RENAME` | `--rename` value is invalid |
+| `NPA_MIGRATION_UNSAFE_STATEMENT` | destructive statement needs explicit allowance |
+| `NPA_MIGRATION_LOCK_FAILED` | migration lock could not be acquired |
+| `NPA_MIGRATION_CHECKSUM_MISMATCH` | applied migration file checksum changed |
+| `NPA_MIGRATION_HISTORY_MISMATCH` | applied migration is missing locally |
+| `NPA_MIGRATION_ENTITY_ID_REQUIRED` | migrated entity requires an id |
+| `NPA_MIGRATION_SCHEMA_PARSE_FAILED` | migration entity parser failed |
+| `NPA_MIGRATION_UNSUPPORTED_DDL` | migration DDL is unsupported |
+
+Database and driver codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_DATABASE_QUERY_FAILED` | database query failed |
+| `NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED` | unique constraint was violated |
+| `NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED` | foreign key constraint was violated |
+| `NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED` | not-null constraint was violated |
+| `NPA_DATABASE_INSERT_RETURN_FAILED` | insert did not return the expected row |
+| `NPA_DATABASE_CONNECTION_INVALID` | database connection shape is invalid |
+| `NPA_DATABASE_IDENTIFIER_INVALID` | database identifier is invalid |
+| `NPA_DATABASE_TRANSACTION_CONNECTION_INVALID` | transaction connection shape is invalid |
+
 ## Runtime Flow
 
 1. Service code calls a method on `UserRepository`.

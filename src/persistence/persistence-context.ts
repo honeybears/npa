@@ -11,6 +11,7 @@ import {
   RelationMetadata,
   primaryColumnsOf,
 } from "../entity";
+import { NPAMetadataError, NPAPersistenceError } from "../error";
 import { OptimisticLockError } from "./optimistic-lock-error";
 import { NPADirtyCheckAdapter, NPAManageEntityOptions } from "./types";
 
@@ -196,8 +197,12 @@ export class PersistenceContext {
       const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
       if (!hasCompletePrimaryValue(id)) {
-        throw new Error(
+        throw new NPAPersistenceError(
           `Cannot flush dirty entity "${managed.metadata.target.name}" without a primary key value.`,
+          {
+            code: "NPA_PRIMARY_KEY_REQUIRED",
+            details: { entityName: managed.metadata.target.name },
+          },
         );
       }
 
@@ -208,8 +213,12 @@ export class PersistenceContext {
           : undefined;
 
         if (versionColumn && (expectedVersion === null || expectedVersion === undefined)) {
-          throw new Error(
+          throw new NPAPersistenceError(
             `Cannot flush versioned entity "${managed.metadata.target.name}" without a version value.`,
+            {
+              code: "NPA_VERSION_VALUE_REQUIRED",
+              details: { entityName: managed.metadata.target.name },
+            },
           );
         }
 
@@ -257,17 +266,24 @@ export class PersistenceContext {
 
   private assertWritable(operation: string): void {
     if (this.options.readOnly) {
-      throw new Error(`Cannot ${operation} inside a read-only transaction.`);
+      throw new NPAPersistenceError(`Cannot ${operation} inside a read-only transaction.`, {
+        code: "NPA_READ_ONLY_TRANSACTION_WRITE",
+        details: { operation },
+      });
     }
   }
 
   private assertNoPendingChangesForReadOnlyFlush(): void {
     if (this.newEntities.size > 0) {
-      throw new Error("Cannot flush persisted entities inside a read-only transaction.");
+      throw new NPAPersistenceError("Cannot flush persisted entities inside a read-only transaction.", {
+        code: "NPA_READ_ONLY_TRANSACTION_WRITE",
+      });
     }
 
     if (this.removedEntities.size > 0) {
-      throw new Error("Cannot flush removed entities inside a read-only transaction.");
+      throw new NPAPersistenceError("Cannot flush removed entities inside a read-only transaction.", {
+        code: "NPA_READ_ONLY_TRANSACTION_WRITE",
+      });
     }
 
     for (const managed of this.managed.values()) {
@@ -280,8 +296,12 @@ export class PersistenceContext {
         hasManyToManyChanges ||
         hasOneToManyChanges
       ) {
-        throw new Error(
+        throw new NPAPersistenceError(
           `Cannot flush dirty entity "${managed.metadata.target.name}" inside a read-only transaction.`,
+          {
+            code: "NPA_READ_ONLY_TRANSACTION_WRITE",
+            details: { entityName: managed.metadata.target.name },
+          },
         );
       }
     }
@@ -441,7 +461,9 @@ export class PersistenceContext {
       }
 
       if (!flushed) {
-        throw new Error("Cannot flush persisted entity graph with unresolved to-one dependencies.");
+        throw new NPAPersistenceError("Cannot flush persisted entity graph with unresolved to-one dependencies.", {
+          code: "NPA_UNRESOLVED_TO_ONE_DEPENDENCY",
+        });
       }
     }
 
@@ -454,8 +476,12 @@ export class PersistenceContext {
 
   private async insertManagedEntity(managed: ManagedEntity): Promise<void> {
     if (!managed.adapter.insertManaged) {
-      throw new Error(
+      throw new NPAPersistenceError(
         `Entity "${managed.metadata.target.name}" cannot be persisted because its adapter does not support persist.`,
+        {
+          code: "NPA_PERSIST_UNSUPPORTED",
+          details: { entityName: managed.metadata.target.name },
+        },
       );
     }
 
@@ -481,16 +507,24 @@ export class PersistenceContext {
       }
 
       if (!managed.adapter.deleteManaged) {
-        throw new Error(
+        throw new NPAPersistenceError(
           `Entity "${managed.metadata.target.name}" cannot be removed because its adapter does not support remove.`,
+          {
+            code: "NPA_REMOVE_UNSUPPORTED",
+            details: { entityName: managed.metadata.target.name },
+          },
         );
       }
 
       const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
       if (!hasCompletePrimaryValue(id)) {
-        throw new Error(
+        throw new NPAPersistenceError(
           `Cannot remove entity "${managed.metadata.target.name}" without a primary key value.`,
+          {
+            code: "NPA_PRIMARY_KEY_REQUIRED",
+            details: { entityName: managed.metadata.target.name },
+          },
         );
       }
 
@@ -508,8 +542,12 @@ export class PersistenceContext {
     const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
     if (!hasCompletePrimaryValue(id)) {
-      throw new Error(
+      throw new NPAPersistenceError(
         `Cannot flush many-to-many relations for "${managed.metadata.target.name}" without a primary key value.`,
+        {
+          code: "NPA_PRIMARY_KEY_REQUIRED",
+          details: { entityName: managed.metadata.target.name },
+        },
       );
     }
 
@@ -531,8 +569,15 @@ export class PersistenceContext {
       }
 
       if (!managed.adapter.syncManyToManyRelations) {
-        throw new Error(
+        throw new NPAPersistenceError(
           `Entity "${managed.metadata.target.name}" cannot flush relation "${relation.propertyName}" because its adapter does not support many-to-many sync.`,
+          {
+            code: "NPA_RELATION_SYNC_UNSUPPORTED",
+            details: {
+              entityName: managed.metadata.target.name,
+              relation: relation.propertyName,
+            },
+          },
         );
       }
 
@@ -552,8 +597,12 @@ export class PersistenceContext {
     const id = readEntityPrimaryValue(managed.entity, managed.metadata);
 
     if (!hasCompletePrimaryValue(id)) {
-      throw new Error(
+      throw new NPAPersistenceError(
         `Cannot flush one-to-many relations for "${managed.metadata.target.name}" without a primary key value.`,
+        {
+          code: "NPA_PRIMARY_KEY_REQUIRED",
+          details: { entityName: managed.metadata.target.name },
+        },
       );
     }
 
@@ -628,8 +677,15 @@ export class PersistenceContext {
       }
 
       if (!managed.adapter.deleteManyToManyRelations) {
-        throw new Error(
+        throw new NPAPersistenceError(
           `Entity "${managed.metadata.target.name}" cannot remove relation "${relation.propertyName}" because its adapter does not support many-to-many cleanup.`,
+          {
+            code: "NPA_RELATION_SYNC_UNSUPPORTED",
+            details: {
+              entityName: managed.metadata.target.name,
+              relation: relation.propertyName,
+            },
+          },
         );
       }
 
@@ -725,8 +781,16 @@ function adapterForRelation<TEntity extends object>(
   const relatedAdapter = adapter.forEntity?.(target);
 
   if (!relatedAdapter) {
-    throw new Error(
+    throw new NPAPersistenceError(
       `Cascade ${cascade} on relation "${relation.propertyName}" requires an adapter for ${target.name}.`,
+      {
+        code: "NPA_PERSIST_UNSUPPORTED",
+        details: {
+          cascade,
+          relation: relation.propertyName,
+          targetName: target.name,
+        },
+      },
     );
   }
 
@@ -1024,7 +1088,10 @@ function readToManyRelationSnapshot(
   }
 
   if (!Array.isArray(property.value)) {
-    throw new Error(`To-many relation "${relation.propertyName}" must be an array.`);
+    throw new NPAPersistenceError(`To-many relation "${relation.propertyName}" must be an array.`, {
+      code: "NPA_TO_MANY_RELATION_ARRAY_REQUIRED",
+      details: { relation: relation.propertyName },
+    });
   }
 
   const targetMetadata = getEntityMetadata(relation.target());
@@ -1048,8 +1115,15 @@ function readRequiredRelationTargetId(
   const id = readEntityPrimaryValue(target, targetMetadata);
 
   if (!hasCompletePrimaryValue(id)) {
-    throw new Error(
+    throw new NPAPersistenceError(
       `Relation "${relation.propertyName}" requires ${targetMetadata.target.name} id.`,
+      {
+        code: "NPA_RELATION_TARGET_ID_REQUIRED",
+        details: {
+          relation: relation.propertyName,
+          targetName: targetMetadata.target.name,
+        },
+      },
     );
   }
 
@@ -1146,7 +1220,13 @@ function findMappedByManyToOneRelation(
   relation: RelationMetadata,
 ): RelationMetadata {
   if (!relation.mappedBy) {
-    throw new Error(`@OneToMany ${source.target.name}.${relation.propertyName} requires mappedBy.`);
+    throw new NPAMetadataError(`@OneToMany ${source.target.name}.${relation.propertyName} requires mappedBy.`, {
+      code: "NPA_RELATION_MAPPED_BY_REQUIRED",
+      details: {
+        entityName: source.target.name,
+        relation: relation.propertyName,
+      },
+    });
   }
 
   const targetMetadata = getEntityMetadata(relation.target());
@@ -1156,7 +1236,14 @@ function findMappedByManyToOneRelation(
   );
 
   if (!targetRelation) {
-    throw new Error(`@OneToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`);
+    throw new NPAMetadataError(`@OneToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
+      code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
+      details: {
+        entityName: source.target.name,
+        relation: relation.propertyName,
+        mappedBy: relation.mappedBy,
+      },
+    });
   }
 
   return targetRelation;
@@ -1298,8 +1385,12 @@ function requirePrimaryColumns(metadata: EntityMetadata): ColumnMetadata[] {
   const primaryColumns = primaryColumnsOf(metadata);
 
   if (primaryColumns.length === 0) {
-    throw new Error(
+    throw new NPAPersistenceError(
       `Entity "${metadata.target.name}" requires an @Id column for dirty checking.`,
+      {
+        code: "NPA_ENTITY_ID_REQUIRED",
+        details: { entityName: metadata.target.name },
+      },
     );
   }
 

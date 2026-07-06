@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { NPAMigrationError } from "../error";
 import {
   MigrationGenerationStrategy,
   MigrationColumnSchema,
@@ -223,7 +224,7 @@ function parsePropertyIndexes(
     const column = columnByProperty.get(propertyName);
 
     if (/@Index(?:\(|\s|$)/.test(decorators)) {
-      throw new Error(`@Index for ${className}.${propertyName} can only be used on entity classes. Use @Column({ index: true }) or @Column({ unique: true }) for single-column indexes.`);
+      throw schemaParseError(`@Index for ${className}.${propertyName} can only be used on entity classes. Use @Column({ index: true }) or @Column({ unique: true }) for single-column indexes.`);
     }
 
     if (!column) {
@@ -267,7 +268,7 @@ function classIndex(
   columnByProperty: Map<string, MigrationColumnSchema>,
 ): MigrationIndexSchema {
   if (!options.columns?.length) {
-    throw new Error(`Class-level @Index for ${className} requires columns.`);
+    throw schemaParseError(`Class-level @Index for ${className} requires columns.`);
   }
 
   return {
@@ -276,7 +277,7 @@ function classIndex(
       const column = columnByProperty.get(propertyName);
 
       if (!column) {
-        throw new Error(`@Index for ${className} references unknown column property ${propertyName}.`);
+        throw schemaParseError(`@Index for ${className} references unknown column property ${propertyName}.`);
       }
 
       return column.columnName;
@@ -315,13 +316,13 @@ function parseRelations(
     const openIndex = skipWhitespace(classBody, decoratorIndex + decoratorName.length + 1);
 
     if (classBody[openIndex] !== "(") {
-      throw new Error(`@${decoratorName} for ${className} must include decorator arguments.`);
+      throw schemaParseError(`@${decoratorName} for ${className} must include decorator arguments.`);
     }
 
     const closeIndex = findMatching(classBody, openIndex, "(", ")");
 
     if (closeIndex < 0) {
-      throw new Error(`@${decoratorName} for ${className} has unbalanced parentheses.`);
+      throw schemaParseError(`@${decoratorName} for ${className} has unbalanced parentheses.`);
     }
 
     const rawArguments = classBody.slice(openIndex + 1, closeIndex);
@@ -410,7 +411,7 @@ function readRelationTarget(rawArguments: string, context: string): string {
   );
 
   if (!targetMatch) {
-    throw new Error(`${context} target must use a literal () => EntityClass expression.`);
+    throw schemaParseError(`${context} target must use a literal () => EntityClass expression.`);
   }
 
   return targetMatch[1];
@@ -449,7 +450,7 @@ function readDecoratedPropertyName(
   );
 
   if (!propertyMatch) {
-    throw new Error(`${context} must be followed by a typed property.`);
+    throw schemaParseError(`${context} must be followed by a typed property.`);
   }
 
   return propertyMatch[1];
@@ -471,7 +472,7 @@ function parseDecoratorOptions(
   }
 
   if (!value.startsWith("{") || !value.endsWith("}")) {
-    throw new Error(
+    throw schemaParseError(
       `${context} must use a string literal or object literal for migration metadata.`,
     );
   }
@@ -487,7 +488,7 @@ function parseDecoratorOptions(
     const separatorIndex = entry.indexOf(":");
 
     if (separatorIndex < 0) {
-      throw new Error(`${context} contains unsupported object literal syntax.`);
+      throw schemaParseError(`${context} contains unsupported object literal syntax.`);
     }
 
     const key = normalizeObjectKey(entry.slice(0, separatorIndex).trim());
@@ -500,7 +501,7 @@ function parseDecoratorOptions(
 
     if (key === "nullable" || key === "orphanRemoval") {
       if (rawPropertyValue !== "true" && rawPropertyValue !== "false") {
-        throw new Error(`${context}.${key} must be a boolean literal.`);
+        throw schemaParseError(`${context}.${key} must be a boolean literal.`);
       }
 
       options[key] = rawPropertyValue === "true";
@@ -519,7 +520,7 @@ function parseDecoratorOptions(
       }
 
       if (!isStringLiteral(rawPropertyValue)) {
-        throw new Error(`${context}.${key} must be a boolean or string literal.`);
+        throw schemaParseError(`${context}.${key} must be a boolean or string literal.`);
       }
 
       options[key] = readStringLiteral(rawPropertyValue, `${context}.${key}`);
@@ -557,7 +558,7 @@ function parseDecoratorOptions(
     }
 
     if (!isStringLiteral(rawPropertyValue)) {
-      throw new Error(`${context}.${key} must be a string literal.`);
+      throw schemaParseError(`${context}.${key} must be a string literal.`);
     }
 
     const stringValue = readStringLiteral(rawPropertyValue, `${context}.${key}`);
@@ -600,7 +601,7 @@ function readGenerationStrategyOption(
     return readGenerationStrategy(enumMatch[1], context);
   }
 
-  throw new Error(
+  throw schemaParseError(
     `${context} must be a string literal or GenerationStrategy enum member.`,
   );
 }
@@ -616,7 +617,7 @@ function readGenerationStrategy(
     case "NONE":
       return value;
     default:
-      throw new Error(`${context} must be AUTO_INCREMENT, SEQUENCE, UUID, or NONE.`);
+      throw schemaParseError(`${context} must be AUTO_INCREMENT, SEQUENCE, UUID, or NONE.`);
   }
 }
 
@@ -640,7 +641,7 @@ function readDefaultLiteral(
     return Number(value);
   }
 
-  throw new Error(
+  throw schemaParseError(
     `${context} must be a string, number, boolean, or null literal.`,
   );
 }
@@ -661,7 +662,7 @@ function readReferentialActionOption(
     return readReferentialActionEnumMember(enumMatch[1], context);
   }
 
-  throw new Error(
+  throw schemaParseError(
     `${context} must be a string literal or ReferentialAction enum member.`,
   );
 }
@@ -680,7 +681,7 @@ function readReferentialActionEnumMember(
     case "NO_ACTION":
       return MigrationReferentialAction.NO_ACTION;
     default:
-      throw new Error(`${context} must be CASCADE, SET_NULL, RESTRICT, or NO_ACTION.`);
+      throw schemaParseError(`${context} must be CASCADE, SET_NULL, RESTRICT, or NO_ACTION.`);
   }
 }
 
@@ -698,7 +699,7 @@ function readReferentialAction(
     case MigrationReferentialAction.NO_ACTION:
       return MigrationReferentialAction.NO_ACTION;
     default:
-      throw new Error(`${context} must be CASCADE, SET NULL, RESTRICT, or NO ACTION.`);
+      throw schemaParseError(`${context} must be CASCADE, SET NULL, RESTRICT, or NO ACTION.`);
   }
 }
 
@@ -731,7 +732,7 @@ function parseNamedDecoratorOptions(
       const closeIndex = findMatching(decorators, openIndex, "(", ")");
 
       if (closeIndex < 0) {
-        throw new Error(`@${name} decorator has unbalanced parentheses.`);
+        throw schemaParseError(`@${name} decorator has unbalanced parentheses.`);
       }
 
       rawArguments = decorators.slice(openIndex + 1, closeIndex);
@@ -774,7 +775,7 @@ function readIndexOptions(value: string | undefined, context: string): Decorator
   const options = parseDecoratorOptions(value, context, ["name", "columns", "unique"]);
 
   if (typeof options.unique === "string") {
-    throw new Error(`${context}.unique must be a boolean literal.`);
+    throw schemaParseError(`${context}.unique must be a boolean literal.`);
   }
 
   return options;
@@ -804,7 +805,7 @@ function readDecoratorArguments(
   const end = findMatching(decorators, cursor, "(", ")");
 
   if (end < 0) {
-    throw new Error(`@${name} decorator has unbalanced parentheses.`);
+    throw schemaParseError(`@${name} decorator has unbalanced parentheses.`);
   }
 
   return decorators.slice(cursor + 1, end);
@@ -823,7 +824,7 @@ function createFieldPattern(): RegExp {
 
 function rejectUniqueDecorator(source: string, className: string): void {
   if (/@Unique(?:\(|\s|$)/.test(source)) {
-    throw new Error(`@Unique is not supported for ${className}. Use @Index({ unique: true }) for composite indexes or @Column({ unique: true }) for single-column indexes.`);
+    throw schemaParseError(`@Unique is not supported for ${className}. Use @Index({ unique: true }) for composite indexes or @Column({ unique: true }) for single-column indexes.`);
   }
 }
 
@@ -904,7 +905,7 @@ function isStringLiteral(value: string): boolean {
 
 function readStringLiteral(value: string, context: string): string {
   if (!isStringLiteral(value)) {
-    throw new Error(`${context} must be a string literal.`);
+    throw schemaParseError(`${context} must be a string literal.`);
   }
 
   const quote = value[0];
@@ -922,7 +923,7 @@ function readStringArrayLiteral(value: string, context: string): string[] {
   const trimmed = value.trim();
 
   if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
-    throw new Error(`${context} must be an array of string literals.`);
+    throw schemaParseError(`${context} must be an array of string literals.`);
   }
 
   const body = trimmed.slice(1, -1).trim();
@@ -962,7 +963,7 @@ function assertUniqueSchemaNames<T>(
     const previous = seen.get(name);
 
     if (previous !== undefined) {
-      throw new Error(
+      throw schemaParseError(
         `Duplicate ${label} "${name}" in ${className}: ${previous} and ${owner}.`,
       );
     }
@@ -1103,4 +1104,10 @@ function toSnakeCase(value: string): string {
   return value.replace(/[A-Z]/g, (match, index) =>
     `${index === 0 ? "" : "_"}${match.toLowerCase()}`,
   );
+}
+
+function schemaParseError(message: string): NPAMigrationError {
+  return new NPAMigrationError(message, {
+    code: "NPA_MIGRATION_SCHEMA_PARSE_FAILED",
+  });
 }
