@@ -854,7 +854,7 @@ pnpm test
 pnpm pack
 ```
 
-For the first npm release checklist and package order, see
+For the npm runtime package release checklist and package order, see
 [`RELEASE.md`](./RELEASE.md).
 
 ### Future Work
