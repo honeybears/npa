@@ -857,19 +857,29 @@ pnpm pack
 For the first npm release checklist and package order, see
 [`RELEASE.md`](./RELEASE.md).
 
-### TODO
+### Future Work
 
 The current codebase is suitable for demos, but the following items are needed
 before treating NPA as a fuller ORM:
 
-- Query planning: cache parsed method names and compiled SQL templates per entity, adapter, and method name so repeat calls only bind values.
-- Query API: add bulk update by condition.
-- Batching: add findUnique-style same-tick batching, relation-loading batching inside transaction-aware scopes, and backend batch insert/update execution for `saveAll`.
-- Entity mapping: add enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
-- Migrations: add data migration hooks and richer DDL for defaults/generated columns/enums.
-- Transactions: add more propagation modes.
-- Operations: add metrics/tracing, retry policy hooks, and clearer connection ownership docs.
-- Tooling: harden package publishing, keep examples current, and expand editor support beyond the VS Code MVP.
+- Query planning: cache parsed method names and compiled SQL templates per
+  entity, adapter, and method name so repeat calls only bind values.
+- Query API: add bulk update/delete by condition, upsert helpers, and richer
+  result metadata for bulk operations.
+- Batching: add findUnique-style same-tick batching, relation-loading batching
+  inside transaction-aware scopes, and backend batch insert/update execution for
+  `saveAll`.
+- Entity mapping: add enum/json/array types, embedded value objects, column
+  transformers, inheritance, and lifecycle hooks.
+- Migrations: add data migration hooks, drift detection, destructive-change
+  safety controls, and richer DDL for defaults/generated columns/enums.
+- Transactions: add additional propagation modes and clearer guidance for
+  connection ownership across multiple `NPA` instances.
+- Operations: add metrics/tracing integrations, retry policy hooks, and
+  structured operation events beyond SQL query execution.
+- Tooling: automate release version bumps across publishable packages, keep
+  changelog/package dist-tags in sync, keep examples current, and expand editor
+  support beyond the VS Code MVP.
 
 ### E2E Database Tests
 
