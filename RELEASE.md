@@ -13,6 +13,23 @@ extension and examples.
 Do not publish `examples/*` or `packages/vscode` to npm. The VS Code package is
 distributed as a VSIX/Marketplace extension.
 
+## GitHub Actions Tag Release
+
+Runtime npm packages can be released by pushing an annotated Git tag after the
+publishable package versions and `CHANGELOG.md` have been committed. The release
+workflow runs on Node.js 26, verifies package versions against the tag, runs the
+unit and database E2E suites, packs and inspects the npm tarballs, publishes the
+runtime packages with the `beta` dist-tag, moves `latest` to the same version,
+and creates a GitHub Release.
+
+The workflow requires an npm publish token in the repository secret
+`NPM_TOKEN`.
+
+```bash
+git tag -a v0.1.0-beta.2 -m "v0.1.0-beta.2"
+git push origin v0.1.0-beta.2
+```
+
 ## v0.1.0-beta.0 Checklist
 
 Use `pnpm pack`, not `npm pack`, for workspace packages. `pnpm pack` rewrites
