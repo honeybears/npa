@@ -11,6 +11,7 @@ import {
   compilePostgresqlUpdate,
   compilePostgresqlVersionedUpdate,
   createPostgresqlDerivedQueryRepository,
+  getPrimaryKeyValue,
   PostgresqlConnection,
   postgresql,
   type PostgresqlDriverConnection,
@@ -66,6 +67,15 @@ class PgProduct {
 @Entity({ name: "products" })
 class PgPlainProduct {
   @Id({ name: "product_id" })
+  id!: number;
+
+  @Column({ name: "product_name" })
+  name!: string;
+}
+
+@Entity({ name: "generated_products" })
+class PgGeneratedProduct {
+  @Id({ name: "product_id", generationStrategy: "AUTO_INCREMENT" })
   id!: number;
 
   @Column({ name: "product_name" })
@@ -938,6 +948,21 @@ describe("PostgreSQL adapter", () => {
       values: ["kim", 20, 3],
     });
     expect(
+      compilePostgresqlInsert(
+        { id: 0, name: "desk" },
+        { entity: PgGeneratedProduct },
+      ),
+    ).toEqual({
+      text: 'INSERT INTO "generated_products" ("product_name") VALUES ($1) RETURNING *',
+      values: ["desk"],
+    });
+    expect(
+      getPrimaryKeyValue(
+        { id: 0, name: "desk" },
+        { entity: PgGeneratedProduct },
+      ),
+    ).toBeUndefined();
+    expect(
       compilePostgresqlUpdate(1, { id: 1, name: "lee", createdAt: 4 }, options),
     ).toEqual({
       text: 'UPDATE "users" SET "name" = $1, "created_at" = $2 WHERE "id" = $3 RETURNING *',
@@ -1402,6 +1427,36 @@ describe("PostgreSQL adapter", () => {
       {
         text: 'DELETE FROM "products" WHERE "product_id" = $1',
         values: [7],
+      },
+    ]);
+  });
+
+  test("treats falsy PostgreSQL generated ids as unset on save", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        return {
+          rows: [{ product_id: 8, product_name: values[0] }],
+          rowCount: 1,
+        };
+      },
+    };
+    const repository = createPostgresqlDerivedQueryRepository(
+      {},
+      { entity: PgGeneratedProduct, queryable: asPgQueryable(queryable) },
+    ) as NPARepository<PgGeneratedProduct, number>;
+
+    await expect(repository.save({ id: 0, name: "desk" })).resolves.toEqual({
+      id: 8,
+      name: "desk",
+    });
+
+    expect(calls).toEqual([
+      {
+        text: 'INSERT INTO "generated_products" ("product_name") VALUES ($1) RETURNING *',
+        values: ["desk"],
       },
     ]);
   });

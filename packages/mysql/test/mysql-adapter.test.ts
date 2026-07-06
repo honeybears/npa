@@ -1,5 +1,5 @@
 import { AbstractTransactionManager, Column, CreatedAt, Entity, EntityGraph, FetchType, Id, Loaded, ManyToMany, ManyToOne, NPADatabaseError, NPARepository, OneToOne, OneToMany, Pageable, Query, Repository, UpdatedAt, Version, createNPA, defineEntityGraph, parseQueryMethod } from "../../../src";
-import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
+import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, getMysqlPrimaryKeyValue, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;
@@ -27,6 +27,15 @@ class Product {
 
   @Column({ name: "created_at" })
   createdAt!: number;
+}
+
+@Entity({ name: "generated_products", schema: "shop" })
+class GeneratedProduct {
+  @Id({ name: "product_id", generationStrategy: "AUTO_INCREMENT" })
+  id!: number;
+
+  @Column({ name: "product_name" })
+  name!: string;
 }
 
 abstract class ProductRepository extends NPARepository<Product, number> {
@@ -625,6 +634,18 @@ describe("MySQL adapter", () => {
           "INSERT INTO `shop`.`products` (`product_name`, `price`, `created_at`) VALUES (?, ?, ?)",
         values: ["desk", 120, 10],
       });
+    expect(compileMysqlInsert(
+        { id: 0, name: "desk" },
+        { entity: GeneratedProduct },
+      )).toEqual({
+        text:
+          "INSERT INTO `shop`.`generated_products` (`product_name`) VALUES (?)",
+        values: ["desk"],
+      });
+    expect(getMysqlPrimaryKeyValue(
+        { id: 0, name: "desk" },
+        { entity: GeneratedProduct },
+      )).toBeUndefined();
     expect(compileMysqlUpdate(
         1,
         { id: 1, name: "chair", createdAt: 11 },
@@ -1312,6 +1333,43 @@ describe("MySQL adapter", () => {
       {
         text: "DELETE FROM `members` WHERE `member_id` = ?",
         values: [1],
+      },
+    ]);
+  });
+
+  test("treats falsy MySQL generated ids as unset on save", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text.startsWith("INSERT")) {
+          return [{ affectedRows: 1, insertId: 8 }, []];
+        }
+
+        return [[{ product_id: values[0], product_name: "desk" }], []];
+      },
+    };
+    const repository = createMysqlDerivedQueryRepository(
+      {},
+      { entity: GeneratedProduct, queryable: asMysqlQueryable(queryable) },
+    ) as NPARepository<GeneratedProduct, number>;
+
+    await expect(repository.save({ id: 0, name: "desk" })).resolves.toEqual({
+      id: 8,
+      name: "desk",
+    });
+
+    expect(calls).toEqual([
+      {
+        text:
+          "INSERT INTO `shop`.`generated_products` (`product_name`) VALUES (?)",
+        values: ["desk"],
+      },
+      {
+        text:
+          "SELECT * FROM `shop`.`generated_products` WHERE `product_id` = ? LIMIT 1",
+        values: [8],
       },
     ]);
   });

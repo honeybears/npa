@@ -1,4 +1,7 @@
-import { NPAPersistenceError } from "@node-persistence-api/core";
+import {
+  getOptionalEntityMetadata,
+  NPAPersistenceError,
+} from "@node-persistence-api/core";
 import {
   mysqlEntityColumnProperties,
   normalizeMysqlPropertyValues,
@@ -13,11 +16,12 @@ export function compileMysqlInsert<TEntity extends object>(
   entity: TEntity,
   options: MysqlQueryCompilerOptions,
 ): MysqlCompiledQuery {
+  const primaryKeys = mysqlPrimaryKeyProperties(options);
   const entries = withDefaultVersionEntry(
     definedEntries(entity, options).filter(
       ([property, value]) =>
-        !mysqlPrimaryKeyProperties(options).includes(property) ||
-        (value !== null && value !== undefined),
+        !primaryKeys.includes(property) ||
+        shouldInsertPrimaryKey(property, value, options),
     ),
     options,
   );
@@ -190,10 +194,16 @@ export function getMysqlPrimaryKeyValue<TEntity extends object>(
   const primaryKeys = mysqlPrimaryKeyProperties(options);
 
   if (primaryKeys.length === 1) {
-    return record[primaryKeys[0]];
+    const property = primaryKeys[0];
+    return normalizePrimaryKeyValue(property, record[property], options);
   }
 
-  const entries = primaryKeys.map((property) => [property, record[property]] as const);
+  const entries = primaryKeys.map(
+    (property) => [
+      property,
+      normalizePrimaryKeyValue(property, record[property], options),
+    ] as const,
+  );
   return entries.some(([, value]) => value === null || value === undefined)
     ? undefined
     : Object.fromEntries(entries);
@@ -212,6 +222,39 @@ function expandMysqlColumnValues(
       value: values[index],
     }));
   });
+}
+
+function shouldInsertPrimaryKey(
+  property: string,
+  value: unknown,
+  options: MysqlQueryCompilerOptions,
+): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  return !isGeneratedPrimaryKey(property, options) || Boolean(value);
+}
+
+function normalizePrimaryKeyValue(
+  property: string,
+  value: unknown,
+  options: MysqlQueryCompilerOptions,
+): unknown {
+  return isGeneratedPrimaryKey(property, options) && !value
+    ? undefined
+    : value;
+}
+
+function isGeneratedPrimaryKey(
+  property: string,
+  options: MysqlQueryCompilerOptions,
+): boolean {
+  const generationStrategy = getOptionalEntityMetadata(options.entity)
+    ?.columns.find((column) => column.primary && column.propertyName === property)
+    ?.generationStrategy;
+
+  return generationStrategy !== undefined && generationStrategy !== "NONE";
 }
 
 function withDefaultVersionEntry(

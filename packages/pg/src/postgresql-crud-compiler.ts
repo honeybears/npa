@@ -1,4 +1,7 @@
-import { NPAPersistenceError } from "@node-persistence-api/core";
+import {
+  getOptionalEntityMetadata,
+  NPAPersistenceError,
+} from "@node-persistence-api/core";
 import {
   PostgresqlCompiledQuery,
   PostgresqlQueryCompilerOptions,
@@ -17,11 +20,12 @@ export function compilePostgresqlInsert<TEntity extends object>(
   entity: TEntity,
   options: PostgresqlQueryCompilerOptions,
 ): PostgresqlCompiledQuery {
+  const primaryKeys = resolvePrimaryKeyProperties(options);
   const entries = withDefaultVersionEntry(
     definedEntries(entity, options).filter(
       ([property, value]) =>
-        !resolvePrimaryKeyProperties(options).includes(property) ||
-        (value !== null && value !== undefined),
+        !primaryKeys.includes(property) ||
+        shouldInsertPrimaryKey(property, value, options),
     ),
     options,
   );
@@ -200,10 +204,16 @@ export function getPrimaryKeyValue<TEntity extends object>(
   const primaryKeys = resolvePrimaryKeyProperties(options);
 
   if (primaryKeys.length === 1) {
-    return record[primaryKeys[0]];
+    const property = primaryKeys[0];
+    return normalizePrimaryKeyValue(property, record[property], options);
   }
 
-  const entries = primaryKeys.map((property) => [property, record[property]] as const);
+  const entries = primaryKeys.map(
+    (property) => [
+      property,
+      normalizePrimaryKeyValue(property, record[property], options),
+    ] as const,
+  );
   return entries.some(([, value]) => value === null || value === undefined)
     ? undefined
     : Object.fromEntries(entries);
@@ -222,6 +232,39 @@ function expandColumnValues(
       value: values[index],
     }));
   });
+}
+
+function shouldInsertPrimaryKey(
+  property: string,
+  value: unknown,
+  options: PostgresqlQueryCompilerOptions,
+): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  return !isGeneratedPrimaryKey(property, options) || Boolean(value);
+}
+
+function normalizePrimaryKeyValue(
+  property: string,
+  value: unknown,
+  options: PostgresqlQueryCompilerOptions,
+): unknown {
+  return isGeneratedPrimaryKey(property, options) && !value
+    ? undefined
+    : value;
+}
+
+function isGeneratedPrimaryKey(
+  property: string,
+  options: PostgresqlQueryCompilerOptions,
+): boolean {
+  const generationStrategy = getOptionalEntityMetadata(options.entity)
+    ?.columns.find((column) => column.primary && column.propertyName === property)
+    ?.generationStrategy;
+
+  return generationStrategy !== undefined && generationStrategy !== "NONE";
 }
 
 function withDefaultVersionEntry(
