@@ -2,6 +2,8 @@ import {
   ColumnMetadata,
   EntityMetadata,
   getOptionalEntityMetadata,
+  NPADatabaseError,
+  NPAMetadataError,
   primaryColumnsOf,
   readRelationForeignKeyValue,
   relationJoinColumns,
@@ -16,7 +18,9 @@ export function quoteTable(options: PostgresqlQueryCompilerOptions): string {
   const tableName = options.tableName ?? metadata?.tableName;
 
   if (!tableName) {
-    throw new Error("PostgreSQL repository requires tableName or entity metadata.");
+    throw new NPAMetadataError("PostgreSQL repository requires tableName or entity metadata.", {
+      code: "NPA_REPOSITORY_METADATA_REQUIRED",
+    });
   }
 
   const table = quoteQualifiedIdentifier(tableName);
@@ -211,7 +215,9 @@ export function quoteQualifiedIdentifier(identifier: string): string {
 
 export function quoteIdentifier(identifier: string): string {
   if (identifier.length === 0) {
-    throw new Error("PostgreSQL identifier must not be empty.");
+    throw new NPADatabaseError("PostgreSQL identifier must not be empty.", {
+      code: "NPA_DATABASE_IDENTIFIER_INVALID",
+    });
   }
 
   return `"${identifier.replace(/"/g, '""')}"`;

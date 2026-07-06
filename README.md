@@ -12,13 +12,13 @@ Foundation, Jakarta EE, Spring, or Broadcom.
 
 ## Packages
 
-| Package | README | Purpose |
+| Package | Link | Purpose |
 | --- | --- | --- |
-| `@node-persistence-api/core` | this file | decorators, repositories, migrations, transactions |
-| `@node-persistence-api/connector-pg` | [packages/pg](./packages/pg/README.md) | PostgreSQL runtime adapter |
-| `@node-persistence-api/connector-mysql` | [packages/mysql](./packages/mysql/README.md) | MySQL runtime adapter |
-| `@node-persistence-api/language` | [packages/language](./packages/language/README.md) | editor-independent completions and diagnostics |
-| `npa` | [packages/vscode](./packages/vscode/README.md) | VS Code extension |
+| `@node-persistence-api/core` | [npm](https://www.npmjs.com/package/@node-persistence-api/core) | decorators, repositories, migrations, transactions |
+| `@node-persistence-api/connector-pg` | [npm](https://www.npmjs.com/package/@node-persistence-api/connector-pg) | PostgreSQL runtime adapter |
+| `@node-persistence-api/connector-mysql` | [npm](https://www.npmjs.com/package/@node-persistence-api/connector-mysql) | MySQL runtime adapter |
+| `@node-persistence-api/language` | [npm](https://www.npmjs.com/package/@node-persistence-api/language) | editor-independent completions and diagnostics |
+| `npa` | [GitHub](https://github.com/honeybears/Node-Persistence-API/tree/main/packages/vscode) | VS Code extension; Marketplace release coming soon |
 
 ## Install
 
@@ -61,49 +61,48 @@ import {
   CreatedAt,
   CascadeType,
   Entity,
-  GenerationStrategy,
+  FetchType,
   Id,
   Index,
   ManyToMany,
   ManyToOne,
-  OneToOne,
-  OneToMany,
-  ReferentialAction,
   UpdatedAt,
   Version,
   type Relation,
 } from '@node-persistence-api/core';
 
+@Entity({ name: 'npa_users', schema: 'app' })
 @Index([
-  { name: 'idx_users_name_created_at', columns: ['name', 'createdAt'] },
-  { name: 'uidx_users_name_created_at', columns: ['name', 'createdAt'], unique: true },
+  { name: 'idx_users_team_created_at', columns: ['team', 'createdAt'] },
+  { name: 'uidx_users_email', columns: ['email'], unique: true },
 ])
-@Entity({ name: 'users', schema: 'app' })
 class User {
-  @Id({ name: 'user_id', generationStrategy: GenerationStrategy.AUTO_INCREMENT })
-  id?: number;
+  @Id({ name: 'user_id', generationStrategy: 'AUTO_INCREMENT' })
+  id: number = 0;
 
   @Column({ name: 'full_name', unique: 'uidx_users_full_name' })
   name!: string;
 
+  @Column()
+  email!: string;
+
   @CreatedAt({ name: 'created_at', index: 'idx_users_created_at' })
-  createdAt!: Date;
+  createdAt!: number;
 
   @UpdatedAt({ name: 'updated_at' })
   updatedAt!: Date;
 
-  @Version()
+  @Version({ name: 'lock_version' })
   version!: number;
 
   @ManyToOne(() => Team, {
     joinColumn: 'team_id',
-    foreignKeyName: 'fk_users_team',
-    onDelete: ReferentialAction.SET_NULL,
-    cascade: [CascadeType.PERSIST],
+    cascade: [CascadeType.PERSIST, CascadeType.REMOVE],
+    fetch: FetchType.EAGER,
   })
-  team?: Relation<Team | null>;
+  team?: Team;
 
-  @ManyToMany(() => Role, { joinTable: 'user_roles' })
+  @ManyToMany(() => Role, { joinTable: 'user_roles', fetch: FetchType.LAZY })
   roles?: Relation<Role[]>;
 }
 ```
@@ -124,15 +123,15 @@ to `@Index` to declare multiple indexes, and set `unique: true` for composite
 unique indexes. `@Column({ index: true })` and
 `@Column({ unique: true })` are shorthand for single-column indexes.
 Multiple `@Id` columns define a composite primary key for direct CRUD calls;
-pass an object id such as `{ tenantId, userId }` to `findById`, `updateById`,
-`existsById`, or `deleteById`. Composite ids are also supported for owning
-relation foreign keys and many-to-many join tables.
-`@ManyToOne` and owning `@OneToOne` create a nullable foreign-key column using
-`joinColumn` or the default `<property>_<targetIdColumn>` name. Owning
-`@OneToOne` also creates a unique index for that foreign key in migrations. Use
-`joinColumns` when a relation targets a composite id and needs explicit foreign
-key column names. Use `foreignKeyName`, `onDelete`, and `onUpdate` to control
-generated constraints.
+pass an object id such as `{ tenantId, userId }` to `findById`, `existsById`,
+or `deleteById`. Composite ids are also supported for owning relation foreign
+keys and many-to-many join tables.
+`@ManyToOne` and owning `@OneToOne` create nullable foreign-key columns by
+default using `joinColumn` or the default `<property>_<targetIdColumn>` name;
+set `nullable: false` to generate `NOT NULL`. Owning `@OneToOne` also creates a
+unique index for that foreign key in migrations. Use `joinColumns` when a
+relation targets a composite id and needs explicit foreign key column names. Use
+`foreignKeyName`, `onDelete`, and `onUpdate` to control generated constraints.
 Inverse `@OneToOne` and `@OneToMany` require `mappedBy`; `@ManyToMany` creates a
 join table. Use `cascade` with
 `[CascadeType.PERSIST]` or `CascadeType.REMOVE` for loaded or lazy relation
@@ -141,17 +140,21 @@ values that should be persisted or removed with the owning operation. For
 entities when configured; remove operations also clean join rows. Loaded owner
 or inverse `@ManyToMany` arrays flush join-table rows. Loaded `@OneToMany`
 arrays update the owning `@ManyToOne` foreign key; set `orphanRemoval: true` to
-delete children removed from the collection. `Relation<T>` lets a relation field
-hold either a lazy promise or an explicitly loaded value. Entity classes must be
-exported so repositories, application code, and migration tooling can reference
-them.
+delete children removed from the collection. Relations are lazy by default; set
+`fetch: FetchType.EAGER` to load a relation automatically with repository reads.
+`Relation<T>` lets a relation field hold either a lazy promise or an explicitly
+loaded value. Entity classes must be exported so repositories, application code,
+and migration tooling can reference them.
+Use `repository.relations(entity).roles.add(role)`, `remove(role)`, or
+`set([role])` to mutate loaded `@OneToMany` and `@ManyToMany` collections
+without manually initializing lazy arrays.
 
 ## Repository Usage
 
 Application code extends only NPA, not a database-specific repository type.
 `NPARepository` provides familiar persistence base methods including `findById`,
-`findAll`, `existsById`, `count`, `persist`, `save`, `insert`, `update`,
-`updateById`, `remove`, `delete`, `deleteById`, and `deleteAll`.
+`findAll`, `existsById`, `count`, `save`, `saveAll`, `remove`, `delete`,
+`deleteById`, and `deleteAll`.
 
 Declare repositories as abstract classes and bind them to entities with
 `@Repository`. Imported decorated repositories are auto-registered when
@@ -206,26 +209,17 @@ export abstract class UserRepository extends NPARepository<User, number> {
   ): Promise<User[]>;
   abstract findFirstByEmailAllIgnoreCase(email: string): Promise<User[]>;
   abstract existsByName(name: string): Promise<boolean>;
+  abstract countByTeamName(name: string): Promise<number>;
+  abstract countDistinctByRolesName(name: string): Promise<number>;
   abstract deleteByNameContaining(name: string): Promise<number>;
 }
 ```
 
 Supported query modifiers include `Distinct`, `IgnoreCase`, `AllIgnoreCase`,
 `First`/`Top`, and compound order clauses such as `OrderByNameAscAgeDesc`.
-
-Load relations explicitly on base reads:
-
-```ts
-const user = await users.findById(1, {
-  relations: {
-    roles: true,
-    team: {
-      organization: true,
-    },
-  },
-});
-const teams = await teamRepository.findAll({ relations: { members: true } });
-```
+Use `countBy...` for simple counts and `countDistinctBy...` when relation joins
+can duplicate the root row. Aggregates beyond count, grouping, and custom
+projections belong in `@Query`.
 
 Sort or project base reads without creating derived methods:
 
@@ -237,18 +231,10 @@ const activeUsers = await users.findAll({
   ],
 });
 
-const names = await users.findAll({
-  select: ['id', 'name'] as const,
-  orderBy: [{ property: 'name' }],
-});
+const names = await users.findAll({ orderBy: [{ property: 'name' }] });
 ```
 
-`select` projection returns plain partial rows keyed by entity property names.
-`select` cannot be combined with relation loading or `@EntityGraph`. Cursor
-pagination can use projection rows; NPA adds any ordered cursor values as hidden
-select aliases and removes them before returning content. Cursor pagination can
-also be combined with relation loading or `@EntityGraph` when returning full
-entity rows.
+Cursor pagination can also be combined with `@EntityGraph`.
 
 Use `@EntityGraph` on a repository method when that method should always load
 specific relations. Undecorated query methods do not receive entity graph
@@ -309,17 +295,24 @@ in first-appearance order. Reusing the same placeholder name reuses the
 same argument. MySQL receives `?` placeholders; PostgreSQL receives `$1`, `$2`, ... .
 
 ```ts
-import { NPARepository, Query, Repository } from '@node-persistence-api/core';
+import { NPARepository, Query, RawQueryResult, Repository } from '@node-persistence-api/core';
 
 @Repository(User)
 export abstract class UserRepository extends NPARepository<User, number> {
-  @Query('SELECT * FROM users WHERE email = :email', { result: 'one', managed: true })
+  @Query('SELECT * FROM users WHERE email = :email', {
+    result: RawQueryResult.ONE,
+    managed: true,
+  })
   findByEmailSql!: (email: string) => Promise<User | null>;
 
-  @Query('SELECT COUNT(*) AS total FROM users WHERE active = :active', { result: 'scalar' })
+  @Query('SELECT COUNT(*) AS total FROM users WHERE active = :active', {
+    result: RawQueryResult.SCALAR,
+  })
   countActiveSql!: (active: boolean) => Promise<number>;
 
-  @Query('UPDATE users SET active = :active WHERE id = :id', { result: 'execute' })
+  @Query('UPDATE users SET active = :active WHERE id = :id', {
+    result: RawQueryResult.EXECUTE,
+  })
   updateActiveSql!: (active: boolean, id: number) => Promise<number>;
 }
 ```
@@ -357,6 +350,11 @@ export default {
 };
 ```
 
+The CLI automatically loads `.env`, `.env.${NODE_ENV}`, `.env.local`, and
+`.env.${NODE_ENV}.local` from the working directory before importing
+`npa.config.mjs`. Existing shell variables are never overwritten, and later env
+files override earlier ones.
+
 Preview SQL without touching the database:
 
 ```bash
@@ -379,16 +377,20 @@ npa migrate deploy
 `migrate dev` applies pending local migration files, creates a new
 `npa/migrations/<timestamp>_<name>/migration.sql` from the current entity diff,
 writes a best-effort `down.sql`, and applies it unless `--create-only` is
-passed. `migrate deploy` does not parse entities; it applies pending migration
-files in order, verifies their checksums against `_npa_migrations`, and fails
-when the database contains applied migration history that is missing locally
-unless `--allow-drift` is passed. You can also pass flags directly:
+passed. Use `--migrations-dir <dir>` or `migrations.dir` in `npa.config.mjs` to
+write and read migration files from a custom directory. `migrate deploy` does
+not parse entities; it applies pending migration files in order, verifies their
+checksums against `_npa_migrations`, and fails when a previously applied file's
+checksum changed or when the database contains applied migration history that is
+missing locally unless `--allow-drift` is passed. You can also pass flags
+directly:
 
 ```bash
 npa migrate dev \
   --name add_users \
   --adapter mysql \
   --url "$DATABASE_URL" \
+  --migrations-dir db/migrations \
   --entities "src/**/*.entity.ts" \
   --rename "column:users.full_name=name"
 ```
@@ -425,13 +427,17 @@ const npa = createNPA({
 
 const users = npa.get(UserRepository);
 
-await users.insert({ name: 'kim', createdAt: new Date() });
+await users.save({ name: 'kim', createdAt: new Date() });
+await users.saveAll([
+  { name: 'lee', createdAt: new Date() },
+  { name: 'park', createdAt: new Date() },
+]);
 await users.save({ id: 1, name: 'lee', createdAt: new Date() });
-await users.findById(1, { relations: { roles: true, team: true } });
-await users.findAll({ relations: { team: true } });
+await users.findById(1);
+await users.findAll();
 await users.existsById(1);
 await users.count();
-await users.updateById(1, { name: 'park' });
+await users.save({ id: 1, name: 'park', createdAt: new Date() });
 await users.deleteById(1);
 await users.deleteAll();
 await users.findDistinctTop10ByNameContainingIgnoreCaseOrderByCreatedAtDesc('ki');
@@ -457,13 +463,13 @@ const npa = createNPA({
 
 const users = npa.get(UserRepository);
 
-await users.insert({ name: 'kim', createdAt: new Date() });
+await users.save({ name: 'kim', createdAt: new Date() });
 await users.save({ id: 1, name: 'lee', createdAt: new Date() });
-await users.findById(1, { relations: { roles: true, team: true } });
-await users.findAll({ relations: { team: true } });
+await users.findById(1);
+await users.findAll();
 await users.existsById(1);
 await users.count();
-await users.updateById(1, { name: 'park' });
+await users.save({ id: 1, name: 'park', createdAt: new Date() });
 await users.deleteById(1);
 await users.deleteAll();
 await users.findDistinctTop10ByNameContainingIgnoreCaseOrderByCreatedAtDesc('ki');
@@ -497,7 +503,7 @@ try {
   await npa.get(UserRepository).insert(user);
 } catch (error) {
   if (error instanceof NPADatabaseError) {
-    console.error(error.adapter, error.code, error.text, error.values);
+    console.error(error.code, error.details?.text, error.details?.values);
     throw error.cause;
   }
 
@@ -506,8 +512,9 @@ try {
 ```
 
 Driver failures are wrapped as `NPADatabaseError` with the original error in
-`cause`. Common fields such as `code`, `constraint`, `detail`, `errno`, and
-`sqlState` are copied when the driver exposes them.
+`cause`. SQL context and common driver fields such as `driverCode`,
+`constraint`, `detail`, `errno`, and `sqlState` are copied into `details` when
+available.
 
 
 ## Transactions
@@ -520,7 +527,7 @@ reuse the active transaction. Use
 `{ propagation: TransactionPropagation.REQUIRES_NEW }` to force a separate
 transaction, or `{ propagation: TransactionPropagation.NESTED }` to use a
 savepoint inside the current transaction. `readOnly: true` starts a read-only
-database transaction and rejects dirty-checking flushes, `persist`, and
+database transaction and rejects dirty-checking flushes, `save`, and
 `remove`.
 
 ```ts
@@ -544,7 +551,7 @@ class UserService {
 
   @Transaction({ isolation: TransactionIsolation.READ_COMMITTED })
   async renameUser(id: number, name: string): Promise<void> {
-    await this.users.updateById(id, { name });
+    await this.users.save({ id, name });
     await this.users.findById(id);
   }
 }
@@ -568,20 +575,24 @@ Repository results loaded inside a transaction are managed by the active
 transaction flushes changed columns before commit. If the entity has `@Version`,
 NPA updates with `WHERE id = ? AND version = ?`, increments the version column,
 and throws `OptimisticLockError` when no row matches the expected version.
-`repository.persist(entity)` and `repository.remove(entity)` also use the active
-context, so inserts and deletes flush with the transaction.
+`repository.save(entity)` and `repository.remove(entity)` also use the active
+context, so saves and deletes flush with the transaction.
+`repository.saveAll(entities)` follows Spring Data JPA's shape and calls
+`save` for each entity; it does not guarantee a single batch SQL statement.
+Loaded `@OneToMany` and `@ManyToMany` collections changed through
+`repository.relations(entity)` are flushed by the same context.
 
 ## Pagination
 
-`findAll` accepts `pageable` together with relation load options. Offset
-pagination returns `Page<T>` with a count query; cursor pagination returns
-`CursorPage<T>` with bidirectional keyset cursors.
+`findAll` accepts `pageable`. Offset pagination returns `Page<T>` with a count
+query; cursor pagination returns `CursorPage<T>` with bidirectional keyset
+cursors. Use `@EntityGraph` on repository methods that should return paged rows
+with loaded relations.
 
 ```ts
 import { Pageable, type CursorPage, type Page } from '@node-persistence-api/core';
 
 const page: Page<User> = await users.findAll({
-  relations: { profile: true },
   pageable: Pageable.offset(0, 20),
 });
 
@@ -617,12 +628,181 @@ fast because the aggregation policy is not part of the v1 contract. `after` and
 `before` cannot be used together, and `Top`/`First` cannot be combined with
 `Pageable`.
 
+## Errors
+
+Public NPA failures extend `NPAError`. Branch on either `instanceof` or the
+stable `error.code` value.
+
+```ts
+import { NPAError, NPAPaginationError } from '@node-persistence-api/core';
+
+try {
+  await users.findAll({ pageable: Pageable.cursor({ after: cursor, size: 20 }) });
+} catch (error) {
+  if (error instanceof NPAPaginationError && error.code === 'NPA_INVALID_CURSOR') {
+    // handle bad cursor
+  }
+
+  if (error instanceof NPAError) {
+    console.error(error.code, error.details);
+  }
+}
+```
+
+Every NPA error has this shape:
+
+```ts
+interface NPAErrorOptions {
+  code: NPAErrorCode;
+  cause?: unknown;
+  details?: Record<string, unknown>;
+}
+```
+
+Error classes:
+
+| Class | Domain |
+| --- | --- |
+| `NPAError` | base class |
+| `NPAConfigurationError` | config, adapter loading, repository registration |
+| `NPAMetadataError` | entity mapping, decorators, relation metadata |
+| `NPAQueryError` | derived queries, raw queries, repository query validation |
+| `NPAPaginationError` | offset and cursor pagination |
+| `NPAMigrationError` | migration config, CLI args, safety, deploy history |
+| `NPATransactionError` | transaction managers, decorators, propagation |
+| `NPAPersistenceError` | persistence context, dirty checking, optimistic locking |
+| `NPADatabaseError` | database and driver failures |
+| `OptimisticLockError` | extends `NPAPersistenceError` |
+| `RollbackOnlyError` | extends `NPATransactionError` |
+
+Configuration codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_CONFIG_NOT_FOUND` | explicit config file was not found |
+| `NPA_INVALID_CONFIG` | config shape or adapter/url pairing is invalid |
+| `NPA_UNSUPPORTED_ADAPTER` | selected adapter cannot be used |
+| `NPA_ADAPTER_REQUIRED` | adapter could not be resolved |
+| `NPA_CONNECTOR_EXPORT_MISSING` | connector package is missing a required export |
+| `NPA_REPOSITORY_METADATA_REQUIRED` | repository metadata or registration is missing |
+| `NPA_DUPLICATE_REPOSITORY` | repository was registered more than once |
+
+Metadata and mapping codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_ENTITY_METADATA_NOT_FOUND` | entity metadata was not registered |
+| `NPA_ENTITY_ID_REQUIRED` | entity requires an `@Id` column |
+| `NPA_COMPOSITE_RELATION_KEY_UNSUPPORTED` | relation target has a composite id |
+| `NPA_INVALID_DECORATOR_TARGET` | decorator was used on the wrong target |
+| `NPA_INVALID_DECORATOR_OPTIONS` | decorator options are invalid |
+| `NPA_DUPLICATE_ENTITY_METADATA` | entity metadata was registered twice |
+| `NPA_UNSUPPORTED_CASCADE_TYPE` | relation cascade option is not supported |
+| `NPA_UNSUPPORTED_FETCH_TYPE` | relation fetch option is not supported |
+| `NPA_UNSUPPORTED_GENERATION_STRATEGY` | id generation strategy is not supported |
+| `NPA_SYMBOL_PROPERTY_UNSUPPORTED` | symbol properties cannot be mapped |
+
+Query and repository codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_INVALID_QUERY_METHOD` | derived query method name is invalid |
+| `NPA_INVALID_QUERY_PREDICATE` | query predicate or parameter is invalid |
+| `NPA_QUERY_ARGUMENT_COUNT_MISMATCH` | method arguments do not match parsed query |
+| `NPA_DUPLICATE_QUERY_PREDICATE` | derived query repeats the same predicate |
+| `NPA_PAGEABLE_UNSUPPORTED_QUERY` | pageable was used with a non-find query |
+| `NPA_TOP_PAGEABLE_CONFLICT` | `Top` or `First` was combined with pageable |
+| `NPA_RAW_QUERY_PLACEHOLDER_MISMATCH` | raw query placeholders do not match args |
+| `NPA_RAW_QUERY_RESULT_MODE_UNSUPPORTED` | raw query result mode is unsupported |
+| `NPA_ORDER_DIRECTION_UNSUPPORTED` | order clause is invalid or unsupported |
+
+Pagination codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_INVALID_PAGE_SIZE` | page size is not valid |
+| `NPA_INVALID_OFFSET_PAGE` | offset page is not valid |
+| `NPA_INVALID_CURSOR` | cursor cannot be decoded or has invalid shape |
+| `NPA_CURSOR_METADATA_REQUIRED` | cursor query metadata is missing |
+| `NPA_CURSOR_ORDER_UNSUPPORTED` | cursor order cannot be represented |
+| `NPA_CURSOR_DIRECTION_CONFLICT` | `after` and `before` were both provided |
+
+Relation codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_RELATION_NOT_FOUND` | requested relation metadata does not exist |
+| `NPA_RELATION_MAPPED_BY_REQUIRED` | inverse relation requires `mappedBy` |
+| `NPA_RELATION_MAPPED_BY_NOT_FOUND` | `mappedBy` relation could not be found |
+| `NPA_RELATION_TARGET_ID_REQUIRED` | relation target id is missing |
+| `NPA_RELATION_PRIMARY_VALUE_REQUIRED` | relation primary value is missing |
+| `NPA_TO_MANY_RELATION_ARRAY_REQUIRED` | to-many relation value is not an array |
+| `NPA_UNRESOLVED_TO_ONE_DEPENDENCY` | persisted graph has unresolved to-one dependencies |
+| `NPA_RELATION_LOAD_METADATA_REQUIRED` | relation loading requires entity metadata |
+
+Persistence codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_PRIMARY_KEY_REQUIRED` | operation requires a primary key value |
+| `NPA_COMPOSITE_ID_OBJECT_REQUIRED` | composite id must be passed as an object |
+| `NPA_INSERT_VALUES_REQUIRED` | insert has no values |
+| `NPA_UPDATE_VALUES_REQUIRED` | update has no changed values |
+| `NPA_VERSION_COLUMN_REQUIRED` | versioned update requires a version column |
+| `NPA_VERSION_VALUE_REQUIRED` | versioned entity is missing its version value |
+| `NPA_OPTIMISTIC_LOCK_FAILED` | optimistic lock update affected no rows |
+| `NPA_READ_ONLY_TRANSACTION_WRITE` | write attempted inside a read-only transaction |
+| `NPA_PERSIST_UNSUPPORTED` | adapter does not support saving this path |
+| `NPA_REMOVE_UNSUPPORTED` | adapter does not support remove for this path |
+| `NPA_RELATION_SYNC_UNSUPPORTED` | adapter cannot sync relation changes |
+
+Transaction codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_TRANSACTION_MANAGER_NOT_FOUND` | transaction manager could not be resolved |
+| `NPA_TRANSACTION_MANAGER_DUPLICATED` | named transaction manager is duplicated |
+| `NPA_TRANSACTION_MANAGER_AMBIGUOUS` | multiple default transaction managers exist |
+| `NPA_TRANSACTION_DECORATOR_INVALID_TARGET` | `@Transaction` was not used on a method |
+| `NPA_TRANSACTION_PROPAGATION_UNSUPPORTED` | propagation mode is unsupported |
+| `NPA_NESTED_TRANSACTION_UNSUPPORTED` | nested transaction savepoints are unavailable |
+| `NPA_ROLLBACK_ONLY` | joined transaction was marked rollback-only |
+
+Migration codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_MIGRATION_DATABASE_URL_REQUIRED` | migration command requires a database url |
+| `NPA_MIGRATION_RENAME_DATABASE_URL_REQUIRED` | rename planning requires a database url |
+| `NPA_MIGRATION_UNSUPPORTED_COMMAND` | migration CLI command is unsupported |
+| `NPA_MIGRATION_INVALID_ARGUMENT` | migration CLI argument is invalid |
+| `NPA_MIGRATION_INVALID_RENAME` | `--rename` value is invalid |
+| `NPA_MIGRATION_UNSAFE_STATEMENT` | destructive statement needs explicit allowance |
+| `NPA_MIGRATION_LOCK_FAILED` | migration lock could not be acquired |
+| `NPA_MIGRATION_CHECKSUM_MISMATCH` | applied migration file checksum changed |
+| `NPA_MIGRATION_HISTORY_MISMATCH` | applied migration is missing locally |
+| `NPA_MIGRATION_ENTITY_ID_REQUIRED` | migrated entity requires an id |
+| `NPA_MIGRATION_SCHEMA_PARSE_FAILED` | migration entity parser failed |
+| `NPA_MIGRATION_UNSUPPORTED_DDL` | migration DDL is unsupported |
+
+Database and driver codes:
+
+| Code | Meaning |
+| --- | --- |
+| `NPA_DATABASE_QUERY_FAILED` | database query failed |
+| `NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED` | unique constraint was violated |
+| `NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED` | foreign key constraint was violated |
+| `NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED` | not-null constraint was violated |
+| `NPA_DATABASE_INSERT_RETURN_FAILED` | insert did not return the expected row |
+| `NPA_DATABASE_CONNECTION_INVALID` | database connection shape is invalid |
+| `NPA_DATABASE_IDENTIFIER_INVALID` | database identifier is invalid |
+| `NPA_DATABASE_TRANSACTION_CONNECTION_INVALID` | transaction connection shape is invalid |
+
 ## Runtime Flow
 
 1. Service code calls a method on `UserRepository`.
 2. Familiar persistence base methods (`findById`, `findAll`, `existsById`, `count`,
-   `persist`, `save`, `insert`, `updateById`, `remove`, `deleteById`,
-   `deleteAll`) go through the NPA adapter directly or the active persistence
+   `save`, `remove`, `deleteById`, `deleteAll`) go through the NPA adapter directly or the active persistence
    context. Deletes on entities with cascade remove or join-table cleanup load
    matching rows and run the remove path.
 3. Derived methods (`findBy...`, `existsBy...`, `countBy...`, `deleteBy...`) are
@@ -674,23 +854,32 @@ pnpm test
 pnpm pack
 ```
 
-For the first npm release checklist and package order, see
+For the npm runtime package release checklist and package order, see
 [`RELEASE.md`](./RELEASE.md).
 
-### TODO
+### Future Work
 
 The current codebase is suitable for demos, but the following items are needed
 before treating NPA as a fuller ORM:
 
-- Query planning: cache parsed method names and compiled SQL templates per entity, adapter, and method name so repeat calls only bind values.
-- Query API: add aggregate/groupBy support and bulk update by condition.
-- Batching: add findUnique-style same-tick batching and relation-loading batching inside transaction-aware scopes.
-- Relations: support eager fetch strategies and safer relation mutation helpers.
-- Entity mapping: add enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
-- Migrations: add data migration hooks and richer DDL for defaults/generated columns/enums.
-- Transactions: add more propagation modes.
-- Operations: add metrics/tracing, retry policy hooks, and clearer connection ownership docs.
-- Tooling: harden package publishing, keep examples current, and expand editor support beyond the VS Code MVP.
+- Query planning: cache parsed method names and compiled SQL templates per
+  entity, adapter, and method name so repeat calls only bind values.
+- Query API: add bulk update/delete by condition, upsert helpers, and richer
+  result metadata for bulk operations.
+- Batching: add findUnique-style same-tick batching, relation-loading batching
+  inside transaction-aware scopes, and backend batch insert/update execution for
+  `saveAll`.
+- Entity mapping: add enum/json/array types, embedded value objects, column
+  transformers, inheritance, and lifecycle hooks.
+- Migrations: add data migration hooks, drift detection, destructive-change
+  safety controls, and richer DDL for defaults/generated columns/enums.
+- Transactions: add additional propagation modes and clearer guidance for
+  connection ownership across multiple `NPA` instances.
+- Operations: add metrics/tracing integrations, retry policy hooks, and
+  structured operation events beyond SQL query execution.
+- Tooling: automate release version bumps across publishable packages, keep
+  changelog/package dist-tags in sync, keep examples current, and expand editor
+  support beyond the VS Code MVP.
 
 ### E2E Database Tests
 

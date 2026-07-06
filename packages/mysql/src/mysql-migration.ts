@@ -13,6 +13,8 @@ import type {
 import {
   assertSafeMigrationStatements,
   createDownMigrationStatements,
+  NPADatabaseError,
+  NPAMigrationError,
 } from "@node-persistence-api/core";
 import { MigrationRelationKind } from "@node-persistence-api/core";
 import { createHash } from "node:crypto";
@@ -143,7 +145,9 @@ export async function planMysqlMigration(
 ): Promise<MigrationResult> {
   if (!options.url) {
     if (options.renames?.length) {
-      throw new Error("MySQL migration renames require a database url.");
+      throw new NPAMigrationError("MySQL migration renames require a database url.", {
+        code: "NPA_MIGRATION_RENAME_DATABASE_URL_REQUIRED",
+      });
     }
 
     const statements = compileMysqlSchemaStatements(options.entities);
@@ -214,7 +218,9 @@ export async function migrateMysql(
   }
 
   if (!options.url) {
-    throw new Error("MySQL migration requires a database url.");
+    throw new NPAMigrationError("MySQL migration requires a database url.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   const connection = new MysqlConnection(await createPool(options.url));
@@ -300,7 +306,9 @@ export async function deployMysqlMigrations(
   options: MigrationDeployOptions,
 ): Promise<MigrationDeployResult> {
   if (!options.url) {
-    throw new Error("MySQL migration deploy requires a database url.");
+    throw new NPAMigrationError("MySQL migration deploy requires a database url.", {
+      code: "NPA_MIGRATION_DATABASE_URL_REQUIRED",
+    });
   }
 
   const connection = new MysqlConnection(await createPool(options.url));
@@ -322,8 +330,16 @@ export async function deployMysqlMigrations(
 
       if (existing) {
         if (existing.checksum !== migration.checksum) {
-          throw new Error(
+          throw new NPAMigrationError(
             `Migration ${migration.name} checksum mismatch. The migration file changed after it was applied.`,
+            {
+              code: "NPA_MIGRATION_CHECKSUM_MISMATCH",
+              details: {
+                migrationName: migration.name,
+                historyChecksum: existing.checksum,
+                fileChecksum: migration.checksum,
+              },
+            },
           );
         }
 
@@ -613,7 +629,10 @@ function columnDefinition(
   options: { inlinePrimary: boolean },
 ): string {
   if (column.primary && column.generationStrategy === "SEQUENCE") {
-    throw new Error("MySQL does not support GenerationStrategy.SEQUENCE.");
+    throw new NPAMigrationError("MySQL does not support GenerationStrategy.SEQUENCE.", {
+      code: "NPA_UNSUPPORTED_GENERATION_STRATEGY",
+      details: { generationStrategy: column.generationStrategy },
+    });
   }
 
   const dbType = column.dbType ?? defaultType(column, { identity: options.inlinePrimary });
@@ -759,8 +778,12 @@ function defaultType(
     return "DATETIME(3)";
   }
 
-  throw new Error(
+  throw new NPAMigrationError(
     `Unsupported MySQL migration type "${column.tsType}" for ${column.propertyName}. Use @Column({ type: "..." }).`,
+    {
+      code: "NPA_MIGRATION_UNSUPPORTED_DDL",
+      details: { propertyName: column.propertyName, tsType: column.tsType },
+    },
   );
 }
 
@@ -797,8 +820,12 @@ function entityTable(
     const target = byClassName.get(relation.targetClassName);
 
     if (!target) {
-      throw new Error(
+      throw new NPAMigrationError(
         `@${relation.kind === MigrationRelationKind.ONE_TO_ONE ? "OneToOne" : "ManyToOne"} for ${entity.className}.${relation.propertyName} targets unknown entity ${relation.targetClassName}.`,
+        {
+          code: "NPA_RELATION_NOT_FOUND",
+          details: { entity: entity.className, relation: relation.propertyName, target: relation.targetClassName },
+        },
       );
     }
 
@@ -808,7 +835,7 @@ function entityTable(
     for (const [index, joinColumn] of joinColumns.entries()) {
       const column = {
         ...relationColumn(targetPrimaryColumns[index], joinColumn),
-        nullable: true,
+        nullable: relation.nullable ?? true,
       };
       columns.set(joinColumn, column);
     }
@@ -857,8 +884,12 @@ function buildJoinTables(entities: MigrationEntitySchema[]): MigrationTableSchem
       const target = byClassName.get(relation.targetClassName);
 
       if (!target) {
-        throw new Error(
+        throw new NPAMigrationError(
           `@ManyToMany for ${entity.className}.${relation.propertyName} targets unknown entity ${relation.targetClassName}.`,
+          {
+            code: "NPA_RELATION_NOT_FOUND",
+            details: { entity: entity.className, relation: relation.propertyName, target: relation.targetClassName },
+          },
         );
       }
 
@@ -976,7 +1007,10 @@ function primaryColumns(entity: MigrationEntitySchema): MigrationColumnSchema[] 
   const primary = entity.columns.filter((column) => column.primary);
 
   if (primary.length === 0) {
-    throw new Error(`${entity.className} must declare an @Id column before it can be migrated.`);
+    throw new NPAMigrationError(`${entity.className} must declare an @Id column before it can be migrated.`, {
+      code: "NPA_MIGRATION_ENTITY_ID_REQUIRED",
+      details: { entity: entity.className },
+    });
   }
 
   return primary;
@@ -1124,7 +1158,9 @@ async function acquireLock(connection: MysqlConnection): Promise<void> {
   const acquired = result.rows[0]?.acquired;
 
   if (acquired !== 1) {
-    throw new Error("Could not acquire NPA MySQL migration lock.");
+    throw new NPAMigrationError("Could not acquire NPA MySQL migration lock.", {
+      code: "NPA_MIGRATION_LOCK_FAILED",
+    });
   }
 }
 
@@ -1184,8 +1220,14 @@ async function assertNoMysqlHistoryDrift(
     return;
   }
 
-  throw new Error(
+  throw new NPAMigrationError(
     `Migration history drift detected. Applied migration(s) missing locally: ${unknown.map((record) => record.name).join(", ")}. Use --allow-drift to bypass.`,
+    {
+      code: "NPA_MIGRATION_HISTORY_MISMATCH",
+      details: {
+        missingMigrations: unknown.map((record) => record.name),
+      },
+    },
   );
 }
 
@@ -1332,7 +1374,9 @@ function quoteQualifiedIdentifier(identifier: string): string {
 
 function quoteIdentifier(identifier: string): string {
   if (identifier.length === 0) {
-    throw new Error("MySQL identifier must not be empty.");
+    throw new NPADatabaseError("MySQL identifier must not be empty.", {
+      code: "NPA_DATABASE_IDENTIFIER_INVALID",
+    });
   }
 
   return `\`${identifier.replace(/`/g, "``")}\``;

@@ -1,3 +1,4 @@
+import { NPAQueryError } from "../error";
 import { ParsedQueryMethod, QueryPredicatePart } from "./types";
 
 export interface DuplicateQueryPredicate {
@@ -52,9 +53,18 @@ export function assertNoDuplicateQueryPredicates(query: ParsedQueryMethod): void
     return;
   }
 
-  throw new Error(
+  throw new NPAQueryError(
     `Query method "${query.methodName}" contains duplicate predicate "${formatPredicate(duplicate)}". ` +
       "Use a different operator or an In/NotIn query instead.",
+    {
+      code: "NPA_DUPLICATE_QUERY_PREDICATE",
+      details: {
+        methodName: query.methodName,
+        predicate: formatPredicate(duplicate),
+        firstIndex: duplicate.firstIndex,
+        duplicateIndex: duplicate.duplicateIndex,
+      },
+    },
   );
 }
 

@@ -34,6 +34,7 @@ Database and migrate options:
   --adapter <name>      Migration adapter: postgresql or mysql.
   --url <url>           Database URL. Required unless --dry-run is used.
   --entities <patterns> Comma-separated entity source globs.
+  --migrations-dir <dir> Directory for migration files. Defaults to npa/migrations.
   --name <name>         Migration directory suffix for migrate dev.
   --create-only         Create a migration file without applying it.
   --rename <mapping>    Explicit rename, e.g. table:old=new or column:users.old=new.

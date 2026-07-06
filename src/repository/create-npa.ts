@@ -1,4 +1,5 @@
 import type { EntityTarget } from "../entity";
+import { NPAConfigurationError } from "../error";
 import { registerTransactionManager } from "../transaction/transaction-manager-registry";
 import type { TransactionManager } from "../transaction/types";
 import type { NPAOperationsOptions } from "./operations";
@@ -56,18 +57,23 @@ export class NPA implements NPAApplication {
       options.repositories ?? getRegisteredRepositoryTargets();
 
     if (!options.repositories && repositoryTargets.length === 0) {
-      throw new Error(
+      throw new NPAConfigurationError(
         [
           "No @Repository metadata has been loaded.",
           'Import repository modules before creating NPA, for example: import "./repositories";',
         ].join(" "),
+        { code: "NPA_REPOSITORY_METADATA_REQUIRED" },
       );
     }
 
     for (const repository of repositoryTargets) {
       if (this.repositories.has(repository)) {
-        throw new Error(
+        throw new NPAConfigurationError(
           `Repository ${getRepositoryTargetName(repository)} is registered more than once.`,
+          {
+            code: "NPA_DUPLICATE_REPOSITORY",
+            details: { repository: getRepositoryTargetName(repository) },
+          },
         );
       }
 
@@ -96,8 +102,12 @@ export class NPA implements NPAApplication {
     const instance = this.repositories.get(repository);
 
     if (!instance) {
-      throw new Error(
+      throw new NPAConfigurationError(
         `Repository ${getRepositoryTargetName(repository)} was not registered in this NPA instance.`,
+        {
+          code: "NPA_REPOSITORY_METADATA_REQUIRED",
+          details: { repository: getRepositoryTargetName(repository) },
+        },
       );
     }
 

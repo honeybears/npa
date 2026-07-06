@@ -1,3 +1,4 @@
+import { NPAQueryError } from "@node-persistence-api/core";
 import { PostgresqlCompiledQuery } from "./types";
 
 export function compilePostgresqlRawQuery(
@@ -23,8 +24,12 @@ export function compilePostgresqlRawQuery(
   const converted = replaceQuestionMarkPlaceholders(text);
 
   if (converted.count !== values.length) {
-    throw new Error(
+    throw new NPAQueryError(
       `@Query method "${methodName}" has ${converted.count} placeholder(s), received ${values.length} parameter(s).`,
+      {
+        code: "NPA_RAW_QUERY_PLACEHOLDER_MISMATCH",
+        details: { methodName, expected: converted.count, received: values.length },
+      },
     );
   }
 
@@ -152,8 +157,12 @@ function replaceNamedPlaceholders(
   }
 
   if (values.length !== names.length) {
-    throw new Error(
+    throw new NPAQueryError(
       `@Query method "${methodName}" uses named parameter(s) ${names.map((name) => `:${name}`).join(", ")}, received ${values.length} parameter(s).`,
+      {
+        code: "NPA_RAW_QUERY_PLACEHOLDER_MISMATCH",
+        details: { methodName, expected: names.length, received: values.length },
+      },
     );
   }
 

@@ -1,7 +1,9 @@
+import { NPADatabaseError } from "@node-persistence-api/core";
 import {
   MysqlQueryable,
   MysqlRawQueryResult,
 } from "./types";
+import { toMysqlDatabaseError } from "./mysql-database-error";
 
 export interface MysqlDriverConnection {
   query?<TRow = Record<string, unknown>>(
@@ -20,34 +22,46 @@ export interface MysqlDriverConnection {
 export class MysqlConnection implements MysqlQueryable {
   constructor(private readonly connection: MysqlDriverConnection) {}
 
-  query<TRow = Record<string, unknown>>(
+  async query<TRow = Record<string, unknown>>(
     text: string,
     values?: unknown[],
-  ): Promise<MysqlRawQueryResult<TRow>> | MysqlRawQueryResult<TRow> {
-    if (this.connection.query) {
-      return this.connection.query<TRow>(text, values);
+  ): Promise<MysqlRawQueryResult<TRow>> {
+    try {
+      if (this.connection.query) {
+        return await this.connection.query<TRow>(text, values);
+      }
+
+      if (this.connection.execute) {
+        return await this.connection.execute<TRow>(text, values);
+      }
+    } catch (error) {
+      throw toMysqlDatabaseError(error);
     }
 
-    if (this.connection.execute) {
-      return this.connection.execute<TRow>(text, values);
-    }
-
-    throw new Error("MySQL connection requires query() or execute().");
+    throw new NPADatabaseError("MySQL connection requires query() or execute().", {
+      code: "NPA_DATABASE_CONNECTION_INVALID",
+    });
   }
 
-  execute<TRow = Record<string, unknown>>(
+  async execute<TRow = Record<string, unknown>>(
     text: string,
     values?: unknown[],
-  ): Promise<MysqlRawQueryResult<TRow>> | MysqlRawQueryResult<TRow> {
-    if (this.connection.execute) {
-      return this.connection.execute<TRow>(text, values);
+  ): Promise<MysqlRawQueryResult<TRow>> {
+    try {
+      if (this.connection.execute) {
+        return await this.connection.execute<TRow>(text, values);
+      }
+
+      if (this.connection.query) {
+        return await this.connection.query<TRow>(text, values);
+      }
+    } catch (error) {
+      throw toMysqlDatabaseError(error);
     }
 
-    if (this.connection.query) {
-      return this.connection.query<TRow>(text, values);
-    }
-
-    throw new Error("MySQL connection requires query() or execute().");
+    throw new NPADatabaseError("MySQL connection requires query() or execute().", {
+      code: "NPA_DATABASE_CONNECTION_INVALID",
+    });
   }
 
   async close(): Promise<void> {

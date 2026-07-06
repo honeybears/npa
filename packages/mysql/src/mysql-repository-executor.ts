@@ -16,6 +16,9 @@ import {
   CursorPage,
   NPAFindOptions,
   NPAEntityGraphMetadata,
+  NPAMetadataError,
+  NPAPaginationError,
+  NPAQueryError,
   NPARepositoryAdapter,
   NPADirtyCheckAdapter,
   NPALoadOptions,
@@ -28,6 +31,7 @@ import {
   RepositoryMethodInvocation,
   RepositoryRawQueryExecutor,
   stripCursorKeys,
+  withEagerRelations,
   withUpdatedAtTimestamp,
 } from "@node-persistence-api/core";
 import {
@@ -83,7 +87,10 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     }
 
     if (invocation.pageable && invocation.query.action !== "find") {
-      throw new Error(`Query method "${invocation.query.methodName}" only supports Pageable on find queries.`);
+      throw new NPAQueryError(`Query method "${invocation.query.methodName}" only supports Pageable on find queries.`, {
+        code: "NPA_PAGEABLE_UNSUPPORTED_QUERY",
+        details: { methodName: invocation.query.methodName },
+      });
     }
 
     if (invocation.pageable) {
@@ -172,16 +179,8 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
   };
 
   findAll = async (
-    load?: NPAFindOptions<TEntity>,
+    load?: NPAFindOptions<TEntity> & NPALoadOptions<TEntity>,
   ): Promise<TEntity[] | Page<TEntity> | CursorPage<TEntity>> => {
-    if (load?.select && load.select.length === 0) {
-      throw new Error("Select projection requires at least one property.");
-    }
-
-    if (load?.select?.length && load.relations) {
-      throw new Error("findAll select projections cannot be combined with relation loading.");
-    }
-
     if (load?.pageable) {
       return this.executePageQuery(
         findAllInvocation(load),
@@ -189,7 +188,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       );
     }
 
-    if (load?.orderBy?.length || load?.select?.length) {
+    if (load?.orderBy?.length) {
       const invocation = findAllInvocation(load);
       const query = compileMysqlQuery(invocation, this.options);
       const result = await executeMysqlQuery<TEntity>(
@@ -197,10 +196,6 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
         query.text,
         query.values,
       );
-
-      if (invocation.select?.length) {
-        return result.rows;
-      }
 
       return this.manageMany(this.attachLazy(await this.loadRelations(result.rows, load)));
     }
@@ -237,11 +232,21 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return Number(result.rows[0]?.count ?? 0);
   };
 
-  persist = async (entity: TEntity): Promise<TEntity> => {
+  save = async (entity: TEntity): Promise<TEntity | null> => {
+    const id = getMysqlPrimaryKeyValue(entity, this.options);
+
+    if (id === null || id === undefined) {
+      return this.persistEntity(entity);
+    }
+
+    return (await this.updateEntity(entity)) ?? this.persistEntity(entity);
+  };
+
+  private persistEntity = async (entity: TEntity): Promise<TEntity> => {
     const entityTarget = this.getEntityTarget();
 
     if (!entityTarget) {
-      return this.insert(entity);
+      return this.insertEntity(entity);
     }
 
     const currentContext = getCurrentPersistenceContext();
@@ -258,14 +263,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return persisted;
   };
 
-  save = async (entity: TEntity): Promise<TEntity | null> => {
-    const id = getMysqlPrimaryKeyValue(entity, this.options);
-    return id === null || id === undefined
-      ? this.insert(entity)
-      : this.update(entity);
-  };
-
-  insert = async (entity: TEntity): Promise<TEntity> => {
+  private insertEntity = async (entity: TEntity): Promise<TEntity> => {
     const query = compileMysqlInsert(entity, this.options);
     const result = await executeMysqlQuery<TEntity>(
       this.options,
@@ -281,9 +279,9 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return this.manage(this.attachLazy([(await this.findByIdRow(id as TId)) ?? entity])[0]);
   };
 
-  update = async (entity: TEntity): Promise<TEntity | null> => {
+  private updateEntity = async (entity: TEntity): Promise<TEntity | null> => {
     const id = getMysqlPrimaryKeyValue(entity, this.options);
-    return this.updateById(
+    return this.updateEntityById(
       id as TId,
       withUpdatedAtTimestamp(entity, this.options.entity, new Date(), {
         overwrite: true,
@@ -291,7 +289,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     );
   };
 
-  updateById = async (
+  private updateEntityById = async (
     id: TId,
     patch: Partial<TEntity>,
   ): Promise<TEntity | null> => {
@@ -389,7 +387,9 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     const pageable = invocation.pageable;
 
     if (!pageable) {
-      throw new Error("Page query requires Pageable.");
+      throw new NPAPaginationError("Page query requires Pageable.", {
+        code: "NPA_CURSOR_METADATA_REQUIRED",
+      });
     }
 
     const query = compileMysqlQuery(invocation, this.options);
@@ -400,9 +400,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     );
 
     if (isOffsetPageable(pageable)) {
-      const rows = invocation.select?.length
-        ? result.rows
-        : await this.loadRelations(result.rows, load);
+      const rows = await this.loadRelations(result.rows, load);
       const countQuery = compileMysqlQuery(
         {
           query: {
@@ -422,27 +420,20 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       );
 
       return createPage(
-        invocation.select?.length
-          ? rows
-          : this.manageMany(this.attachLazy(rows)),
+        this.manageMany(this.attachLazy(rows)),
         pageable,
         Number(countResult.rows[0]?.count ?? 0),
       );
     }
 
     if (!isCursorPageable(pageable) || !query.cursor) {
-      throw new Error("Cursor page query requires cursor metadata.");
+      throw new NPAPaginationError("Cursor page query requires cursor metadata.", {
+        code: "NPA_CURSOR_METADATA_REQUIRED",
+      });
     }
 
     const window = createCursorWindow(result.rows, query.cursor);
     const rows = stripCursorKeys(window.content, query.cursor);
-
-    if (invocation.select?.length) {
-      return {
-        ...window,
-        content: rows,
-      };
-    }
 
     const loaded = await this.loadRelations(rows, load);
 
@@ -469,7 +460,10 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       case "execute":
         return affectedRows;
       default:
-        throw new Error(`Unsupported @Query result mode: ${query.result}`);
+        throw new NPAQueryError(`Unsupported @Query result mode: ${query.result}`, {
+          code: "NPA_RAW_QUERY_RESULT_MODE_UNSUPPORTED",
+          details: { result: query.result },
+        });
     }
   }
 
@@ -550,9 +544,11 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     entities: TEntity[],
     load: NPALoadOptions<TEntity> | undefined,
   ): Promise<TEntity[]> {
+    const entity = this.getEntityTarget();
+
     return loadMysqlRelations(entities, {
-      entity: this.getEntityTarget(),
-      load,
+      entity,
+      load: withEagerRelations(entity, load),
       preferExecute: this.options.preferExecute,
       queryable: this.options.queryable,
     });
@@ -811,7 +807,10 @@ function manyToManyJoin(
     );
 
     if (!owner) {
-      throw new Error(`@ManyToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`);
+      throw new NPAMetadataError(`@ManyToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
+        code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
+        details: { entity: source.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
+      });
     }
 
     return {
@@ -903,7 +902,10 @@ function requireAdapterMetadata<TEntity extends object>(
   operation: string,
 ): EntityMetadata {
   if (!entity) {
-    throw new Error(`MySQL ${operation} requires entity metadata.`);
+    throw new NPAMetadataError(`MySQL ${operation} requires entity metadata.`, {
+      code: "NPA_REPOSITORY_METADATA_REQUIRED",
+      details: { operation },
+    });
   }
 
   return getEntityMetadata(entity);
@@ -931,7 +933,6 @@ function findAllInvocation<TEntity extends object>(
     },
     args: [],
     pageable: load?.pageable,
-    select: load?.select,
   };
 }
 
@@ -944,7 +945,10 @@ function normalizeOrderDirection(direction: unknown): "asc" | "desc" {
     return direction;
   }
 
-  throw new Error(`Unsupported order direction "${String(direction)}".`);
+  throw new NPAQueryError(`Unsupported order direction "${String(direction)}".`, {
+    code: "NPA_ORDER_DIRECTION_UNSUPPORTED",
+    details: { direction },
+  });
 }
 
 function readExpectedVersionFromPatch(

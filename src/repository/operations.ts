@@ -1,3 +1,5 @@
+import { NPADatabaseError, type NPAErrorCode } from "../error";
+
 export type NPAQueryAdapter = "postgresql" | "mysql" | (string & {});
 
 export interface NPAQueryEvent {
@@ -30,32 +32,6 @@ export interface NPADatabaseErrorDetails {
   detail?: string;
   errno?: number | string;
   sqlState?: string;
-}
-
-export class NPADatabaseError extends Error {
-  readonly adapter: NPAQueryAdapter;
-  readonly cause: unknown;
-  readonly code?: string;
-  readonly constraint?: string;
-  readonly detail?: string;
-  readonly errno?: number | string;
-  readonly sqlState?: string;
-  readonly text: string;
-  readonly values: readonly unknown[];
-
-  constructor(details: NPADatabaseErrorDetails) {
-    super(formatDatabaseErrorMessage(details));
-    this.name = "NPADatabaseError";
-    this.adapter = details.adapter;
-    this.cause = details.cause;
-    this.code = details.code;
-    this.constraint = details.constraint;
-    this.detail = details.detail;
-    this.errno = details.errno;
-    this.sqlState = details.sqlState;
-    this.text = details.text;
-    this.values = details.values;
-  }
 }
 
 export interface NPAQueryOperationOptions<TResult> {
@@ -144,7 +120,7 @@ function normalizeDatabaseError(
   }
 
   const record = isRecord(error) ? error : {};
-  return new NPADatabaseError({
+  const details: NPADatabaseErrorDetails = {
     ...context,
     cause: error,
     code: readString(record.code),
@@ -152,6 +128,21 @@ function normalizeDatabaseError(
     detail: readString(record.detail),
     errno: readNumberOrString(record.errno),
     sqlState: readString(record.sqlState) ?? readString(record.sqlstate),
+  };
+
+  return new NPADatabaseError(formatDatabaseErrorMessage(details), {
+    cause: error,
+    code: databaseErrorCode(details),
+    details: {
+      adapter: details.adapter,
+      text: details.text,
+      values: details.values,
+      driverCode: details.code,
+      constraint: details.constraint,
+      detail: details.detail,
+      errno: details.errno,
+      sqlState: details.sqlState,
+    },
   });
 }
 
@@ -170,6 +161,36 @@ function readNumberOrString(value: unknown): number | string | undefined {
   return typeof value === "number" || typeof value === "string"
     ? value
     : undefined;
+}
+
+function databaseErrorCode(details: NPADatabaseErrorDetails): NPAErrorCode {
+  if (
+    details.code === "23505" ||
+    details.code === "ER_DUP_ENTRY" ||
+    details.errno === 1062
+  ) {
+    return "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED";
+  }
+
+  if (
+    details.code === "23503" ||
+    details.code === "ER_NO_REFERENCED_ROW_2" ||
+    details.code === "ER_ROW_IS_REFERENCED_2" ||
+    details.errno === 1451 ||
+    details.errno === 1452
+  ) {
+    return "NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED";
+  }
+
+  if (
+    details.code === "23502" ||
+    details.code === "ER_BAD_NULL_ERROR" ||
+    details.errno === 1048
+  ) {
+    return "NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED";
+  }
+
+  return "NPA_DATABASE_QUERY_FAILED";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

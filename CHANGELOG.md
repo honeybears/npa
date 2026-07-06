@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.1.0-beta.2 - 2026-07-06
+
+### Added
+
+- Added eager relation loading with `FetchType.EAGER` so selected relations load
+  automatically with repository reads.
+- Added relation mutation helpers through `repository.relations(entity)` for
+  loaded `@OneToMany` and `@ManyToMany` collections.
+- Added `repository.saveAll(entities)` with Spring Data-style semantics.
+- Added nullable relation foreign-key support, with `nullable: false` available
+  for generated `NOT NULL` constraints.
+- Added dotenv loading for migration commands, including local and
+  `NODE_ENV`-specific env files.
+
+### Changed
+
+- Simplified repository query options and write APIs around the public
+  `NPARepository` surface.
+- Renamed the raw query result API for clearer `@Query` result handling.
+- Moved adapters onto the shared NPA error taxonomy and normalized database
+  error codes.
+- Updated README package links, release-checklist wording, and future-work
+  guidance.
+
+### Fixed
+
+- Treated falsy generated ids as unset so generated primary keys can be assigned
+  correctly.
+- Fixed `save` for assigned or composite ids by falling back to insert when an
+  update does not match an existing row.
+- Fixed lazy-loaded relation snapshots so `orphanRemoval` and cascading
+  relation cleanup continue to work after a relation is loaded lazily inside a
+  transaction.
+- Fixed SQL operation error wrapping to use the canonical `NPADatabaseError`
+  shape with SQL context in `details`.
+
+### Validation
+
+- Verified the implementation with:
+  - `npm run build`
+  - `npm test`
+  - `npm run test:e2e`
+
 ## 0.1.0-beta.1 - 2026-07-03
 
 ### Added
@@ -60,4 +103,3 @@
   - PostgreSQL adapter tests
   - MySQL adapter tests
   - `test/e2e/database-adapters.test.ts`
-

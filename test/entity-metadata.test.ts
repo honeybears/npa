@@ -4,6 +4,7 @@ import {
   Column,
   CreatedAt,
   Entity,
+  FetchType,
   GenerationStrategy,
   Id,
   Index,
@@ -77,6 +78,7 @@ class User {
   @ManyToOne(() => Team, {
     joinColumn: "team_id",
     cascade: [CascadeType.PERSIST, CascadeType.REMOVE],
+    fetch: FetchType.EAGER,
   })
   team?: Team;
 
@@ -216,6 +218,8 @@ describe("entity metadata", () => {
           kind: relation.kind,
           joinColumn: relation.joinColumn,
           joinTable: relation.joinTable,
+          nullable: relation.nullable,
+          fetch: relation.fetch,
           cascade: relation.cascade,
           orphanRemoval: relation.orphanRemoval,
         })),
@@ -225,6 +229,8 @@ describe("entity metadata", () => {
           kind: RelationKind.MANY_TO_ONE,
           joinColumn: "team_id",
           joinTable: undefined,
+          nullable: true,
+          fetch: FetchType.EAGER,
           cascade: [CascadeType.PERSIST, CascadeType.REMOVE],
           orphanRemoval: false,
         },
@@ -233,6 +239,8 @@ describe("entity metadata", () => {
           kind: RelationKind.MANY_TO_MANY,
           joinColumn: undefined,
           joinTable: "user_roles",
+          nullable: true,
+          fetch: FetchType.LAZY,
           cascade: [],
           orphanRemoval: false,
         },
@@ -321,10 +329,10 @@ describe("entity metadata", () => {
         },
       ) as DynamicUserRepository;
 
-      expect(await repository.insert({ name: "kim", createdAt: 10 })).toEqual({
+      expect(await repository.save({ name: "kim", createdAt: 10 })).toEqual({
         user_id: 1,
-        full_name: "kim",
-        created_at: 10,
+        name: "kim",
+        createdAt: 10,
       });
       await repository.findByName("kim");
 

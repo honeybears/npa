@@ -2,6 +2,8 @@ import {
   defaultJoinTableName,
   EntityMetadata,
   getEntityMetadata,
+  getCurrentPersistenceContext,
+  NPAMetadataError,
   NPALoadOptions,
   NPARelationLoadTree,
   relationJoinColumns,
@@ -9,6 +11,7 @@ import {
   RelationMetadata,
   joinTableColumnNames,
   primaryColumnsOf,
+  withEagerRelations,
 } from "@node-persistence-api/core";
 import { quoteIdentifier, quoteQualifiedIdentifier } from "./postgresql-identifiers";
 import { PostgresqlQueryable } from "./types";
@@ -19,6 +22,7 @@ export async function loadPostgresqlRelations<TEntity extends object>(
     entity?: new (...args: any[]) => TEntity;
     queryable: PostgresqlQueryable;
     load?: NPALoadOptions<TEntity>;
+    eagerPath?: Array<new (...args: any[]) => object>;
   },
 ): Promise<TEntity[]> {
   if (entities.length === 0 || !options.load?.relations) {
@@ -26,11 +30,15 @@ export async function loadPostgresqlRelations<TEntity extends object>(
   }
 
   if (!options.entity) {
-    throw new Error("PostgreSQL relation loading requires entity metadata.");
+    throw new NPAMetadataError("PostgreSQL relation loading requires entity metadata.", {
+      code: "NPA_RELATION_LOAD_METADATA_REQUIRED",
+    });
   }
 
   const metadata = getEntityMetadata(options.entity);
-  const relationSelections = selectRelations(metadata, options.load.relations);
+  const eagerPath = [...(options.eagerPath ?? []), options.entity];
+  const load = withEagerRelations(options.entity, options.load, options.eagerPath);
+  const relationSelections = selectRelations(metadata, load?.relations ?? []);
 
   for (const { relation, nested } of relationSelections) {
     let loaded: object[];
@@ -51,6 +59,7 @@ export async function loadPostgresqlRelations<TEntity extends object>(
       await loadPostgresqlRelations(loaded, {
         entity: relation.target() as new (...args: any[]) => object,
         load: { relations: nested },
+        eagerPath,
         queryable: options.queryable,
       });
     }
@@ -91,7 +100,13 @@ export function attachPostgresqlLazyRelations<TEntity extends object>(
             entity: options.entity,
             load: { relations: [relation.propertyName] },
             queryable: options.queryable,
-          }).then(() => readValue(entity, relation.propertyName));
+          }).then(() => {
+            getCurrentPersistenceContext()?.refreshRelationSnapshot(
+              entity,
+              relation.propertyName,
+            );
+            return readValue(entity, relation.propertyName);
+          });
 
           return cached;
         },
@@ -148,7 +163,10 @@ function findRelation(
     );
 
     if (!relation) {
-      throw new Error(`Entity ${metadata.target.name} has no relation ${propertyName}.`);
+      throw new NPAMetadataError(`Entity ${metadata.target.name} has no relation ${propertyName}.`, {
+        code: "NPA_RELATION_NOT_FOUND",
+        details: { entity: metadata.target.name, relation: propertyName },
+      });
     }
 
     return relation;
@@ -179,11 +197,15 @@ async function loadManyToOne<TEntity extends object>(
     return [];
   }
 
-  const rows = await selectRowsByColumn(
+  const rows = attachLazyTargets(
+    await selectRowsByColumn(
+      queryable,
+      targetMetadata,
+      joinColumns.map((column) => column.column.columnName),
+      ids,
+    ),
+    relation,
     queryable,
-    targetMetadata,
-    joinColumns.map((column) => column.column.columnName),
-    ids,
   );
   const rowById = new Map(rows.map((row) => [
     keyForValueSet(readColumnValueSet(row, joinColumns.map((column) => column.column.columnName))),
@@ -205,18 +227,25 @@ async function loadOneToOne<TEntity extends object>(
   queryable: PostgresqlQueryable,
 ): Promise<object[]> {
   if (!relation.mappedBy) {
-    throw new Error(`@OneToOne ${metadata.target.name}.${relation.propertyName} requires mappedBy.`);
+    throw new NPAMetadataError(`@OneToOne ${metadata.target.name}.${relation.propertyName} requires mappedBy.`, {
+      code: "NPA_RELATION_MAPPED_BY_REQUIRED",
+      details: { entity: metadata.target.name, relation: relation.propertyName },
+    });
   }
 
   const targetMetadata = getEntityMetadata(relation.target());
   const targetRelation = findMappedOwningToOne(metadata, targetMetadata, relation);
   const sourceIds = uniqueValues(entities.map((entity) => readPrimaryValueSet(entity, metadata)));
   const joinColumns = relationJoinColumns(targetRelation);
-  const rows = await selectRowsByColumn(
+  const rows = attachLazyTargets(
+    await selectRowsByColumn(
+      queryable,
+      targetMetadata,
+      joinColumns.map((column) => column.joinColumnName),
+      sourceIds,
+    ),
+    relation,
     queryable,
-    targetMetadata,
-    joinColumns.map((column) => column.joinColumnName),
-    sourceIds,
   );
   const rowsBySourceId = groupRows(
     rows,
@@ -238,7 +267,10 @@ async function loadOneToMany<TEntity extends object>(
   queryable: PostgresqlQueryable,
 ): Promise<object[]> {
   if (!relation.mappedBy) {
-    throw new Error(`@OneToMany ${metadata.target.name}.${relation.propertyName} requires mappedBy.`);
+    throw new NPAMetadataError(`@OneToMany ${metadata.target.name}.${relation.propertyName} requires mappedBy.`, {
+      code: "NPA_RELATION_MAPPED_BY_REQUIRED",
+      details: { entity: metadata.target.name, relation: relation.propertyName },
+    });
   }
 
   const targetMetadata = getEntityMetadata(relation.target());
@@ -247,16 +279,23 @@ async function loadOneToMany<TEntity extends object>(
   );
 
   if (!targetRelation) {
-    throw new Error(`@OneToMany ${metadata.target.name}.${relation.propertyName} mappedBy relation was not found.`);
+    throw new NPAMetadataError(`@OneToMany ${metadata.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
+      code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
+      details: { entity: metadata.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
+    });
   }
 
   const sourceIds = uniqueValues(entities.map((entity) => readPrimaryValueSet(entity, metadata)));
   const joinColumns = relationJoinColumns(targetRelation);
-  const rows = await selectRowsByColumn(
+  const rows = attachLazyTargets(
+    await selectRowsByColumn(
+      queryable,
+      targetMetadata,
+      joinColumns.map((column) => column.joinColumnName),
+      sourceIds,
+    ),
+    relation,
     queryable,
-    targetMetadata,
-    joinColumns.map((column) => column.joinColumnName),
-    sourceIds,
   );
   const rowsBySourceId = groupRows(
     rows,
@@ -271,6 +310,17 @@ async function loadOneToMany<TEntity extends object>(
   return flattenRelationValues(entities, relation);
 }
 
+function attachLazyTargets(
+  rows: Record<string, unknown>[],
+  relation: RelationMetadata,
+  queryable: PostgresqlQueryable,
+): Record<string, unknown>[] {
+  return attachPostgresqlLazyRelations(rows, {
+    entity: relation.target() as new (...args: any[]) => Record<string, unknown>,
+    queryable,
+  });
+}
+
 function findMappedOwningToOne(
   sourceMetadata: EntityMetadata,
   targetMetadata: EntityMetadata,
@@ -281,7 +331,10 @@ function findMappedOwningToOne(
   );
 
   if (!targetRelation) {
-    throw new Error(`@OneToOne ${sourceMetadata.target.name}.${relation.propertyName} mappedBy relation was not found.`);
+    throw new NPAMetadataError(`@OneToOne ${sourceMetadata.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
+      code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
+      details: { entity: sourceMetadata.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
+    });
   }
 
   return targetRelation;
@@ -330,6 +383,9 @@ async function loadManyToMany<TEntity extends object>(
     sourceAliases,
     { omitGroupColumns: true },
   );
+  for (const rows of rowsBySourceId.values()) {
+    attachLazyTargets(rows, relation, queryable);
+  }
 
   for (const entity of entities) {
     const id = readPrimaryValueSet(entity, metadata);
@@ -358,7 +414,10 @@ function manyToManyJoin(
     );
 
     if (!owner) {
-      throw new Error(`@ManyToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`);
+      throw new NPAMetadataError(`@ManyToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
+        code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
+        details: { entity: source.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
+      });
     }
 
     return {
@@ -446,7 +505,10 @@ function requirePrimaryColumns(metadata: EntityMetadata) {
   const primaryColumns = primaryColumnsOf(metadata);
 
   if (primaryColumns.length === 0) {
-    throw new Error(`Entity ${metadata.target.name} requires an @Id column.`);
+    throw new NPAMetadataError(`Entity ${metadata.target.name} requires an @Id column.`, {
+      code: "NPA_ENTITY_ID_REQUIRED",
+      details: { entity: metadata.target.name },
+    });
   }
 
   return primaryColumns;

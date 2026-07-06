@@ -1,3 +1,4 @@
+import { NPAQueryError } from "../error";
 import {
   ParsedQueryMethod,
   QueryCondition,
@@ -67,7 +68,10 @@ export function parseQueryMethod(methodName: string): ParsedQueryMethod {
   const byIndex = actionMatch.rest.indexOf("By");
 
   if (byIndex < 0) {
-    throw new Error(`Query method "${methodName}" must include "By".`);
+    throw new NPAQueryError(`Query method "${methodName}" must include "By".`, {
+      code: "NPA_INVALID_QUERY_METHOD",
+      details: { methodName },
+    });
   }
 
   const subject = actionMatch.rest.slice(0, byIndex);
@@ -101,8 +105,12 @@ function parseAction(methodName: string): ActionMatch {
     }
   }
 
-  throw new Error(
+  throw new NPAQueryError(
     `Unsupported query method "${methodName}". Use find, findOne, exists, count, or delete.`,
+    {
+      code: "NPA_INVALID_QUERY_METHOD",
+      details: { methodName },
+    },
   );
 }
 
@@ -177,7 +185,9 @@ function splitOrderBy(source: string): {
 
 function parsePredicate(source: string): QueryPredicatePart[] {
   if (source.length === 0) {
-    throw new Error("Query method predicate must not be empty.");
+    throw new NPAQueryError("Query method predicate must not be empty.", {
+      code: "NPA_INVALID_QUERY_PREDICATE",
+    });
   }
 
   const tokens = splitPredicateTokens(source);
@@ -229,7 +239,10 @@ function splitPredicateTokens(
 
   for (const part of result) {
     if (part.token.length === 0) {
-      throw new Error(`Invalid empty predicate in "${source}".`);
+      throw new NPAQueryError(`Invalid empty predicate in "${source}".`, {
+        code: "NPA_INVALID_QUERY_PREDICATE",
+        details: { source },
+      });
     }
   }
 
@@ -307,8 +320,12 @@ function parseOrderBy(source: string): QueryOrder[] {
   }
 
   if (orders.length === 0 || matchedLength !== source.length) {
-    throw new Error(
+    throw new NPAQueryError(
       `Invalid OrderBy clause "${source}". Use fields followed by Asc or Desc.`,
+      {
+        code: "NPA_ORDER_DIRECTION_UNSUPPORTED",
+        details: { source },
+      },
     );
   }
 

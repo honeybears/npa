@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { NPATransactionError } from "../error";
 import { PersistenceContext, runWithPersistenceContext } from "../persistence";
 import { RollbackOnlyError } from "./rollback-only-error";
 import {
@@ -119,7 +120,9 @@ export abstract class AbstractTransactionManager<TResource>
     _name: string,
     _options: TransactionOptions,
   ): Promise<void> | void {
-    throw new Error("Nested transactions are not supported by this transaction manager.");
+    throw new NPATransactionError("Nested transactions are not supported by this transaction manager.", {
+      code: "NPA_NESTED_TRANSACTION_UNSUPPORTED",
+    });
   }
 
   protected rollbackToSavepoint(
@@ -127,7 +130,9 @@ export abstract class AbstractTransactionManager<TResource>
     _name: string,
     _options: TransactionOptions,
   ): Promise<void> | void {
-    throw new Error("Nested transactions are not supported by this transaction manager.");
+    throw new NPATransactionError("Nested transactions are not supported by this transaction manager.", {
+      code: "NPA_NESTED_TRANSACTION_UNSUPPORTED",
+    });
   }
 
   protected releaseSavepoint(
@@ -135,7 +140,9 @@ export abstract class AbstractTransactionManager<TResource>
     _name: string,
     _options: TransactionOptions,
   ): Promise<void> | void {
-    throw new Error("Nested transactions are not supported by this transaction manager.");
+    throw new NPATransactionError("Nested transactions are not supported by this transaction manager.", {
+      code: "NPA_NESTED_TRANSACTION_UNSUPPORTED",
+    });
   }
 
   protected releaseTransactionResource(
@@ -154,7 +161,10 @@ export abstract class AbstractTransactionManager<TResource>
       case TransactionPropagation.REQUIRES_NEW:
         return TransactionPropagation.REQUIRES_NEW;
       default:
-        throw new Error(`Unsupported transaction propagation: ${String(propagation)}`);
+        throw new NPATransactionError(`Unsupported transaction propagation: ${String(propagation)}`, {
+          code: "NPA_TRANSACTION_PROPAGATION_UNSUPPORTED",
+          details: { propagation },
+        });
     }
   }
 

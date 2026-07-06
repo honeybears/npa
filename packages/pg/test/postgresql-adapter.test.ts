@@ -11,6 +11,7 @@ import {
   compilePostgresqlUpdate,
   compilePostgresqlVersionedUpdate,
   createPostgresqlDerivedQueryRepository,
+  getPrimaryKeyValue,
   PostgresqlConnection,
   postgresql,
   type PostgresqlDriverConnection,
@@ -22,6 +23,7 @@ import {
   CreatedAt,
   Entity,
   EntityGraph,
+  FetchType,
   Id,
   Loaded,
   ManyToMany,
@@ -65,6 +67,15 @@ class PgProduct {
 @Entity({ name: "products" })
 class PgPlainProduct {
   @Id({ name: "product_id" })
+  id!: number;
+
+  @Column({ name: "product_name" })
+  name!: string;
+}
+
+@Entity({ name: "generated_products" })
+class PgGeneratedProduct {
+  @Id({ name: "product_id", generationStrategy: "AUTO_INCREMENT" })
   id!: number;
 
   @Column({ name: "product_name" })
@@ -205,6 +216,30 @@ class PgMember {
   roles!: PgRole[];
 }
 
+@Entity({ name: "pg_eager_teams" })
+class PgEagerTeam {
+  @Id({ name: "team_id" })
+  id!: number;
+
+  @Column()
+  label!: string;
+
+  @OneToMany(() => PgEagerMember, { mappedBy: "team", fetch: FetchType.EAGER })
+  members!: PgEagerMember[];
+}
+
+@Entity({ name: "pg_eager_members" })
+class PgEagerMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => PgEagerTeam, { joinColumn: "team_id", fetch: FetchType.EAGER })
+  team!: PgEagerTeam;
+}
+
 const memberGraph = defineEntityGraph<PgMember>({
   team: {
     organization: true,
@@ -217,6 +252,16 @@ abstract class PgMemberGraphRepository extends NPARepository<PgMember, number> {
   abstract findByName: (
     name: string,
   ) => Promise<Loaded<PgMember, typeof memberGraph>[]>;
+}
+
+abstract class PgMemberByIdGraphRepository extends NPARepository<PgMember, number> {
+  @EntityGraph(memberGraph)
+  abstract findById: (id: number) => Promise<Loaded<PgMember, typeof memberGraph> | null>;
+}
+
+abstract class PgTeamMembersGraphRepository extends NPARepository<PgTeam, number> {
+  @EntityGraph(["members"])
+  abstract findAll: () => Promise<Array<Loaded<PgTeam, ["members"]>>>;
 }
 
 @Entity({ name: "broken_teams" })
@@ -252,6 +297,27 @@ class TestTransactionManager extends AbstractTransactionManager<object> {
   protected rollbackTransaction() {}
 }
 describe("PostgreSQL adapter", () => {
+  test("maps constraint driver errors to database error codes", async () => {
+    const cases = [
+      { driver: { code: "23505" }, code: "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED" },
+      { driver: { code: "23503" }, code: "NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED" },
+      { driver: { code: "23502" }, code: "NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED" },
+    ];
+
+    for (const testCase of cases) {
+      const connection = new PostgresqlConnection({
+        query() {
+          throw Object.assign(new Error("driver failed"), testCase.driver);
+        },
+      });
+
+      await expect(connection.query("SELECT 1")).rejects.toBeInstanceOf(NPADatabaseError);
+      await expect(connection.query("SELECT 1")).rejects.toMatchObject({
+        code: testCase.code,
+      });
+    }
+  });
+
   test("compiles a derived query method into parameterized PostgreSQL SQL", () => {
     expect(
       compilePostgresqlQuery(
@@ -350,40 +416,6 @@ describe("PostgreSQL adapter", () => {
       cursor: expect.any(Object),
     });
 
-    expect(
-      compilePostgresqlQuery(
-        {
-          query: parseQueryMethod("findByStatusOrderByCreatedAtDesc"),
-          args: ["active"],
-          select: ["name"],
-          pageable: Pageable.cursor({
-            after: cursorToken(["2026-01-01T00:00:00.000Z", 10]),
-            size: 2,
-          }),
-        },
-        { entity: PgProduct },
-      ),
-    ).toEqual({
-      text: 'SELECT "product_name" AS "name", "created_at" AS "__cursor_0", "product_id" AS "__cursor_1" FROM "products" WHERE ("status" = $1) AND (("created_at" < $2) OR ("created_at" = $3 AND "product_id" > $4)) ORDER BY "created_at" DESC, "product_id" ASC LIMIT 3',
-      values: [
-        "active",
-        "2026-01-01T00:00:00.000Z",
-        "2026-01-01T00:00:00.000Z",
-        10,
-      ],
-      cursor: expect.any(Object),
-    });
-
-    expect(() =>
-      compilePostgresqlQuery(
-        {
-          query: parseQueryMethod("findByStatus"),
-          args: ["active"],
-          select: [],
-        },
-        { entity: PgProduct },
-      ),
-    ).toThrow(/Select projection requires at least one property/);
   });
 
   test("preserves AND precedence by grouping OR predicate parts", () => {
@@ -816,7 +848,7 @@ describe("PostgreSQL adapter", () => {
     expect(slowQueries).toEqual(events);
   });
 
-  test("wraps PostgreSQL driver errors with SQL context", async () => {
+  test("wraps PostgreSQL driver errors and logs SQL context", async () => {
     const events = [];
     const driverError = Object.assign(new Error("duplicate key"), {
       code: "23505",
@@ -839,13 +871,12 @@ describe("PostgreSQL adapter", () => {
       DynamicRepository;
 
     await expect(products.findById(10)).rejects.toMatchObject({
-      adapter: "postgresql",
-      code: "23505",
-      constraint: "products_pkey",
-      detail: "Key already exists.",
+      code: "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED",
+      details: {
+        constraint: "products_pkey",
+        driverCode: "23505",
+      },
       name: "NPADatabaseError",
-      text: 'SELECT * FROM "products" WHERE "product_id" = $1 LIMIT 1',
-      values: [10],
     });
 
     const error = await products.findById(10).catch((caught) => caught);
@@ -916,6 +947,21 @@ describe("PostgreSQL adapter", () => {
       values: ["kim", 20, 3],
     });
     expect(
+      compilePostgresqlInsert(
+        { id: 0, name: "desk" },
+        { entity: PgGeneratedProduct },
+      ),
+    ).toEqual({
+      text: 'INSERT INTO "generated_products" ("product_name") VALUES ($1) RETURNING *',
+      values: ["desk"],
+    });
+    expect(
+      getPrimaryKeyValue(
+        { id: 0, name: "desk" },
+        { entity: PgGeneratedProduct },
+      ),
+    ).toBeUndefined();
+    expect(
       compilePostgresqlUpdate(1, { id: 1, name: "lee", createdAt: 4 }, options),
     ).toEqual({
       text: 'UPDATE "users" SET "name" = $1, "created_at" = $2 WHERE "id" = $3 RETURNING *',
@@ -968,25 +1014,6 @@ describe("PostgreSQL adapter", () => {
     });
     expect(compilePostgresqlFindAll(options)).toEqual({
       text: 'SELECT * FROM "users"',
-      values: [],
-    });
-    expect(
-      compilePostgresqlQuery(
-        {
-          query: {
-            methodName: "findAll",
-            action: "find",
-            predicate: [],
-            orderBy: [{ property: "name", direction: "desc" }],
-            parameterCount: 0,
-          },
-          args: [],
-          select: ["id", "name"],
-        },
-        { entity: PgProduct },
-      ),
-    ).toEqual({
-      text: 'SELECT "product_id" AS "id", "product_name" AS "name" FROM "products" ORDER BY "product_name" DESC',
       values: [],
     });
     expect(compilePostgresqlCount(options)).toEqual({
@@ -1283,7 +1310,7 @@ describe("PostgreSQL adapter", () => {
       },
     );
 
-    expect(await repository.insert({ name: "kim", createdAt: 3 })).toEqual({
+    expect(await repository.save({ name: "kim", createdAt: 3 })).toEqual({
       id: 3,
       name: "kim",
       created_at: 3,
@@ -1293,7 +1320,7 @@ describe("PostgreSQL adapter", () => {
       name: "park",
       created_at: 3,
     });
-    expect(await repository.updateById(1, { name: "lee" })).toEqual({
+    expect(await repository.save({ id: 1, name: "lee" })).toEqual({
       id: 1,
       name: "lee",
       created_at: 3,
@@ -1387,7 +1414,7 @@ describe("PostgreSQL adapter", () => {
     ) as NPARepository<PgPlainProduct, number>;
     const product = { name: "desk" } as PgPlainProduct;
 
-    expect(await repository.persist(product)).toBe(product);
+    expect(await repository.save(product)).toBe(product);
     expect(product.id).toEqual(7);
     await repository.remove(product);
 
@@ -1399,6 +1426,36 @@ describe("PostgreSQL adapter", () => {
       {
         text: 'DELETE FROM "products" WHERE "product_id" = $1',
         values: [7],
+      },
+    ]);
+  });
+
+  test("treats falsy PostgreSQL generated ids as unset on save", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        return {
+          rows: [{ product_id: 8, product_name: values[0] }],
+          rowCount: 1,
+        };
+      },
+    };
+    const repository = createPostgresqlDerivedQueryRepository(
+      {},
+      { entity: PgGeneratedProduct, queryable: asPgQueryable(queryable) },
+    ) as NPARepository<PgGeneratedProduct, number>;
+
+    await expect(repository.save({ id: 0, name: "desk" })).resolves.toEqual({
+      id: 8,
+      name: "desk",
+    });
+
+    expect(calls).toEqual([
+      {
+        text: 'INSERT INTO "generated_products" ("product_name") VALUES ($1) RETURNING *',
+        values: ["desk"],
       },
     ]);
   });
@@ -1428,7 +1485,7 @@ describe("PostgreSQL adapter", () => {
       roles: [{ id: 5, name: "admin" } as PgRole],
     } as PgMember;
 
-    await repository.persist(member);
+    await repository.save(member);
     await repository.remove(member);
 
     expect(calls).toEqual([
@@ -1483,7 +1540,7 @@ describe("PostgreSQL adapter", () => {
       members: [{ id: 1, name: "kim" } as PgMember],
     } as PgRole;
 
-    await repository.persist(role);
+    await repository.save(role);
 
     expect(calls).toEqual([
       {
@@ -1589,8 +1646,8 @@ describe("PostgreSQL adapter", () => {
       { entity: PgTimestampedProduct, queryable: asPgQueryable(queryable) },
     ) as NPARepository<Record<string, unknown>, number>;
 
-    await repository.insert({ name: "desk" });
-    await repository.updateById(1, { name: "chair" });
+    await repository.save({ name: "desk" });
+    await repository.save({ id: 1, name: "chair" });
 
     expect(calls).toEqual([
       {
@@ -1631,8 +1688,8 @@ describe("PostgreSQL adapter", () => {
       { entity: PgPlainProduct, queryable: asPgQueryable(queryable) },
     );
 
-    await versioned.updateById(1, { name: "chair", version: 0 });
-    await plain.updateById(2, { name: "desk" });
+    await versioned.save({ id: 1, name: "chair", version: 0 });
+    await plain.save({ id: 2, name: "desk" });
 
     expect(calls).toEqual([
       {
@@ -1707,8 +1764,12 @@ describe("PostgreSQL adapter", () => {
       {},
       { entity: PgMember, queryable: asPgQueryable(queryable) },
     );
+    const loadedMembers = createPostgresqlDerivedQueryRepository(
+      Object.create(PgMemberByIdGraphRepository.prototype),
+      { entity: PgMember, queryable: asPgQueryable(queryable) },
+    );
     const teams = createPostgresqlDerivedQueryRepository(
-      {},
+      Object.create(PgTeamMembersGraphRepository.prototype),
       { entity: PgTeam, queryable: asPgQueryable(queryable) },
     );
 
@@ -1723,26 +1784,19 @@ describe("PostgreSQL adapter", () => {
       { role_id: 8, name: "writer" },
     ]);
 
-    const member = await members.findById(10, {
-      relations: {
-        roles: true,
-        team: {
-          organization: true,
-        },
-      },
-    });
-    expect(member.team).toEqual({
+    const member = await loadedMembers.findById(10);
+    expect(member?.team).toEqual({
       organization: { organization_id: 3, name: "platform" },
       organization_id: 3,
       team_id: 2,
       label: "core",
     });
-    expect(member.roles).toEqual([
+    expect(member?.roles).toEqual([
       { role_id: 7, name: "admin" },
       { role_id: 8, name: "writer" },
     ]);
 
-    const [team] = await teams.findAll({ relations: ["members"] });
+    const [team] = await teams.findAll();
     expect(team.members).toEqual([
       { member_id: 10, name: "kim", team_id: 2 },
       { member_id: 11, name: "lee", team_id: 2 },
@@ -1839,6 +1893,50 @@ describe("PostgreSQL adapter", () => {
     ]);
     expect(page.hasNextPage).toEqual(false);
     expect(calls.length).toEqual(4);
+  });
+
+  test("loads PostgreSQL eager relations without @EntityGraph", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text === 'SELECT * FROM "pg_eager_members" WHERE "member_id" = $1 LIMIT 1') {
+          return { rows: [{ member_id: values[0], name: "kim", team_id: 2 }] };
+        }
+
+        if (text === 'SELECT * FROM "pg_eager_teams" WHERE "team_id" IN ($1)') {
+          return { rows: [{ team_id: 2, label: "core" }] };
+        }
+
+        if (text === 'SELECT * FROM "pg_eager_members" WHERE "team_id" IN ($1)') {
+          return {
+            rows: [
+              { member_id: 10, name: "kim", team_id: 2 },
+              { member_id: 11, name: "lee", team_id: 2 },
+            ],
+          };
+        }
+
+        throw new Error(`Unexpected query: ${text}`);
+      },
+    };
+    const members = createPostgresqlDerivedQueryRepository(
+      {},
+      { entity: PgEagerMember, queryable: queryable as PostgresqlQueryable },
+    );
+
+    const member = await members.findById(10);
+
+    expect(member.team).toEqual({
+      members: [
+        { member_id: 10, name: "kim", team_id: 2 },
+        { member_id: 11, name: "lee", team_id: 2 },
+      ],
+      team_id: 2,
+      label: "core",
+    });
+    expect(calls).toHaveLength(3);
   });
 
   test("flushes dirty managed entities through a PostgreSQL repository", async () => {

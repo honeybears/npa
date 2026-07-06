@@ -1,3 +1,4 @@
+import { NPAMetadataError } from "../error";
 import {
   registerColumn,
   registerCreatedAt,
@@ -70,7 +71,10 @@ export function Index(options: IndexOptions | IndexOptions[]): ClassDecorator {
 
   return ((target: object | EntityTarget, propertyKey?: string | symbol) => {
     if (propertyKey !== undefined) {
-      throw new Error("@Index can only be used on entity classes. Use @Column({ index: true }) or @Column({ unique: true }) for single-column indexes.");
+      throw new NPAMetadataError("@Index can only be used on entity classes. Use @Column({ index: true }) or @Column({ unique: true }) for single-column indexes.", {
+        code: "NPA_INVALID_DECORATOR_TARGET",
+        details: { propertyKey: String(propertyKey) },
+      });
     }
 
     for (const option of resolvedOptions) {

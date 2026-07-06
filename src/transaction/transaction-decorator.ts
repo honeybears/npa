@@ -1,3 +1,4 @@
+import { NPATransactionError } from "../error";
 import { TransactionManager, TransactionOptions } from "./types";
 import { resolveRegisteredTransactionManager } from "./transaction-manager-registry";
 
@@ -19,7 +20,9 @@ export function Transaction(
     const original = descriptor.value as (...args: unknown[]) => unknown;
 
     if (typeof original !== "function") {
-      throw new Error("@Transaction can only decorate methods.");
+      throw new NPATransactionError("@Transaction can only decorate methods.", {
+        code: "NPA_TRANSACTION_DECORATOR_INVALID_TARGET",
+      });
     }
 
     descriptor.value = async function transactionalMethod(
@@ -69,8 +72,12 @@ function resolveTransactionManager(
       return value;
     }
 
-    throw new Error(
+    throw new NPATransactionError(
       `@Transaction could not find a transaction manager. Add a ${managerProperty} property or pass @Transaction({ manager }).`,
+      {
+        code: "NPA_TRANSACTION_MANAGER_NOT_FOUND",
+        details: { managerProperty },
+      },
     );
   }
 
@@ -95,8 +102,12 @@ function resolveTransactionManager(
     return registered;
   }
 
-  throw new Error(
+  throw new NPATransactionError(
     `@Transaction could not find a transaction manager. Add a ${propertyName} property, pass @Transaction({ manager }), or register one with new NPA({ transactionManager }).`,
+    {
+      code: "NPA_TRANSACTION_MANAGER_NOT_FOUND",
+      details: { managerProperty: propertyName },
+    },
   );
 }
 

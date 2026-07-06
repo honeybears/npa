@@ -1,5 +1,5 @@
-import { AbstractTransactionManager, Column, CreatedAt, Entity, EntityGraph, Id, Loaded, ManyToMany, ManyToOne, NPADatabaseError, NPARepository, OneToOne, OneToMany, Pageable, Query, Repository, UpdatedAt, Version, createNPA, defineEntityGraph, parseQueryMethod } from "../../../src";
-import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
+import { AbstractTransactionManager, Column, CreatedAt, Entity, EntityGraph, FetchType, Id, Loaded, ManyToMany, ManyToOne, NPADatabaseError, NPARepository, OneToOne, OneToMany, Pageable, Query, Repository, UpdatedAt, Version, createNPA, defineEntityGraph, parseQueryMethod } from "../../../src";
+import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, getMysqlPrimaryKeyValue, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;
@@ -27,6 +27,15 @@ class Product {
 
   @Column({ name: "created_at" })
   createdAt!: number;
+}
+
+@Entity({ name: "generated_products", schema: "shop" })
+class GeneratedProduct {
+  @Id({ name: "product_id", generationStrategy: "AUTO_INCREMENT" })
+  id!: number;
+
+  @Column({ name: "product_name" })
+  name!: string;
 }
 
 abstract class ProductRepository extends NPARepository<Product, number> {
@@ -148,6 +157,30 @@ class Member {
   roles!: Role[];
 }
 
+@Entity({ name: "eager_teams" })
+class EagerTeam {
+  @Id({ name: "team_id" })
+  id!: number;
+
+  @Column()
+  label!: string;
+
+  @OneToMany(() => EagerMember, { mappedBy: "team", fetch: FetchType.EAGER })
+  members!: EagerMember[];
+}
+
+@Entity({ name: "eager_members" })
+class EagerMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => EagerTeam, { joinColumn: "team_id", fetch: FetchType.EAGER })
+  team!: EagerTeam;
+}
+
 const memberGraph = defineEntityGraph<Member>({
   team: {
     organization: true,
@@ -158,6 +191,16 @@ const memberGraph = defineEntityGraph<Member>({
 abstract class MemberGraphRepository extends NPARepository<Member, number> {
   @EntityGraph(memberGraph)
   abstract findByName: (name: string) => Promise<Loaded<Member, typeof memberGraph>[]>;
+}
+
+abstract class MemberByIdGraphRepository extends NPARepository<Member, number> {
+  @EntityGraph(memberGraph)
+  abstract findById: (id: number) => Promise<Loaded<Member, typeof memberGraph> | null>;
+}
+
+abstract class TeamMembersGraphRepository extends NPARepository<Team, number> {
+  @EntityGraph(["members"])
+  abstract findAll: () => Promise<Array<Loaded<Team, ["members"]>>>;
 }
 
 @Entity({ name: "broken_teams" })
@@ -223,6 +266,27 @@ class TestTransactionManager extends AbstractTransactionManager<object> {
   protected rollbackTransaction() {}
 }
 describe("MySQL adapter", () => {
+  test("maps constraint driver errors to database error codes", async () => {
+    const cases = [
+      { driver: { code: "ER_DUP_ENTRY", errno: 1062 }, code: "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED" },
+      { driver: { code: "ER_NO_REFERENCED_ROW_2", errno: 1452 }, code: "NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED" },
+      { driver: { code: "ER_BAD_NULL_ERROR", errno: 1048 }, code: "NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED" },
+    ];
+
+    for (const testCase of cases) {
+      const connection = new MysqlConnection({
+        query() {
+          throw Object.assign(new Error("driver failed"), testCase.driver);
+        },
+      });
+
+      await expect(connection.query("SELECT 1")).rejects.toBeInstanceOf(NPADatabaseError);
+      await expect(connection.query("SELECT 1")).rejects.toMatchObject({
+        code: testCase.code,
+      });
+    }
+  });
+
   test("compiles derived query methods into parameterized MySQL SQL", () => {
     expect(compileMysqlQuery(
         {
@@ -323,38 +387,6 @@ describe("MySQL adapter", () => {
         cursor: expect.any(Object),
       });
 
-    expect(compileMysqlQuery(
-        {
-          query: parseQueryMethod("findByStatusOrderByCreatedAtDesc"),
-          args: ["active"],
-          select: ["name"],
-          pageable: Pageable.cursor({
-            after: cursorToken(["2026-01-01T00:00:00.000Z", 10]),
-            size: 2,
-          }),
-        },
-        { entity: Product },
-      )).toEqual({
-        text:
-          "SELECT `product_name` AS `name`, `created_at` AS `__cursor_0`, `product_id` AS `__cursor_1` FROM `shop`.`products` WHERE (`status` = ?) AND ((`created_at` < ?) OR (`created_at` = ? AND `product_id` > ?)) ORDER BY `created_at` DESC, `product_id` ASC LIMIT 3",
-        values: [
-          "active",
-          "2026-01-01T00:00:00.000Z",
-          "2026-01-01T00:00:00.000Z",
-          10,
-        ],
-        cursor: expect.any(Object),
-      });
-
-    expect(() =>
-      compileMysqlQuery(
-        {
-          query: parseQueryMethod("findByStatus"),
-          args: ["active"],
-          select: [],
-        },
-        { entity: Product },
-      )).toThrow(/Select projection requires at least one property/);
   });
 
   test("compiles MySQL null and empty-list derived query parameters", () => {
@@ -602,6 +634,18 @@ describe("MySQL adapter", () => {
           "INSERT INTO `shop`.`products` (`product_name`, `price`, `created_at`) VALUES (?, ?, ?)",
         values: ["desk", 120, 10],
       });
+    expect(compileMysqlInsert(
+        { id: 0, name: "desk" },
+        { entity: GeneratedProduct },
+      )).toEqual({
+        text:
+          "INSERT INTO `shop`.`generated_products` (`product_name`) VALUES (?)",
+        values: ["desk"],
+      });
+    expect(getMysqlPrimaryKeyValue(
+        { id: 0, name: "desk" },
+        { entity: GeneratedProduct },
+      )).toBeUndefined();
     expect(compileMysqlUpdate(
         1,
         { id: 1, name: "chair", createdAt: 11 },
@@ -655,24 +699,6 @@ describe("MySQL adapter", () => {
       text: "SELECT * FROM `shop`.`products`",
       values: [],
     });
-    expect(compileMysqlQuery(
-        {
-          query: {
-            methodName: "findAll",
-            action: "find",
-            predicate: [],
-            orderBy: [{ property: "name", direction: "desc" }],
-            parameterCount: 0,
-          },
-          args: [],
-          select: ["id", "name"],
-        },
-        { entity: Product },
-      )).toEqual({
-        text:
-          "SELECT `product_id` AS `id`, `product_name` AS `name` FROM `shop`.`products` ORDER BY `product_name` DESC",
-        values: [],
-      });
     expect(compileMysqlCount({ entity: Product })).toEqual({
       text: "SELECT COUNT(*) AS `count` FROM `shop`.`products`",
       values: [],
@@ -860,14 +886,17 @@ describe("MySQL adapter", () => {
     const products = npa.get(ProductRepository) as ProductRepository & DynamicRepository;
 
     await expect(products.findById(10)).rejects.toMatchObject({
-      adapter: "mysql",
-      code: "ER_DUP_ENTRY",
-      errno: 1062,
+      code: "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED",
+      details: {
+        adapter: "mysql",
+        driverCode: "ER_DUP_ENTRY",
+        errno: 1062,
+        sqlState: "23000",
+        text:
+          "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
+        values: [10],
+      },
       name: "NPADatabaseError",
-      sqlState: "23000",
-      text:
-        "SELECT * FROM `shop`.`products` WHERE `product_id` = ? LIMIT 1",
-      values: [10],
     });
 
     const error = await products.findById(10).catch((caught) => caught);
@@ -1113,11 +1142,12 @@ describe("MySQL adapter", () => {
       { entity: Product, queryable: asMysqlQueryable(queryable) },
     ) as NPARepository<Record<string, unknown>, unknown> & DynamicRepository;
 
-    expect(await repository.insert({ name: "desk", price: 120 })).toEqual({
+    expect(await repository.save({ name: "desk", price: 120 })).toEqual({
+      name: "desk",
+      price: 120,
       product_id: 10,
-      product_name: "desk",
     });
-    expect(await repository.updateById(10, { name: "table" })).toEqual({
+    expect(await repository.save({ id: 10, name: "table" })).toEqual({
       product_id: 10,
       product_name: "desk",
     });
@@ -1230,7 +1260,7 @@ describe("MySQL adapter", () => {
       createdAt: 1,
     } as Product;
 
-    expect(await repository.persist(product)).toBe(product);
+    expect(await repository.save(product)).toBe(product);
     expect(product.id).toEqual(10);
     await repository.remove(product);
 
@@ -1278,7 +1308,7 @@ describe("MySQL adapter", () => {
       roles: [{ id: 5, name: "admin" } as Role],
     } as Member;
 
-    await repository.persist(member);
+    await repository.save(member);
     await repository.remove(member);
 
     expect(calls).toEqual([
@@ -1310,6 +1340,43 @@ describe("MySQL adapter", () => {
     ]);
   });
 
+  test("treats falsy MySQL generated ids as unset on save", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text.startsWith("INSERT")) {
+          return [{ affectedRows: 1, insertId: 8 }, []];
+        }
+
+        return [[{ product_id: values[0], product_name: "desk" }], []];
+      },
+    };
+    const repository = createMysqlDerivedQueryRepository(
+      {},
+      { entity: GeneratedProduct, queryable: asMysqlQueryable(queryable) },
+    ) as NPARepository<GeneratedProduct, number>;
+
+    await expect(repository.save({ id: 0, name: "desk" })).resolves.toEqual({
+      id: 8,
+      name: "desk",
+    });
+
+    expect(calls).toEqual([
+      {
+        text:
+          "INSERT INTO `shop`.`generated_products` (`product_name`) VALUES (?)",
+        values: ["desk"],
+      },
+      {
+        text:
+          "SELECT * FROM `shop`.`generated_products` WHERE `product_id` = ? LIMIT 1",
+        values: [8],
+      },
+    ]);
+  });
+
   test("syncs inverse MySQL many-to-many join rows", async () => {
     const calls = [];
     const queryable = {
@@ -1336,7 +1403,7 @@ describe("MySQL adapter", () => {
       members: [{ id: 1, name: "kim" } as Member],
     } as Role;
 
-    await repository.persist(role);
+    await repository.save(role);
 
     expect(calls).toEqual([
       {
@@ -1432,8 +1499,8 @@ describe("MySQL adapter", () => {
       { entity: TimestampedProduct, queryable: asMysqlQueryable(queryable) },
     ) as NPARepository<Record<string, unknown>, number>;
 
-    await repository.insert({ name: "desk" });
-    await repository.updateById(10, { name: "chair" });
+    await repository.save({ name: "desk" });
+    await repository.save({ id: 10, name: "chair" });
 
     expect(calls).toEqual([
       {
@@ -1485,8 +1552,8 @@ describe("MySQL adapter", () => {
       { entity: Product, queryable: asMysqlQueryable(queryable) },
     );
 
-    await versioned.updateById(10, { name: "chair", version: 0 });
-    await plain.updateById(11, { name: "desk" });
+    await versioned.save({ id: 10, name: "chair", version: 0 });
+    await plain.save({ id: 11, name: "desk" });
 
     expect(calls).toEqual([
       {
@@ -1555,8 +1622,12 @@ describe("MySQL adapter", () => {
       {},
       { entity: Member, queryable: asMysqlQueryable(queryable) },
     );
+    const loadedMembers = createMysqlDerivedQueryRepository(
+      Object.create(MemberByIdGraphRepository.prototype),
+      { entity: Member, queryable: asMysqlQueryable(queryable) },
+    );
     const teams = createMysqlDerivedQueryRepository(
-      {},
+      Object.create(TeamMembersGraphRepository.prototype),
       { entity: Team, queryable: asMysqlQueryable(queryable) },
     );
 
@@ -1571,26 +1642,19 @@ describe("MySQL adapter", () => {
       { role_id: 8, name: "writer" },
     ]);
 
-    const member = await members.findById(10, {
-      relations: {
-        roles: true,
-        team: {
-          organization: true,
-        },
-      },
-    });
-    expect(member.team).toEqual({
+    const member = await loadedMembers.findById(10);
+    expect(member?.team).toEqual({
       organization: { organization_id: 3, name: "platform" },
       organization_id: 3,
       team_id: 2,
       label: "core",
     });
-    expect(member.roles).toEqual([
+    expect(member?.roles).toEqual([
       { role_id: 7, name: "admin" },
       { role_id: 8, name: "writer" },
     ]);
 
-    const [team] = await teams.findAll({ relations: ["members"] });
+    const [team] = await teams.findAll();
     expect(team.members).toEqual([
       { member_id: 10, name: "kim", team_id: 2 },
       { member_id: 11, name: "lee", team_id: 2 },
@@ -1666,6 +1730,48 @@ describe("MySQL adapter", () => {
     ]);
     expect(page.hasNextPage).toEqual(false);
     expect(calls.length).toEqual(4);
+  });
+
+  test("loads MySQL eager relations without @EntityGraph", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text === "SELECT * FROM `eager_members` WHERE `member_id` = ? LIMIT 1") {
+          return [[{ member_id: values[0], name: "kim", team_id: 2 }], []];
+        }
+
+        if (text === "SELECT * FROM `eager_teams` WHERE `team_id` IN (?)") {
+          return [[{ team_id: 2, label: "core" }], []];
+        }
+
+        if (text === "SELECT * FROM `eager_members` WHERE `team_id` IN (?)") {
+          return [[
+            { member_id: 10, name: "kim", team_id: 2 },
+            { member_id: 11, name: "lee", team_id: 2 },
+          ], []];
+        }
+
+        throw new Error(`Unexpected query: ${text}`);
+      },
+    };
+    const members = createMysqlDerivedQueryRepository(
+      {},
+      { entity: EagerMember, queryable: asMysqlQueryable(queryable) },
+    );
+
+    const member = await members.findById(10);
+
+    expect(member.team).toEqual({
+      members: [
+        { member_id: 10, name: "kim", team_id: 2 },
+        { member_id: 11, name: "lee", team_id: 2 },
+      ],
+      team_id: 2,
+      label: "core",
+    });
+    expect(calls).toHaveLength(3);
   });
 
   test("flushes dirty managed entities through a MySQL repository", async () => {

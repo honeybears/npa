@@ -1,3 +1,5 @@
+import { NPAPaginationError } from "../error";
+
 const PAGEABLE_MARKER = "__pageable";
 
 export interface OffsetPageable {
@@ -56,11 +58,17 @@ export class Pageable {
     assertInteger(size, "size");
 
     if (page < 0) {
-      throw new Error("Offset page must be greater than or equal to 0.");
+      throw new NPAPaginationError("Offset page must be greater than or equal to 0.", {
+        code: "NPA_INVALID_OFFSET_PAGE",
+        details: { page },
+      });
     }
 
     if (size <= 0) {
-      throw new Error("Page size must be greater than 0.");
+      throw new NPAPaginationError("Page size must be greater than 0.", {
+        code: "NPA_INVALID_PAGE_SIZE",
+        details: { size },
+      });
     }
 
     return { [PAGEABLE_MARKER]: true, kind: "offset", page, size };
@@ -74,11 +82,16 @@ export class Pageable {
     assertInteger(options.size, "size");
 
     if (options.size <= 0) {
-      throw new Error("Page size must be greater than 0.");
+      throw new NPAPaginationError("Page size must be greater than 0.", {
+        code: "NPA_INVALID_PAGE_SIZE",
+        details: { size: options.size },
+      });
     }
 
     if (options.after && options.before) {
-      throw new Error("Cursor pagination cannot use both after and before.");
+      throw new NPAPaginationError("Cursor pagination cannot use both after and before.", {
+        code: "NPA_CURSOR_DIRECTION_CONFLICT",
+      });
     }
 
     return {
@@ -183,12 +196,17 @@ export function decodeCursorValues(cursor: string): unknown[] {
     };
 
     if (parsed.v !== 1 || !Array.isArray(parsed.values)) {
-      throw new Error("Invalid cursor.");
+      throw new NPAPaginationError("Invalid cursor.", {
+        code: "NPA_INVALID_CURSOR",
+      });
     }
 
     return parsed.values.map(decodeCursorValue);
   } catch (error) {
-    throw Object.assign(new Error("Invalid cursor."), { cause: error });
+    throw new NPAPaginationError("Invalid cursor.", {
+      code: "NPA_INVALID_CURSOR",
+      cause: error,
+    });
   }
 }
 
@@ -226,7 +244,10 @@ function decodeCursorValue(value: unknown): unknown {
 
 function assertInteger(value: number, name: string): void {
   if (!Number.isInteger(value)) {
-    throw new Error(`Pageable ${name} must be an integer.`);
+    throw new NPAPaginationError(`Pageable ${name} must be an integer.`, {
+      code: name === "page" ? "NPA_INVALID_OFFSET_PAGE" : "NPA_INVALID_PAGE_SIZE",
+      details: { [name]: value },
+    });
   }
 }
 

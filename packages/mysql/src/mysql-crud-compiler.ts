@@ -1,4 +1,8 @@
 import {
+  getOptionalEntityMetadata,
+  NPAPersistenceError,
+} from "@node-persistence-api/core";
+import {
   mysqlEntityColumnProperties,
   normalizeMysqlPropertyValues,
   mysqlPrimaryKeyProperties,
@@ -12,17 +16,20 @@ export function compileMysqlInsert<TEntity extends object>(
   entity: TEntity,
   options: MysqlQueryCompilerOptions,
 ): MysqlCompiledQuery {
+  const primaryKeys = mysqlPrimaryKeyProperties(options);
   const entries = withDefaultVersionEntry(
     definedEntries(entity, options).filter(
       ([property, value]) =>
-        !mysqlPrimaryKeyProperties(options).includes(property) ||
-        (value !== null && value !== undefined),
+        !primaryKeys.includes(property) ||
+        shouldInsertPrimaryKey(property, value, options),
     ),
     options,
   );
 
   if (entries.length === 0) {
-    throw new Error("Cannot insert an entity without values.");
+    throw new NPAPersistenceError("Cannot insert an entity without values.", {
+      code: "NPA_INSERT_VALUES_REQUIRED",
+    });
   }
 
   const columnValues = expandMysqlColumnValues(entries, options);
@@ -52,7 +59,9 @@ export function compileMysqlUpdate<TEntity extends object>(
   );
 
   if (entries.length === 0) {
-    throw new Error("Cannot update an entity without changed values.");
+    throw new NPAPersistenceError("Cannot update an entity without changed values.", {
+      code: "NPA_UPDATE_VALUES_REQUIRED",
+    });
   }
 
   const columnValues = expandMysqlColumnValues(entries, options);
@@ -86,7 +95,9 @@ export function compileMysqlVersionedUpdate<TEntity extends object>(
   );
 
   if (entries.length === 0) {
-    throw new Error("Cannot update an entity without changed values.");
+    throw new NPAPersistenceError("Cannot update an entity without changed values.", {
+      code: "NPA_UPDATE_VALUES_REQUIRED",
+    });
   }
 
   const columnValues = expandMysqlColumnValues(entries, options);
@@ -183,10 +194,16 @@ export function getMysqlPrimaryKeyValue<TEntity extends object>(
   const primaryKeys = mysqlPrimaryKeyProperties(options);
 
   if (primaryKeys.length === 1) {
-    return record[primaryKeys[0]];
+    const property = primaryKeys[0];
+    return normalizePrimaryKeyValue(property, record[property], options);
   }
 
-  const entries = primaryKeys.map((property) => [property, record[property]] as const);
+  const entries = primaryKeys.map(
+    (property) => [
+      property,
+      normalizePrimaryKeyValue(property, record[property], options),
+    ] as const,
+  );
   return entries.some(([, value]) => value === null || value === undefined)
     ? undefined
     : Object.fromEntries(entries);
@@ -205,6 +222,39 @@ function expandMysqlColumnValues(
       value: values[index],
     }));
   });
+}
+
+function shouldInsertPrimaryKey(
+  property: string,
+  value: unknown,
+  options: MysqlQueryCompilerOptions,
+): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  return !isGeneratedPrimaryKey(property, options) || Boolean(value);
+}
+
+function normalizePrimaryKeyValue(
+  property: string,
+  value: unknown,
+  options: MysqlQueryCompilerOptions,
+): unknown {
+  return isGeneratedPrimaryKey(property, options) && !value
+    ? undefined
+    : value;
+}
+
+function isGeneratedPrimaryKey(
+  property: string,
+  options: MysqlQueryCompilerOptions,
+): boolean {
+  const generationStrategy = getOptionalEntityMetadata(options.entity)
+    ?.columns.find((column) => column.primary && column.propertyName === property)
+    ?.generationStrategy;
+
+  return generationStrategy !== undefined && generationStrategy !== "NONE";
 }
 
 function withDefaultVersionEntry(
@@ -238,7 +288,9 @@ function requireMysqlVersionProperty(
   const version = mysqlVersionProperty(options);
 
   if (!version) {
-    throw new Error("A @Version column is required for versioned updates.");
+    throw new NPAPersistenceError("A @Version column is required for versioned updates.", {
+      code: "NPA_VERSION_COLUMN_REQUIRED",
+    });
   }
 
   return version;
@@ -246,7 +298,9 @@ function requireMysqlVersionProperty(
 
 function assertVersion(version: unknown): void {
   if (version === null || version === undefined) {
-    throw new Error("Version value is required.");
+    throw new NPAPersistenceError("Version value is required.", {
+      code: "NPA_VERSION_VALUE_REQUIRED",
+    });
   }
 }
 
@@ -266,7 +320,9 @@ function definedEntries<TEntity extends object>(
 
 function assertId(id: unknown): void {
   if (id === null || id === undefined) {
-    throw new Error("Primary key value is required.");
+    throw new NPAPersistenceError("Primary key value is required.", {
+      code: "NPA_PRIMARY_KEY_REQUIRED",
+    });
   }
 }
 
@@ -293,7 +349,9 @@ function primaryKeyValueEntries(
   }
 
   if (id === null || id === undefined || typeof id !== "object") {
-    throw new Error("Composite primary key value must be an object.");
+    throw new NPAPersistenceError("Composite primary key value must be an object.", {
+      code: "NPA_COMPOSITE_ID_OBJECT_REQUIRED",
+    });
   }
 
   const record = id as Record<string, unknown>;

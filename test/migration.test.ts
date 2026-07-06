@@ -60,6 +60,7 @@ describe("migration metadata", () => {
         joinColumn: "primary_category_id",
         joinColumns: undefined,
         joinTable: undefined,
+        nullable: undefined,
         foreignKeyName: "fk_products_primary_category",
         onDelete: "SET NULL",
         onUpdate: undefined,
@@ -72,6 +73,7 @@ describe("migration metadata", () => {
         joinColumn: undefined,
         joinColumns: undefined,
         joinTable: "product_categories",
+        nullable: undefined,
         foreignKeyName: undefined,
         onDelete: undefined,
         onUpdate: undefined,
@@ -446,6 +448,7 @@ describe("migration metadata", () => {
         joinColumn: "user_id",
         joinColumns: undefined,
         joinTable: undefined,
+        nullable: undefined,
         foreignKeyName: "fk_profiles_user",
         onDelete: undefined,
         onUpdate: undefined,
@@ -506,6 +509,47 @@ describe("migration metadata", () => {
     );
     expect(compileMysqlMigrationStatements({ entities: schemas })).toContain(
       "ALTER TABLE `tenant_members` ADD CONSTRAINT `fk_tenant_members_team_tenant_id_team_team_id_tenant_teams` FOREIGN KEY (`team_tenant_id`, `team_team_id`) REFERENCES `tenant_teams` (`tenant_id`, `team_id`)",
+    );
+  });
+
+  test("creates non-nullable owning relation foreign keys", () => {
+    const schemas = parseEntitySource(`
+      import { Entity, Id, ManyToOne } from "@npa/test";
+
+      @Entity({ name: "users" })
+      class User {
+        @Id({ name: "user_id" })
+        id!: number;
+      }
+
+      @Entity({ name: "posts" })
+      class Post {
+        @Id({ name: "post_id" })
+        id!: number;
+
+        @ManyToOne(() => User, { joinColumn: "user_id", nullable: false })
+        user!: User;
+      }
+    `);
+
+    expect(schemas.find((schema) => schema.className === "Post")?.relations[0]).toMatchObject({
+      nullable: false,
+    });
+    expect(compilePostgresqlMigrationStatements({ entities: schemas })).toContain(
+      [
+        'CREATE TABLE IF NOT EXISTS "posts" (',
+        '  "post_id" INTEGER PRIMARY KEY,',
+        '  "user_id" INTEGER NOT NULL',
+        ")",
+      ].join("\n"),
+    );
+    expect(compileMysqlMigrationStatements({ entities: schemas })).toContain(
+      [
+        "CREATE TABLE IF NOT EXISTS `posts` (",
+        "  `post_id` INT PRIMARY KEY,",
+        "  `user_id` INT NOT NULL",
+        ")",
+      ].join("\n"),
     );
   });
 
@@ -652,13 +696,111 @@ describe("migration metadata", () => {
         adapter: "mysql",
         url: "mysql://localhost/db",
         entities: ["src/**/*.entity.ts"],
+        migrationsDir: "custom/path",
       }),
     ).toEqual({
       adapter: "mysql",
       url: "mysql://localhost/db",
       entities: ["src/**/*.entity.ts"],
-      migrations: { dir: "database/migrations", table: "custom_migrations" },
+      migrations: { dir: "custom/path", table: "custom_migrations" },
     });
+  });
+
+  test("loads DATABASE_URL from .env before importing migration config", async () => {
+    const root = makeTempRoot();
+    const previous = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      fs.writeFileSync(
+        path.join(root, ".env"),
+        "DATABASE_URL=postgresql://localhost/env_db\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(root, "npa.config.mjs"),
+        `export default {
+          url: process.env.DATABASE_URL,
+          entities: "src/**/*.entity.ts"
+        };`,
+        "utf8",
+      );
+
+      expect(await loadMigrationConfig({ cwd: root })).toEqual({
+        adapter: "postgresql",
+        url: "postgresql://localhost/env_db",
+        entities: ["src/**/*.entity.ts"],
+        migrations: { dir: "npa/migrations", table: "_npa_migrations" },
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous;
+      }
+    }
+  });
+
+  test("loads local and NODE_ENV dotenv files with later files taking priority", async () => {
+    const root = makeTempRoot();
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousNodeEnv = process.env.NODE_ENV;
+    delete process.env.DATABASE_URL;
+    process.env.NODE_ENV = "develop";
+
+    try {
+      fs.writeFileSync(path.join(root, ".env"), "DATABASE_URL=postgresql://localhost/base\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.develop"), "DATABASE_URL=postgresql://localhost/develop\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.local"), "DATABASE_URL=postgresql://localhost/local\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.develop.local"), "DATABASE_URL=postgresql://localhost/develop_local\n", "utf8");
+      fs.writeFileSync(
+        path.join(root, "npa.config.mjs"),
+        `export default { url: process.env.DATABASE_URL };`,
+        "utf8",
+      );
+
+      expect((await loadMigrationConfig({ cwd: root })).url).toEqual(
+        "postgresql://localhost/develop_local",
+      );
+    } finally {
+      if (previousDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previousDatabaseUrl;
+      }
+
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+    }
+  });
+
+  test("does not overwrite existing shell variables from dotenv files", async () => {
+    const root = makeTempRoot();
+    const previous = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://localhost/shell";
+
+    try {
+      fs.writeFileSync(path.join(root, ".env"), "DATABASE_URL=postgresql://localhost/env\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.local"), "DATABASE_URL=postgresql://localhost/local\n", "utf8");
+      fs.writeFileSync(
+        path.join(root, "npa.config.mjs"),
+        `export default { url: process.env.DATABASE_URL };`,
+        "utf8",
+      );
+
+      expect((await loadMigrationConfig({ cwd: root })).url).toEqual(
+        "postgresql://localhost/shell",
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous;
+      }
+    }
   });
 
   test("writes and loads migration SQL files deterministically", () => {

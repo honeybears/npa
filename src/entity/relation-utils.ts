@@ -5,6 +5,7 @@ import {
   RelationKind,
   RelationMetadata,
 } from "./types";
+import { NPAMetadataError } from "../error";
 import { getEntityMetadata } from "./metadata-storage";
 
 export interface RelationLoadTree {
@@ -86,8 +87,15 @@ export function readRelationForeignKeyValue(
     );
   }
 
-  throw new Error(
+  throw new NPAMetadataError(
     `Relation ${relation.propertyName} requires ${targetMetadata.target.name}.${targetPrimaryColumn.propertyName} or ${targetPrimaryColumn.columnName}.`,
+    {
+      code: "NPA_RELATION_PRIMARY_VALUE_REQUIRED",
+      details: {
+        relation: relation.propertyName,
+        targetName: targetMetadata.target.name,
+      },
+    },
   );
 }
 
@@ -98,7 +106,10 @@ export function readEntityPrimaryValue(
   const primaryColumns = primaryColumnsOf(metadata);
 
   if (primaryColumns.length === 0) {
-    throw new Error(`Entity ${metadata.target.name} requires an @Id column.`);
+    throw new NPAMetadataError(`Entity ${metadata.target.name} requires an @Id column.`, {
+      code: "NPA_ENTITY_ID_REQUIRED",
+      details: { entityName: metadata.target.name },
+    });
   }
 
   const record = entity as Record<string, unknown>;
@@ -217,7 +228,10 @@ function requirePrimaryColumns(
   const primaryColumns = primaryColumnsOf(metadata);
 
   if (primaryColumns.length === 0) {
-    throw new Error(`${context} targets entity ${metadata.target.name} without an @Id column.`);
+    throw new NPAMetadataError(`${context} targets entity ${metadata.target.name} without an @Id column.`, {
+      code: "NPA_RELATION_TARGET_ID_REQUIRED",
+      details: { context, entityName: metadata.target.name },
+    });
   }
 
   return primaryColumns;
@@ -247,8 +261,17 @@ function readRequiredRelationPrimaryValue(
     );
   }
 
-  throw new Error(
+  throw new NPAMetadataError(
     `Relation ${relation.propertyName} requires ${targetMetadata.target.name}.${primaryColumn.propertyName} or ${primaryColumn.columnName}.`,
+    {
+      code: "NPA_RELATION_PRIMARY_VALUE_REQUIRED",
+      details: {
+        relation: relation.propertyName,
+        targetName: targetMetadata.target.name,
+        propertyName: primaryColumn.propertyName,
+        columnName: primaryColumn.columnName,
+      },
+    },
   );
 }
 
@@ -259,8 +282,16 @@ function requireRelationPrimaryValue(
   value: unknown,
 ): unknown {
   if (value === null || value === undefined) {
-    throw new Error(
+    throw new NPAMetadataError(
       `Relation ${relation.propertyName} requires ${targetMetadata.target.name}.${propertyName}.`,
+      {
+        code: "NPA_RELATION_PRIMARY_VALUE_REQUIRED",
+        details: {
+          relation: relation.propertyName,
+          targetName: targetMetadata.target.name,
+          propertyName,
+        },
+      },
     );
   }
 

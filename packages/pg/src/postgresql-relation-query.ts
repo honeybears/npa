@@ -5,6 +5,9 @@ import {
   getOptionalEntityMetadata,
   joinTableColumnNames,
   relationJoinColumns,
+  NPAMetadataError,
+  NPAPaginationError,
+  NPAQueryError,
   RelationKind,
   RelationMetadata,
 } from "@node-persistence-api/core";
@@ -145,7 +148,9 @@ export class PostgresqlRelationQueryBuilder {
     }
 
     if (relationPath.segments.some((segment) => !isToOneRelation(segment.relation))) {
-      throw new Error("Cursor pagination only supports scalar or @ManyToOne OrderBy properties; @OneToOne is also supported.");
+      throw new NPAPaginationError("Cursor pagination only supports scalar or @ManyToOne OrderBy properties; @OneToOne is also supported.", {
+        code: "NPA_CURSOR_ORDER_UNSUPPORTED",
+      });
     }
 
     const expression = this.column(property);
@@ -190,8 +195,12 @@ export class PostgresqlRelationQueryBuilder {
           return undefined;
         }
 
-        throw new Error(
+        throw new NPAQueryError(
           `Relation query ${this.metadata.target.name}.${property} targets ${currentMetadata.target.name}.${lowerFirst(remaining)}, but that property is not a column.`,
+          {
+            code: "NPA_INVALID_QUERY_PREDICATE",
+            details: { entity: this.metadata.target.name, property },
+          },
         );
       }
 
@@ -385,7 +394,10 @@ function findMappedOwningToOne(
   relation: RelationMetadata,
 ): RelationMetadata {
   if (!relation.mappedBy) {
-    throw new Error(`@${relation.kind === RelationKind.ONE_TO_ONE ? "OneToOne" : "OneToMany"} ${sourceMetadata.target.name}.${relation.propertyName} requires mappedBy.`);
+    throw new NPAMetadataError(`@${relation.kind === RelationKind.ONE_TO_ONE ? "OneToOne" : "OneToMany"} ${sourceMetadata.target.name}.${relation.propertyName} requires mappedBy.`, {
+      code: "NPA_RELATION_MAPPED_BY_REQUIRED",
+      details: { entity: sourceMetadata.target.name, relation: relation.propertyName },
+    });
   }
 
   const targetRelation = targetMetadata.relations.find(
@@ -393,7 +405,10 @@ function findMappedOwningToOne(
   );
 
   if (!targetRelation) {
-    throw new Error(`@${relation.kind === RelationKind.ONE_TO_ONE ? "OneToOne" : "OneToMany"} ${sourceMetadata.target.name}.${relation.propertyName} mappedBy relation was not found.`);
+    throw new NPAMetadataError(`@${relation.kind === RelationKind.ONE_TO_ONE ? "OneToOne" : "OneToMany"} ${sourceMetadata.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
+      code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
+      details: { entity: sourceMetadata.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
+    });
   }
 
   return targetRelation;

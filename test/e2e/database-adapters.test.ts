@@ -68,14 +68,14 @@ describe("database adapter E2E", () => {
             queryable,
           }) as ProductRepository;
 
-          const inserted = await repository.insert({
+          const inserted = await repository.save({
             name: "logging desk",
             price: 120,
             active: true,
             status: "draft",
             createdAt: new Date("2026-01-01T00:00:00.000Z"),
           });
-          await repository.findById(inserted.product_id);
+          await repository.findById(inserted.id);
 
           expect(events.length).toBeGreaterThanOrEqual(2);
           expect(events).toEqual(slowQueries);
@@ -128,15 +128,15 @@ describe("database adapter E2E", () => {
           const members = adapter.createRepository({ entity: Member, queryable }) as RelationRepository;
           const roles = adapter.createRepository({ entity: Role, queryable });
 
-          const platform = await teams.insert({ label: "platform" });
-          const design = await teams.insert({ label: "design" });
+          const platform = await teams.save({ label: "platform" });
+          const design = await teams.save({ label: "design" });
           const platformId = platform.team_id;
           const designId = design.team_id;
 
-          const kim = await members.insert({ name: "kim", team: { id: platformId } });
-          const lee = await members.insert({ name: "lee", team: { id: designId } });
-          const admin = await roles.insert({ name: "admin" });
-          const writer = await roles.insert({ name: "writer" });
+          const kim = await members.save({ name: "kim", team: { id: platformId } });
+          const lee = await members.save({ name: "lee", team: { id: designId } });
+          const admin = await roles.save({ name: "admin" });
+          const writer = await roles.save({ name: "writer" });
 
           await adapter.executeSql(
             queryable,
@@ -162,8 +162,8 @@ describe("database adapter E2E", () => {
           expect(await members.deleteByTeamLabel("design")).toEqual(1);
           expect(await members.existsByTeamLabel("design")).toEqual(false);
 
-          await members.insert({ name: "pager", team: { id: designId } });
-          await members.insert({ name: "pager", team: { id: platformId } });
+          await members.save({ name: "pager", team: { id: designId } });
+          await members.save({ name: "pager", team: { id: platformId } });
 
           const firstPage = await members.findByNameOrderByTeamLabelAsc(
             "pager",
@@ -243,15 +243,15 @@ describe("database adapter E2E", () => {
           const users = adapter.createRepository({ entity: User, queryable }) as OneToOneRepository;
           const profiles = adapter.createRepository({ entity: Profile, queryable }) as OneToOneRepository;
 
-          const kim = await users.insert({ name: "kim" });
-          const lee = await users.insert({ name: "lee" });
-          const kimProfile = await profiles.insert({
+          const kim = await users.save({ name: "kim" });
+          const lee = await users.save({ name: "lee" });
+          const kimProfile = await profiles.save({
             bio: "builder",
-            user: { id: kim.user_id },
+            user: { id: kim.id },
           });
-          await profiles.insert({
+          await profiles.save({
             bio: "designer",
-            user: { id: lee.user_id },
+            user: { id: lee.id },
           });
 
           expect((await users.findByProfileBio("builder")).map((row) => row.name)).toEqual(["kim"]);
@@ -260,17 +260,15 @@ describe("database adapter E2E", () => {
               .map((row) => row.name)).toEqual(["kim"]);
           expect((await profiles.findByUserName("lee")).map((row) => row.bio)).toEqual(["designer"]);
 
-          const loadedProfile = await profiles.findById(kimProfile.profile_id, {
-            relations: { user: true },
-          });
-          expect((loadedProfile?.user as Row).name).toEqual("kim");
+          const loadedProfile = await profiles.findById(kimProfile.profile_id);
+          const loadedProfileUser = await (loadedProfile?.user as Promise<Row>);
+          expect(loadedProfileUser.name).toEqual("kim");
 
-          const loadedUser = await users.findById(kim.user_id, {
-            relations: { profile: true },
-          });
-          expect((loadedUser?.profile as Row).bio).toEqual("builder");
+          const loadedUser = await users.findById(kim.id);
+          const loadedUserProfile = await (loadedUser?.profile as Promise<Row>);
+          expect(loadedUserProfile.bio).toEqual("builder");
 
-          const lazyUser = await users.findById(lee.user_id);
+          const lazyUser = await users.findById(lee.id);
           const lazyProfileFromUser = await (lazyUser?.profile as Promise<Row>);
           expect(lazyProfileFromUser.bio).toEqual("designer");
 
@@ -322,7 +320,7 @@ describe("database adapter E2E", () => {
           const users = adapter.createRepository({ entity: TenantUser, queryable }) as NPARepository<Row, Row>;
           const id = { tenantId: "tenant-a", userId: "user-1" };
 
-          await users.insert({ ...id, name: "kim" });
+          await users.save({ ...id, name: "kim" });
 
           expect(await users.existsById(id)).toEqual(true);
           expect(await users.findById(id)).toMatchObject({
@@ -331,7 +329,7 @@ describe("database adapter E2E", () => {
             name: "kim",
           });
 
-          expect(await users.updateById(id, { name: "lee" })).toMatchObject({
+          expect(await users.save({ ...id, name: "lee" })).toMatchObject({
             tenant_id: "tenant-a",
             user_id: "user-1",
             name: "lee",
@@ -394,8 +392,9 @@ describe("database adapter E2E", () => {
             expect(await repository.count()).toEqual(4);
 
             const [created] = await repository.findAll();
-            await service.renameManagedProduct(created.product_id, "dirty commit");
-            const renamed = await repository.findById(created.product_id);
+            const createdId = entityId(created, "product_id");
+            await service.renameManagedProduct(createdId, "dirty commit");
+            const renamed = await repository.findById(createdId);
             expect(renamed.product_name).toEqual("dirty commit");
             expect(renamed.version).toEqual(1);
           } finally {
@@ -457,7 +456,7 @@ describe("database adapter E2E", () => {
             ],
           } as Row;
 
-          await teams.persist(team);
+          await teams.save(team);
 
           const teamId = entityId(team, "team_id");
           expect(await teams.count()).toEqual(1);
@@ -466,15 +465,14 @@ describe("database adapter E2E", () => {
           expect(await tableCount(adapter, queryable, memberRoleTableName)).toEqual(2);
 
           await runtime.manager.transactional(async () => {
-            const managedTeam = await teams.findById(teamId, {
-              relations: { members: { roles: true } },
-            });
+            const managedTeam = await teams.findById(teamId);
 
             if (!managedTeam) {
               throw new Error("Managed team was not found.");
             }
 
-            managedTeam.members = (managedTeam.members as Row[])
+            const loadedMembers = await (managedTeam.members as Promise<Row[]>);
+            managedTeam.members = loadedMembers
               .filter((member) => member.name !== "lee");
           });
 
@@ -526,43 +524,43 @@ class ProductService {
   }
 
   async createThenFail(): Promise<void> {
-    await this.repository.insert(product("rollback one", 10));
-    await this.repository.insert(product("rollback two", 20));
+    await this.repository.save(product("rollback one", 10));
+    await this.repository.save(product("rollback two", 20));
     throw new Error("rollback");
   }
 
   async createTwo(): Promise<void> {
-    await this.repository.insert(product("commit one", 30));
-    await this.repository.insert(product("commit two", 40));
+    await this.repository.save(product("commit one", 30));
+    await this.repository.save(product("commit two", 40));
   }
 
   async requiredInnerFailure(): Promise<void> {
-    await this.repository.insert(product("required outer", 50));
+    await this.repository.save(product("required outer", 50));
 
     try {
       await this.innerRequiredFailure();
     } catch {
-      await this.repository.insert(product("required recovered", 60));
+      await this.repository.save(product("required recovered", 60));
     }
   }
 
   async innerRequiredFailure(): Promise<void> {
-    await this.repository.insert(product("required inner", 70));
+    await this.repository.save(product("required inner", 70));
     throw new Error("required inner rollback");
   }
 
   async requiresNewInnerFailure(): Promise<void> {
-    await this.repository.insert(product("requires-new outer", 80));
+    await this.repository.save(product("requires-new outer", 80));
 
     try {
       await this.innerRequiresNewFailure();
     } catch {
-      await this.repository.insert(product("requires-new recovered", 90));
+      await this.repository.save(product("requires-new recovered", 90));
     }
   }
 
   async innerRequiresNewFailure(): Promise<void> {
-    await this.repository.insert(product("requires-new inner", 100));
+    await this.repository.save(product("requires-new inner", 100));
     throw new Error("requires-new rollback");
   }
 
@@ -594,25 +592,25 @@ decorateMethod(
 decorateMethod(ProductService, "renameManagedProduct", Transaction());
 
 async function assertPaginationContract(repository: ProductRepository) {
-  await repository.insert(product(
+  await repository.save(product(
     "page alpha",
     10,
     "active",
     new Date("2026-01-01T00:00:00.000Z"),
   ));
-  await repository.insert(product(
+  await repository.save(product(
     "page beta",
     20,
     "active",
     new Date("2026-01-03T00:00:00.000Z"),
   ));
-  await repository.insert(product(
+  await repository.save(product(
     "page gamma",
     30,
     "active",
     new Date("2026-01-03T00:00:00.000Z"),
   ));
-  await repository.insert(product(
+  await repository.save(product(
     "page delta",
     40,
     "active",
@@ -705,10 +703,6 @@ async function assertTransactionIsolation(
 ) {
   const probe = transactionIsolationProbe(adapter);
   const writer = await adapter.createQueryable(container);
-  const writerRepository = adapter.createRepository({
-    entity: createProductEntity(tableName),
-    queryable: writer,
-  });
   let beforeCount;
   let afterCount;
   let transactionIsolation;
@@ -722,9 +716,7 @@ async function assertTransactionIsolation(
             runtime.queryable,
           );
         }
-        await writerRepository.insert(
-          product("isolation probe", 5, "isolation-probe"),
-        );
+        await insertIsolationProbe(adapter, writer, tableName);
         afterCount = await repository.countByStatus("isolation-probe");
       },
       { isolation: probe.isolation },
@@ -736,9 +728,28 @@ async function assertTransactionIsolation(
       expect(normalizeIsolation(transactionIsolation)).toEqual(probe.expectedIsolation);
     }
   } finally {
-    await writerRepository.deleteByStatus("isolation-probe").catch(() => {});
+    await deleteIsolationProbe(adapter, writer, tableName).catch(() => {});
     await adapter.closeQueryable(writer);
   }
+}
+
+async function insertIsolationProbe(adapter, writer, tableName) {
+  const table = adapter.quoteIdentifier(tableName);
+  await adapter.executeSql(
+    writer,
+    [
+      `INSERT INTO ${table}`,
+      "(product_name, price, active, status, created_at, version)",
+      "VALUES ('isolation probe', 5, TRUE, 'isolation-probe', CURRENT_TIMESTAMP, 0)",
+    ].join(" "),
+  );
+}
+
+async function deleteIsolationProbe(adapter, writer, tableName) {
+  await adapter.executeSql(
+    writer,
+    `DELETE FROM ${adapter.quoteIdentifier(tableName)} WHERE status = 'isolation-probe'`,
+  );
 }
 
 function transactionIsolationProbe(adapter) {

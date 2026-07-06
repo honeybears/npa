@@ -1,5 +1,6 @@
 import {
   AbstractTransactionManager,
+  NPADatabaseError,
   TransactionIsolation,
   TransactionOptions,
 } from "@node-persistence-api/core";
@@ -116,7 +117,9 @@ function query<TRow = Record<string, unknown>>(
     return connection.execute<TRow>(text, values);
   }
 
-  throw new Error("MySQL transaction connection requires query() or execute().");
+  throw new NPADatabaseError("MySQL transaction connection requires query() or execute().", {
+    code: "NPA_DATABASE_TRANSACTION_CONNECTION_INVALID",
+  });
 }
 
 function execute<TRow = Record<string, unknown>>(

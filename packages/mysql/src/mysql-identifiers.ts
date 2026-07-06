@@ -2,6 +2,8 @@ import {
   ColumnMetadata,
   EntityMetadata,
   getOptionalEntityMetadata,
+  NPADatabaseError,
+  NPAMetadataError,
   primaryColumnsOf,
   readRelationForeignKeyValue,
   relationJoinColumns,
@@ -16,7 +18,9 @@ export function quoteMysqlTable(options: MysqlQueryCompilerOptions): string {
   const tableName = options.tableName ?? metadata?.tableName;
 
   if (!tableName) {
-    throw new Error("MySQL repository requires tableName or entity metadata.");
+    throw new NPAMetadataError("MySQL repository requires tableName or entity metadata.", {
+      code: "NPA_REPOSITORY_METADATA_REQUIRED",
+    });
   }
 
   const table = quoteQualifiedIdentifier(tableName);
@@ -211,7 +215,9 @@ export function quoteMysqlQualifiedIdentifier(identifier: string): string {
 
 export function quoteMysqlIdentifier(identifier: string): string {
   if (identifier.length === 0) {
-    throw new Error("MySQL identifier must not be empty.");
+    throw new NPADatabaseError("MySQL identifier must not be empty.", {
+      code: "NPA_DATABASE_IDENTIFIER_INVALID",
+    });
   }
 
   return `\`${identifier.replace(/`/g, "``")}\``;

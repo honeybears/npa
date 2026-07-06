@@ -1,3 +1,4 @@
+import { NPATransactionError } from "../error";
 import type { TransactionManager } from "./types";
 
 const transactionManagers = new Set<TransactionManager>();
@@ -11,7 +12,10 @@ export function registerTransactionManager(
     const registered = namedTransactionManagers.get(name);
 
     if (registered && registered !== manager) {
-      throw new Error(`Transaction manager "${name}" is already registered.`);
+      throw new NPATransactionError(`Transaction manager "${name}" is already registered.`, {
+        code: "NPA_TRANSACTION_MANAGER_DUPLICATED",
+        details: { name },
+      });
     }
 
     namedTransactionManagers.set(name, manager);
@@ -32,7 +36,10 @@ export function resolveRegisteredTransactionManager(
     const manager = namedTransactionManagers.get(name);
 
     if (!manager) {
-      throw new Error(`@Transaction could not find transaction manager "${name}".`);
+      throw new NPATransactionError(`@Transaction could not find transaction manager "${name}".`, {
+        code: "NPA_TRANSACTION_MANAGER_NOT_FOUND",
+        details: { name },
+      });
     }
 
     return manager;
@@ -43,8 +50,12 @@ export function resolveRegisteredTransactionManager(
   }
 
   if (transactionManagers.size > 1) {
-    throw new Error(
+    throw new NPATransactionError(
       "@Transaction found multiple transaction managers. Pass @Transaction({ manager }), @Transaction({ managerProperty }), or @Transaction({ managerName }).",
+      {
+        code: "NPA_TRANSACTION_MANAGER_AMBIGUOUS",
+        details: { count: transactionManagers.size },
+      },
     );
   }
 

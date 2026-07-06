@@ -1,17 +1,23 @@
+import { NPADatabaseError } from "@node-persistence-api/core";
 import {
   MysqlOkPacket,
   MysqlQueryResult,
   MysqlRawQueryResult,
   MysqlRepositoryOptions,
 } from "./types";
+import { toMysqlDatabaseError } from "./mysql-database-error";
 
 export async function executeMysqlQuery<TRow = Record<string, unknown>>(
   options: MysqlRepositoryOptions,
   text: string,
   values: unknown[],
 ): Promise<MysqlQueryResult<TRow>> {
-  const raw = await callQueryable<TRow>(options, text, values);
-  return normalizeMysqlResult(raw);
+  try {
+    const raw = await callQueryable<TRow>(options, text, values);
+    return normalizeMysqlResult(raw);
+  } catch (error) {
+    throw toMysqlDatabaseError(error);
+  }
 }
 
 function callQueryable<TRow>(
@@ -31,7 +37,9 @@ function callQueryable<TRow>(
     return options.queryable.execute<TRow>(text, values);
   }
 
-  throw new Error("MySQL queryable requires query() or execute().");
+  throw new NPADatabaseError("MySQL queryable requires query() or execute().", {
+    code: "NPA_DATABASE_CONNECTION_INVALID",
+  });
 }
 
 export function normalizeMysqlResult<TRow>(

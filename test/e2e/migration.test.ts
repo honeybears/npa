@@ -279,7 +279,7 @@ describe("migration E2E", () => {
             "99999999999990_remote_only",
           ),
         );
-        writePendingMigration(root, "99999999999991_create_audit", [
+        writePendingMigration(root, "npa/migrations", "99999999999991_create_audit", [
           createAuditTableSql(adapter, auditTableName),
         ]);
 
@@ -344,6 +344,7 @@ describe("migration E2E", () => {
       const skuUniqueIndexName = uniqueTableName(
         `${adapter.tablePrefix}_migrate_sku_uidx`,
       );
+      const migrationsDir = "database/changes";
       const container = await startContainerOrSkip(adapter.createContainer());
 
       if (!container) {
@@ -360,6 +361,7 @@ describe("migration E2E", () => {
           joinTableName,
           statusIndexName,
           skuUniqueIndexName,
+          migrationsDir,
           url: container.getConnectionUri(),
         });
 
@@ -372,7 +374,7 @@ describe("migration E2E", () => {
           /Created and applied migration \d{14}_init/,
         );
 
-        const migrationRoot = path.join(root, "npa", "migrations");
+        const migrationRoot = path.join(root, migrationsDir);
         const migrationDirs = fs.readdirSync(migrationRoot).sort();
         expect(migrationDirs.length).toEqual(1);
         expect(migrationDirs[0]).toMatch(/^\d{14}_init$/);
@@ -439,10 +441,10 @@ describe("migration E2E", () => {
         });
         await assertRepositoryContract(repository);
 
-        writePendingMigration(root, "99999999999991_create_audit", [
+        writePendingMigration(root, migrationsDir, "99999999999991_create_audit", [
           createAuditTableSql(adapter, auditTableName),
         ]);
-        writePendingMigration(root, "99999999999992_add_audit_reviewed", [
+        writePendingMigration(root, migrationsDir, "99999999999992_add_audit_reviewed", [
           addAuditReviewedColumnSql(adapter, auditTableName),
         ]);
 
@@ -549,7 +551,8 @@ function makeMigrationProject(options) {
     `export default {
       adapter: ${JSON.stringify(options.adapter)},
       url: ${JSON.stringify(options.url)},
-      entities: ["src/**/*.entity.ts"]
+      entities: ["src/**/*.entity.ts"],
+      migrations: { dir: ${JSON.stringify(options.migrationsDir ?? "npa/migrations")} }
     };`,
     "utf8",
   );
@@ -650,8 +653,8 @@ export class Product {
   );
 }
 
-function writePendingMigration(root, name, statements) {
-  const migrationRoot = path.join(root, "npa", "migrations", name);
+function writePendingMigration(root, migrationsDir, name, statements) {
+  const migrationRoot = path.join(root, migrationsDir, name);
   fs.mkdirSync(migrationRoot, { recursive: true });
   fs.writeFileSync(
     path.join(migrationRoot, "migration.sql"),

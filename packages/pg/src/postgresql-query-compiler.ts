@@ -4,6 +4,8 @@ import {
   isOffsetPageable,
   CursorQueryMetadata,
   CursorQueryOrder,
+  NPAPaginationError,
+  NPAQueryError,
   ParsedQueryMethod,
   QueryCondition,
   QueryOrder,
@@ -18,7 +20,6 @@ import {
   normalizePropertyValue,
   normalizePropertyValues,
   primaryKeyProperty,
-  quoteIdentifier,
 } from "./postgresql-identifiers";
 import { PostgresqlRelationQueryBuilder } from "./postgresql-relation-query";
 
@@ -41,11 +42,8 @@ class QueryCompiler {
 
   compile(): PostgresqlCompiledQuery {
     const { query } = this.invocation;
-    if (this.invocation.select && this.invocation.select.length === 0) {
-      throw new Error("Select projection requires at least one property.");
-    }
 
-    this.relationQuery.prepare(query, this.invocation.select ?? []);
+    this.relationQuery.prepare(query);
     const page = this.compilePage(query);
     const from = this.relationQuery.selectFrom();
 
@@ -236,7 +234,10 @@ class QueryCompiler {
     }
 
     if (query.limit !== undefined) {
-      throw new Error(`Query method "${query.methodName}" cannot combine First/Top with Pageable.`);
+      throw new NPAQueryError(`Query method "${query.methodName}" cannot combine First/Top with Pageable.`, {
+        code: "NPA_TOP_PAGEABLE_CONFLICT",
+        details: { methodName: query.methodName },
+      });
     }
 
     const orders = pageOrders(query.orderBy, primaryKeyProperty(this.options));
@@ -261,29 +262,6 @@ class QueryCompiler {
         order.property,
         `__cursor_${index}`,
       );
-      const selected = this.invocation.select ?? [];
-
-      if (selected.length > 0 && !cursorOrder.hidden) {
-        if (selected.includes(order.property)) {
-          return {
-            property: order.property,
-            direction: order.direction,
-            ...cursorOrder,
-            resultKey: order.property,
-          };
-        }
-
-        const resultKey = `__cursor_${index}`;
-        return {
-          property: order.property,
-          direction: order.direction,
-          ...cursorOrder,
-          resultKey,
-          hidden: true,
-          select: `${cursorOrder.expression} AS ${quoteIdentifier(resultKey)}`,
-        };
-      }
-
       return {
         property: order.property,
         direction: order.direction,
@@ -321,20 +299,15 @@ class QueryCompiler {
     const values = decodeCursorValues(token);
 
     if (values.length !== cursor.orders.length) {
-      throw new Error("Invalid cursor.");
+      throw new NPAPaginationError("Invalid cursor.", {
+        code: "NPA_INVALID_CURSOR",
+      });
     }
 
     return compileCursorPredicate(cursor.orders, values, (value) => this.push(value));
   }
 
   private selectTarget(query: ParsedQueryMethod): string {
-    if (this.invocation.select?.length) {
-      const projection = this.invocation.select.map((property) =>
-        `${this.column(property)} AS ${quoteIdentifier(property)}`,
-      ).join(", ");
-      return query.distinct === true ? `DISTINCT ${projection}` : projection;
-    }
-
     const target = this.relationQuery.selectTarget();
     return query.distinct === true ? `DISTINCT ${target}` : target;
   }
@@ -475,14 +448,22 @@ class QueryCompiler {
     const value = this.arg(condition, requireParameterIndex(condition));
 
     if (!Array.isArray(value)) {
-      throw new Error(
+      throw new NPAQueryError(
         `Query operator "${condition.operator}" expects an array parameter.`,
+        {
+          code: "NPA_INVALID_QUERY_PREDICATE",
+          details: { operator: condition.operator },
+        },
       );
     }
 
     if (value.length === 0) {
-      throw new Error(
+      throw new NPAQueryError(
         `Query operator "${condition.operator}" expects a non-empty array parameter.`,
+        {
+          code: "NPA_INVALID_QUERY_PREDICATE",
+          details: { operator: condition.operator },
+        },
       );
     }
 
@@ -503,8 +484,12 @@ class QueryCompiler {
     const value = this.invocation.args[index];
 
     if (value === undefined) {
-      throw new Error(
+      throw new NPAQueryError(
         `Query method "${this.invocation.query.methodName}" parameter for "${condition.property}" must not be undefined.`,
+        {
+          code: "NPA_INVALID_QUERY_PREDICATE",
+          details: { methodName: this.invocation.query.methodName, property: condition.property },
+        },
       );
     }
 
@@ -592,7 +577,10 @@ function groupByOr(predicate: QueryPredicatePart[]): QueryPredicatePart[][] {
 
 function requireParameterIndex(condition: QueryCondition): number {
   if (condition.parameterIndex === undefined) {
-    throw new Error(`Query operator "${condition.operator}" has no parameter.`);
+    throw new NPAQueryError(`Query operator "${condition.operator}" has no parameter.`, {
+      code: "NPA_INVALID_QUERY_PREDICATE",
+      details: { operator: condition.operator },
+    });
   }
 
   return condition.parameterIndex;

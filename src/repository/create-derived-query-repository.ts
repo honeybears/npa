@@ -1,3 +1,4 @@
+import { NPAQueryError } from "../error";
 import {
   assertNoDuplicateQueryPredicates,
   parseQueryMethod,
@@ -29,8 +30,12 @@ export function createDerivedQueryRepository<TRepository extends object>(
       if (rawQuery) {
         return (...args: unknown[]) => {
           if (!rawExecutor) {
-            throw new Error(
+            throw new NPAQueryError(
               `Repository method "${property}" uses @Query, but the adapter does not support raw queries.`,
+              {
+                code: "NPA_RAW_QUERY_RESULT_MODE_UNSUPPORTED",
+                details: { methodName: property },
+              },
             );
           }
 
@@ -85,19 +90,33 @@ function splitQueryArgs(
 
   if (pageable) {
     if (query.action !== "find") {
-      throw new Error(`Query method "${methodName}" only supports Pageable on find queries.`);
+      throw new NPAQueryError(`Query method "${methodName}" only supports Pageable on find queries.`, {
+        code: "NPA_PAGEABLE_UNSUPPORTED_QUERY",
+        details: { methodName, action: query.action },
+      });
     }
 
     if (query.limit !== undefined) {
-      throw new Error(`Query method "${methodName}" cannot combine First/Top with Pageable.`);
+      throw new NPAQueryError(`Query method "${methodName}" cannot combine First/Top with Pageable.`, {
+        code: "NPA_TOP_PAGEABLE_CONFLICT",
+        details: { methodName },
+      });
     }
   }
 
   const queryArgs = pageable ? args.slice(0, -1) : args;
 
   if (queryArgs.length !== query.parameterCount) {
-    throw new Error(
+    throw new NPAQueryError(
       `Query method "${methodName}" expects ${query.parameterCount} parameter(s), received ${args.length}.`,
+      {
+        code: "NPA_QUERY_ARGUMENT_COUNT_MISMATCH",
+        details: {
+          methodName,
+          expected: query.parameterCount,
+          received: args.length,
+        },
+      },
     );
   }
 

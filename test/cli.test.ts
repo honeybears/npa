@@ -17,6 +17,7 @@ describe("migration CLI", () => {
     expect(result.stdout).toMatch(/--allow-destructive/);
     expect(result.stdout).toMatch(/--allow-drift/);
     expect(result.stdout).toMatch(/--rename/);
+    expect(result.stdout).toMatch(/--migrations-dir/);
   });
 
   test("rejects removed generate command", () => {
@@ -142,6 +143,28 @@ describe("migration CLI", () => {
     expectCliSuccess(result);
     expect(result.stdout).toMatch(
       /No migration files found in npa\/migrations/,
+    );
+  });
+
+  test("uses explicit migrations directory for deploy", () => {
+    const root = makeCliFixtureProject();
+    const result = runCli(
+      [
+        "migrate",
+        "deploy",
+        "--adapter",
+        "postgresql",
+        "--url",
+        "postgresql://localhost/db",
+        "--migrations-dir",
+        "database/changes",
+      ],
+      root,
+    );
+
+    expectCliSuccess(result);
+    expect(result.stdout).toMatch(
+      /No migration files found in database\/changes/,
     );
   });
 

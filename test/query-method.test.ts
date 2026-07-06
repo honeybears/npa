@@ -129,6 +129,23 @@ describe("derived query methods", () => {
       parameterCount: 2,
     });
 
+    expect(parseQueryMethod("countDistinctByRolesName")).toEqual({
+      methodName: "countDistinctByRolesName",
+      action: "count",
+      distinct: true,
+      predicate: [
+        {
+          condition: {
+            property: "rolesName",
+            operator: "equals",
+            parameterIndex: 0,
+          },
+        },
+      ],
+      orderBy: [],
+      parameterCount: 1,
+    });
+
     expect(parseQueryMethod("findFirstByName").limit).toEqual(1);
     expect(parseQueryMethod("findTopByName").limit).toEqual(1);
   });
@@ -261,6 +278,51 @@ describe("derived query methods", () => {
     expect(() => repository.countByName("kim", pageable)).toThrow(
       /only supports Pageable on find queries/,
     );
+  });
+
+  test("saveAll delegates to save for each entity", async () => {
+    const calls: object[] = [];
+    const adapter: NPARepositoryAdapter<object, number> = {
+      async findById() {
+        return null;
+      },
+      async findAll() {
+        return [];
+      },
+      async existsById() {
+        return false;
+      },
+      async count() {
+        return 0;
+      },
+      async save(entity) {
+        calls.push(entity);
+        return { ...entity, saved: true };
+      },
+      async remove() {},
+      async delete() {
+        return 0;
+      },
+      async deleteById() {
+        return 0;
+      },
+      async deleteAll() {
+        return 0;
+      },
+      async executeDerivedQuery() {
+        return undefined;
+      },
+    };
+
+    const repository = createNPARepository({}, adapter);
+    const first = { id: 1 };
+    const second = { id: 2 };
+
+    await expect(repository.saveAll([first, second])).resolves.toEqual([
+      { id: 1, saved: true },
+      { id: 2, saved: true },
+    ]);
+    expect(calls).toEqual([first, second]);
   });
 
   test("routes @Query repository methods through the raw query executor", async () => {
@@ -427,14 +489,12 @@ describe("derived query methods", () => {
     );
 
     await repository.findById(1);
-    await repository.findById(2, { relations: ["roles"] });
     await repository.findAll({
       orderBy: [{ property: "name", direction: "desc" }],
       pageable: Pageable.offset(0, 10),
     });
     expect(loads).toEqual([
       { relations: ["team"] },
-      { relations: ["team", "roles"] },
       {
         relations: ["team"],
         orderBy: [{ property: "name", direction: "desc" }],
@@ -511,6 +571,7 @@ describe("derived query methods", () => {
       true,
     );
     expect(repository.countByAgeBetween(25, 35)).toEqual(2);
+    expect(repository.countDistinctByAgeBetween(25, 35)).toEqual(2);
     expect(repository.findByNameContainingIgnoreCase("KIM")).toEqual([
       rows[0],
       rows[2],
@@ -624,100 +685,4 @@ describe("derived query methods", () => {
     expect(previousPage.content).toEqual([rows[0], rows[1]]);
   });
 
-  test("executes find projections with order and offset pages in memory", () => {
-    const rows = [
-      { id: 1, name: "kim", age: 32 },
-      { id: 2, name: "lee", age: 28 },
-      { id: 3, name: "park", age: 41 },
-    ];
-    const executor = new InMemoryRepositoryExecutor(rows);
-
-    expect(
-      executor.execute({
-        query: {
-          methodName: "findAll",
-          action: "find",
-          predicate: [],
-          orderBy: [{ property: "name", direction: "desc" }],
-          parameterCount: 0,
-        },
-        args: [],
-        select: ["id", "name"],
-      }),
-    ).toEqual([
-      { id: 3, name: "park" },
-      { id: 2, name: "lee" },
-      { id: 1, name: "kim" },
-    ]);
-
-    expect(
-      executor.execute({
-        query: {
-          methodName: "findAll",
-          action: "find",
-          predicate: [],
-          orderBy: [{ property: "name", direction: "asc" }],
-          parameterCount: 0,
-        },
-        args: [],
-        select: ["name"],
-        pageable: Pageable.offset(1, 1),
-      }),
-    ).toMatchObject({
-      content: [{ name: "lee" }],
-      totalElements: 3,
-      totalPages: 3,
-    });
-
-    const firstCursorPage = executor.execute({
-      query: {
-        methodName: "findAll",
-        action: "find",
-        predicate: [],
-        orderBy: [{ property: "name", direction: "asc" }],
-        parameterCount: 0,
-      },
-      args: [],
-      select: ["name"],
-      pageable: Pageable.cursor({ size: 2 }),
-    });
-
-    expect((firstCursorPage as { content: unknown[] }).content).toEqual([
-      { name: "kim" },
-      { name: "lee" },
-    ]);
-    expect((firstCursorPage as { hasNextPage: boolean }).hasNextPage).toEqual(true);
-
-    const secondCursorPage = executor.execute({
-      query: {
-        methodName: "findAll",
-        action: "find",
-        predicate: [],
-        orderBy: [{ property: "name", direction: "asc" }],
-        parameterCount: 0,
-      },
-      args: [],
-      select: ["name"],
-      pageable: Pageable.cursor({
-        after: (firstCursorPage as { nextCursor: string }).nextCursor,
-        size: 2,
-      }),
-    }) as { content: unknown[]; hasNextPage: boolean };
-    expect(secondCursorPage.content).toEqual([{ name: "park" }]);
-    expect(secondCursorPage.hasNextPage).toEqual(false);
-
-    expect(() =>
-      executor.execute({
-        query: {
-          methodName: "findAll",
-          action: "find",
-          predicate: [],
-          orderBy: [],
-          parameterCount: 0,
-        },
-        args: [],
-        select: [],
-      }),
-    ).toThrow(/Select projection requires at least one property/);
-  });
 });

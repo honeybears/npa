@@ -1,4 +1,4 @@
-import { createNPARepository } from "@node-persistence-api/core";
+import { createNPARepository, NPAConfigurationError } from "@node-persistence-api/core";
 import type {
   NPACreateRepositoryOptions,
   NPARepository,
@@ -30,7 +30,9 @@ export function mysql(options: MysqlAdapterOptions): NPARuntimeAdapter {
   const queryable = transactionManager?.queryable ?? options.queryable;
 
   if (!queryable) {
-    throw new Error("MySQL adapter requires queryable or connection.");
+    throw new NPAConfigurationError("MySQL adapter requires queryable or connection.", {
+      code: "NPA_ADAPTER_REQUIRED",
+    });
   }
 
   return {

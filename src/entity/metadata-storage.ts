@@ -1,3 +1,4 @@
+import { NPAMetadataError } from "../error";
 import {
   CascadeType,
   ColumnMetadata,
@@ -5,6 +6,7 @@ import {
   EntityMetadata,
   EntityOptions,
   EntityTarget,
+  FetchType,
   IndexMetadata,
   IndexOptions,
   RelationKind,
@@ -141,7 +143,9 @@ export function registerIndex(
   const propertyNames = options.columns;
 
   if (propertyNames.length === 0) {
-    throw new Error("Class-level indexes require at least one column.");
+    throw new NPAMetadataError("Class-level indexes require at least one column.", {
+      code: "NPA_INVALID_DECORATOR_OPTIONS",
+    });
   }
 
   const index: IndexMetadata = {
@@ -172,6 +176,8 @@ export function registerRelation(
     joinColumn: options.joinColumn,
     joinColumns: options.joinColumns,
     joinTable: options.joinTable,
+    nullable: options.nullable ?? true,
+    fetch: normalizeFetch(options.fetch),
     foreignKeyName: options.foreignKeyName,
     onDelete: options.onDelete,
     onUpdate: options.onUpdate,
@@ -186,7 +192,10 @@ export function getEntityMetadata<TEntity extends object>(
   const metadata = metadataByTarget.get(target);
 
   if (!metadata?.tableName) {
-    throw new Error(`Entity metadata for "${target.name}" was not registered.`);
+    throw new NPAMetadataError(`Entity metadata for "${target.name}" was not registered.`, {
+      code: "NPA_ENTITY_METADATA_NOT_FOUND",
+      details: { entityName: target.name },
+    });
   }
 
   return {
@@ -312,13 +321,34 @@ function readCascadeType(value: CascadeType | `${CascadeType}`): CascadeType {
     case CascadeType.REMOVE:
       return CascadeType.REMOVE;
     default:
-      throw new Error(`Unsupported cascade type "${value}".`);
+      throw new NPAMetadataError(`Unsupported cascade type "${value}".`, {
+        code: "NPA_UNSUPPORTED_CASCADE_TYPE",
+        details: { value },
+      });
+  }
+}
+
+function normalizeFetch(fetch: RelationOptions["fetch"]): FetchType {
+  switch (fetch) {
+    case undefined:
+    case FetchType.LAZY:
+      return FetchType.LAZY;
+    case FetchType.EAGER:
+      return FetchType.EAGER;
+    default:
+      throw new NPAMetadataError(`Unsupported fetch type "${String(fetch)}".`, {
+        code: "NPA_UNSUPPORTED_FETCH_TYPE",
+        details: { fetch },
+      });
   }
 }
 
 function toPropertyName(propertyKey: string | symbol): string {
   if (typeof propertyKey === "symbol") {
-    throw new Error("Symbol properties are not supported as entity fields.");
+    throw new NPAMetadataError("Symbol properties are not supported as entity fields.", {
+      code: "NPA_SYMBOL_PROPERTY_UNSUPPORTED",
+      details: { propertyKey: String(propertyKey) },
+    });
   }
 
   return propertyKey;

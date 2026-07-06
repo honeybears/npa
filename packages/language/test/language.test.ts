@@ -160,6 +160,21 @@ describe("language helpers", () => {
     expect(countCompletion.signature).toEqual("countByNameOrAgeGreaterThan(name: string, age: number): Promise<number>;");
   });
 
+  test("generates countDistinct completions", () => {
+    const workspace = createWorkspace();
+    const user = workspace.entities.find((entity) => entity.className === "User");
+    const exact = getNPAQueryMethodCompletions({
+      prefix: "countDistinctByTeamNa",
+      entity: user,
+      workspace,
+      limit: 20,
+    }).find((completion) => completion.name === "countDistinctByTeamName");
+
+    expect(exact).toBeTruthy();
+    expect(exact.signature).toEqual("countDistinctByTeamName(teamName: string): Promise<number>;");
+    expect(exact.returnType).toEqual("Promise<number>");
+  });
+
   test("rejects exact duplicate predicates while allowing different operators", () => {
     const workspace = createWorkspace();
     const user = workspace.entities.find((entity) => entity.className === "User");

@@ -1,6 +1,6 @@
 {
   "name": "@node-persistence-api/core",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "Core Node and TypeScript persistence API with JPA-style repositories",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

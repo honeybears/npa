@@ -1,11 +1,12 @@
-import { createNPARepository } from "@node-persistence-api/core";
+import { createNPARepository, NPAConfigurationError } from "@node-persistence-api/core";
 import type {
   NPACreateRepositoryOptions,
   NPARepository,
   NPARuntimeAdapter,
 } from "@node-persistence-api/core";
+import { toPostgresqlDatabaseError } from "./postgresql-database-error";
 import { PostgresqlRepositoryExecutor } from "./postgresql-repository-executor";
-import { PostgresqlQueryable } from "./types";
+import { PostgresqlQueryable, PostgresqlQueryResult } from "./types";
 import {
   PostgresqlTransactionConnection,
   PostgresqlTransactionManager,
@@ -21,10 +22,14 @@ export function postgresql(
   const transactionManager = options.connection
     ? new PostgresqlTransactionManager(options.connection)
     : undefined;
-  const queryable = transactionManager?.queryable ?? options.queryable;
+  const queryable = wrapPostgresqlQueryable(
+    transactionManager?.queryable ?? options.queryable,
+  );
 
   if (!queryable) {
-    throw new Error("PostgreSQL adapter requires queryable or connection.");
+    throw new NPAConfigurationError("PostgreSQL adapter requires queryable or connection.", {
+      code: "NPA_ADAPTER_REQUIRED",
+    });
   }
 
   return {
@@ -51,6 +56,27 @@ export function postgresql(
       ) as TRepository;
 
       return createNPARepository(target, executor);
+    },
+  };
+}
+
+function wrapPostgresqlQueryable(
+  queryable: PostgresqlQueryable | undefined,
+): PostgresqlQueryable | undefined {
+  if (!queryable) {
+    return undefined;
+  }
+
+  return {
+    query: async <TRow = Record<string, unknown>>(
+      text: string,
+      values?: unknown[],
+    ): Promise<PostgresqlQueryResult<TRow>> => {
+      try {
+        return await queryable.query<TRow>(text, values);
+      } catch (error) {
+        throw toPostgresqlDatabaseError(error);
+      }
     },
   };
 }
