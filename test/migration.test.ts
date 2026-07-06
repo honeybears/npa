@@ -706,6 +706,103 @@ describe("migration metadata", () => {
     });
   });
 
+  test("loads DATABASE_URL from .env before importing migration config", async () => {
+    const root = makeTempRoot();
+    const previous = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      fs.writeFileSync(
+        path.join(root, ".env"),
+        "DATABASE_URL=postgresql://localhost/env_db\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(root, "npa.config.mjs"),
+        `export default {
+          url: process.env.DATABASE_URL,
+          entities: "src/**/*.entity.ts"
+        };`,
+        "utf8",
+      );
+
+      expect(await loadMigrationConfig({ cwd: root })).toEqual({
+        adapter: "postgresql",
+        url: "postgresql://localhost/env_db",
+        entities: ["src/**/*.entity.ts"],
+        migrations: { dir: "npa/migrations", table: "_npa_migrations" },
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous;
+      }
+    }
+  });
+
+  test("loads local and NODE_ENV dotenv files with later files taking priority", async () => {
+    const root = makeTempRoot();
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousNodeEnv = process.env.NODE_ENV;
+    delete process.env.DATABASE_URL;
+    process.env.NODE_ENV = "develop";
+
+    try {
+      fs.writeFileSync(path.join(root, ".env"), "DATABASE_URL=postgresql://localhost/base\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.develop"), "DATABASE_URL=postgresql://localhost/develop\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.local"), "DATABASE_URL=postgresql://localhost/local\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.develop.local"), "DATABASE_URL=postgresql://localhost/develop_local\n", "utf8");
+      fs.writeFileSync(
+        path.join(root, "npa.config.mjs"),
+        `export default { url: process.env.DATABASE_URL };`,
+        "utf8",
+      );
+
+      expect((await loadMigrationConfig({ cwd: root })).url).toEqual(
+        "postgresql://localhost/develop_local",
+      );
+    } finally {
+      if (previousDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previousDatabaseUrl;
+      }
+
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+    }
+  });
+
+  test("does not overwrite existing shell variables from dotenv files", async () => {
+    const root = makeTempRoot();
+    const previous = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://localhost/shell";
+
+    try {
+      fs.writeFileSync(path.join(root, ".env"), "DATABASE_URL=postgresql://localhost/env\n", "utf8");
+      fs.writeFileSync(path.join(root, ".env.local"), "DATABASE_URL=postgresql://localhost/local\n", "utf8");
+      fs.writeFileSync(
+        path.join(root, "npa.config.mjs"),
+        `export default { url: process.env.DATABASE_URL };`,
+        "utf8",
+      );
+
+      expect((await loadMigrationConfig({ cwd: root })).url).toEqual(
+        "postgresql://localhost/shell",
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous;
+      }
+    }
+  });
+
   test("writes and loads migration SQL files deterministically", () => {
     const root = makeTempRoot();
     const statements = [

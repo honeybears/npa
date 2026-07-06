@@ -350,6 +350,11 @@ export default {
 };
 ```
 
+The CLI automatically loads `.env`, `.env.${NODE_ENV}`, `.env.local`, and
+`.env.${NODE_ENV}.local` from the working directory before importing
+`npa.config.mjs`. Existing shell variables are never overwritten, and later env
+files override earlier ones.
+
 Preview SQL without touching the database:
 
 ```bash

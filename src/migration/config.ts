@@ -17,6 +17,7 @@ const DEFAULT_MIGRATIONS_TABLE = "_npa_migrations";
 export async function loadMigrationConfig(
   options: LoadMigrationConfigOptions,
 ): Promise<ResolvedMigrationConfig> {
+  loadDotEnv(options.cwd);
   const config = await loadConfigFile(options.cwd, options.config);
   const url = options.url ?? config.url;
   const adapter = resolveAdapter(options.adapter ?? config.adapter, url);
@@ -150,6 +151,56 @@ function normalizeEntities(value: string | string[] | undefined): string[] {
   const normalized = values.map((item) => item.trim()).filter(Boolean);
 
   return normalized.length > 0 ? normalized : DEFAULT_ENTITIES;
+}
+
+function loadDotEnv(cwd: string): void {
+  const initialEnvKeys = new Set(Object.keys(process.env));
+  const nodeEnv = process.env.NODE_ENV?.trim();
+  const fileNames = [
+    ".env",
+    ...(nodeEnv ? [`.env.${nodeEnv}`] : []),
+    ".env.local",
+    ...(nodeEnv ? [`.env.${nodeEnv}.local`] : []),
+  ];
+
+  for (const fileName of fileNames) {
+    loadDotEnvFile(path.resolve(cwd, fileName), initialEnvKeys);
+  }
+}
+
+function loadDotEnvFile(
+  filePath: string,
+  initialEnvKeys: Set<string>,
+): void {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+
+  for (const line of lines) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)?\s*$/);
+
+    if (!match || initialEnvKeys.has(match[1])) {
+      continue;
+    }
+
+    process.env[match[1]] = parseDotEnvValue(match[2] ?? "");
+  }
+}
+
+function parseDotEnvValue(value: string): string {
+  const trimmed = value.trim();
+  const quote = trimmed[0];
+
+  if (
+    (quote === "\"" || quote === "'") &&
+    trimmed.endsWith(quote)
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed.replace(/\s+#.*$/, "");
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
