@@ -1,10 +1,16 @@
 #!/usr/bin/env node
+import { runInitCommand } from "./init";
 import { runDbCommand, runMigrateCommand } from "../migration/cli";
 
 async function runNPACli(argv: string[], cwd = process.cwd()): Promise<number> {
   const [command, ...args] = argv;
 
   try {
+    if (command === "init") {
+      await runInitCommand(args, cwd);
+      return 0;
+    }
+
     if (command === "migrate") {
       await runMigrateCommand(args, cwd);
       return 0;
@@ -25,9 +31,14 @@ async function runNPACli(argv: string[], cwd = process.cwd()): Promise<number> {
 
 function printHelp(): void {
   process.stdout.write(`Usage:
+  npa init [--db pg|mysql] [--example]
   npa db push [--config npa.config.mjs] [--dry-run] [--allow-destructive]
   npa migrate dev [--name init] [--config npa.config.mjs]
   npa migrate deploy [--config npa.config.mjs]
+
+Init options:
+  --db <name>           Database adapter: pg, postgresql, or mysql.
+  --example             Add a sample User entity and repository.
 
 Database and migrate options:
   --config <file>       Config file path. Defaults to npa.config.mjs when present.

@@ -38,6 +38,16 @@ MySQL:
 npm install @node-persistence-api/connector-mysql
 ```
 
+Initialize project config after installing a connector:
+
+```bash
+npx npa init --db pg
+npx npa init --db mysql --example
+```
+
+Omit `--db` to choose PostgreSQL or MySQL from the CLI prompt. `--example`
+adds a sample `User` entity and repository.
+
 ## Examples
 
 The repository includes local workspace demos for PostgreSQL, MySQL, and editor

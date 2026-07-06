@@ -11,6 +11,7 @@ describe("migration CLI", () => {
     expectCliSuccess(result);
     expect(result.stdout).toMatch(/Usage:/);
     expect(result.stdout).not.toMatch(/npa generate/);
+    expect(result.stdout).toMatch(/npa init/);
     expect(result.stdout).toMatch(/npa db push/);
     expect(result.stdout).toMatch(/npa migrate dev/);
     expect(result.stdout).toMatch(/npa migrate deploy/);
@@ -30,6 +31,43 @@ describe("migration CLI", () => {
     expect(result.status).toEqual(1);
     expect(result.stdout).toMatch(/Usage:/);
     expect(result.stdout).not.toMatch(/npa generate/);
+  });
+
+  test("initializes NPA config for explicit PostgreSQL adapter", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "npa-init-"));
+    const result = runCli(["init", "--db", "pg"], root);
+
+    expectCliSuccess(result);
+    expect(result.stdout).toMatch(/Initialized NPA for postgresql/);
+    expect(fs.readFileSync(path.join(root, "npa.config.mjs"), "utf8"))
+      .toMatch(/adapter: "postgresql"/);
+    expect(fs.readFileSync(path.join(root, ".env.example"), "utf8"))
+      .toMatch(/postgresql:\/\/postgres:postgres@localhost:5432\/npa/);
+    expect(fs.existsSync(path.join(root, "src", "user.entity.ts")))
+      .toEqual(false);
+  });
+
+  test("initializes MySQL example files", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "npa-init-"));
+    const result = runCli(["init", "--db=mysql", "--example"], root);
+
+    expectCliSuccess(result);
+    expect(fs.readFileSync(path.join(root, "npa.config.mjs"), "utf8"))
+      .toMatch(/adapter: "mysql"/);
+    expect(fs.readFileSync(path.join(root, "src", "user.entity.ts"), "utf8"))
+      .toMatch(/class User/);
+    expect(fs.readFileSync(path.join(root, "src", "user.repository.ts"), "utf8"))
+      .toMatch(/extends NPARepository<User, number>/);
+  });
+
+  test("prompts for database when init omits --db", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "npa-init-"));
+    const result = runCli(["init"], root, "2\n");
+
+    expectCliSuccess(result);
+    expect(result.stdout).toMatch(/Select a database/);
+    expect(fs.readFileSync(path.join(root, "npa.config.mjs"), "utf8"))
+      .toMatch(/adapter: "mysql"/);
   });
 
   test("prints migrate dry-run SQL", () => {
@@ -231,6 +269,7 @@ describe("migration CLI", () => {
 function runCli(
   args: string[],
   cwd = process.cwd(),
+  input?: string,
 ): childProcess.SpawnSyncReturns<string> {
   ensureBuiltCli();
 
@@ -240,6 +279,7 @@ function runCli(
     {
       cwd,
       encoding: "utf8",
+      input,
     },
   );
 }
