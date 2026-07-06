@@ -1,4 +1,4 @@
-import { AbstractTransactionManager, Column, CreatedAt, Entity, EntityGraph, Id, Loaded, ManyToMany, ManyToOne, NPADatabaseError, NPARepository, OneToOne, OneToMany, Pageable, Query, Repository, UpdatedAt, Version, createNPA, defineEntityGraph, parseQueryMethod } from "../../../src";
+import { AbstractTransactionManager, Column, CreatedAt, Entity, EntityGraph, FetchType, Id, Loaded, ManyToMany, ManyToOne, NPADatabaseError, NPARepository, OneToOne, OneToMany, Pageable, Query, Repository, UpdatedAt, Version, createNPA, defineEntityGraph, parseQueryMethod } from "../../../src";
 import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
@@ -146,6 +146,30 @@ class Member {
 
   @ManyToMany(() => Role, { joinTable: "member_roles" })
   roles!: Role[];
+}
+
+@Entity({ name: "eager_teams" })
+class EagerTeam {
+  @Id({ name: "team_id" })
+  id!: number;
+
+  @Column()
+  label!: string;
+
+  @OneToMany(() => EagerMember, { mappedBy: "team", fetch: FetchType.EAGER })
+  members!: EagerMember[];
+}
+
+@Entity({ name: "eager_members" })
+class EagerMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => EagerTeam, { joinColumn: "team_id", fetch: FetchType.EAGER })
+  team!: EagerTeam;
 }
 
 const memberGraph = defineEntityGraph<Member>({
@@ -1623,6 +1647,48 @@ describe("MySQL adapter", () => {
     ]);
     expect(page.hasNextPage).toEqual(false);
     expect(calls.length).toEqual(4);
+  });
+
+  test("loads MySQL eager relations without @EntityGraph", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text === "SELECT * FROM `eager_members` WHERE `member_id` = ? LIMIT 1") {
+          return [[{ member_id: values[0], name: "kim", team_id: 2 }], []];
+        }
+
+        if (text === "SELECT * FROM `eager_teams` WHERE `team_id` IN (?)") {
+          return [[{ team_id: 2, label: "core" }], []];
+        }
+
+        if (text === "SELECT * FROM `eager_members` WHERE `team_id` IN (?)") {
+          return [[
+            { member_id: 10, name: "kim", team_id: 2 },
+            { member_id: 11, name: "lee", team_id: 2 },
+          ], []];
+        }
+
+        throw new Error(`Unexpected query: ${text}`);
+      },
+    };
+    const members = createMysqlDerivedQueryRepository(
+      {},
+      { entity: EagerMember, queryable: asMysqlQueryable(queryable) },
+    );
+
+    const member = await members.findById(10);
+
+    expect(member.team).toEqual({
+      members: [
+        { member_id: 10, name: "kim", team_id: 2 },
+        { member_id: 11, name: "lee", team_id: 2 },
+      ],
+      team_id: 2,
+      label: "core",
+    });
+    expect(calls).toHaveLength(3);
   });
 
   test("flushes dirty managed entities through a MySQL repository", async () => {

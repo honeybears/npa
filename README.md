@@ -141,10 +141,11 @@ values that should be persisted or removed with the owning operation. For
 entities when configured; remove operations also clean join rows. Loaded owner
 or inverse `@ManyToMany` arrays flush join-table rows. Loaded `@OneToMany`
 arrays update the owning `@ManyToOne` foreign key; set `orphanRemoval: true` to
-delete children removed from the collection. `Relation<T>` lets a relation field
-hold either a lazy promise or an explicitly loaded value. Entity classes must be
-exported so repositories, application code, and migration tooling can reference
-them.
+delete children removed from the collection. Relations are lazy by default; set
+`fetch: FetchType.EAGER` to load a relation automatically with repository reads.
+`Relation<T>` lets a relation field hold either a lazy promise or an explicitly
+loaded value. Entity classes must be exported so repositories, application code,
+and migration tooling can reference them.
 
 ## Repository Usage
 
@@ -667,7 +668,7 @@ before treating NPA as a fuller ORM:
 - Query planning: cache parsed method names and compiled SQL templates per entity, adapter, and method name so repeat calls only bind values.
 - Query API: add aggregate/groupBy support and bulk update by condition.
 - Batching: add findUnique-style same-tick batching and relation-loading batching inside transaction-aware scopes.
-- Relations: support eager fetch strategies and safer relation mutation helpers.
+- Relations: add safer relation mutation helpers.
 - Entity mapping: add enum/json/array types, embedded value objects, column transformers, inheritance, and lifecycle hooks.
 - Migrations: add data migration hooks and richer DDL for defaults/generated columns/enums.
 - Transactions: add more propagation modes.

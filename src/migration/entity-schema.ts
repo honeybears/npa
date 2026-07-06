@@ -435,6 +435,7 @@ function readRelationOptions(rawArguments: string, context: string): DecoratorOp
     "onUpdate",
     "cascade",
     "orphanRemoval",
+    "fetch",
   ]);
 }
 
@@ -551,7 +552,7 @@ function parseDecoratorOptions(
       continue;
     }
 
-    if (key === "cascade") {
+    if (key === "cascade" || key === "fetch") {
       continue;
     }
 

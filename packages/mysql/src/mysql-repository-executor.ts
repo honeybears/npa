@@ -28,6 +28,7 @@ import {
   RepositoryMethodInvocation,
   RepositoryRawQueryExecutor,
   stripCursorKeys,
+  withEagerRelations,
   withUpdatedAtTimestamp,
 } from "@node-persistence-api/core";
 import {
@@ -527,9 +528,11 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     entities: TEntity[],
     load: NPALoadOptions<TEntity> | undefined,
   ): Promise<TEntity[]> {
+    const entity = this.getEntityTarget();
+
     return loadMysqlRelations(entities, {
-      entity: this.getEntityTarget(),
-      load,
+      entity,
+      load: withEagerRelations(entity, load),
       preferExecute: this.options.preferExecute,
       queryable: this.options.queryable,
     });

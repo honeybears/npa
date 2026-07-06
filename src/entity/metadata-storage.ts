@@ -5,6 +5,7 @@ import {
   EntityMetadata,
   EntityOptions,
   EntityTarget,
+  FetchType,
   IndexMetadata,
   IndexOptions,
   RelationKind,
@@ -173,6 +174,7 @@ export function registerRelation(
     joinColumns: options.joinColumns,
     joinTable: options.joinTable,
     nullable: options.nullable ?? true,
+    fetch: normalizeFetch(options.fetch),
     foreignKeyName: options.foreignKeyName,
     onDelete: options.onDelete,
     onUpdate: options.onUpdate,
@@ -314,6 +316,18 @@ function readCascadeType(value: CascadeType | `${CascadeType}`): CascadeType {
       return CascadeType.REMOVE;
     default:
       throw new Error(`Unsupported cascade type "${value}".`);
+  }
+}
+
+function normalizeFetch(fetch: RelationOptions["fetch"]): FetchType {
+  switch (fetch) {
+    case undefined:
+    case FetchType.LAZY:
+      return FetchType.LAZY;
+    case FetchType.EAGER:
+      return FetchType.EAGER;
+    default:
+      throw new Error(`Unsupported fetch type "${String(fetch)}".`);
   }
 }
 

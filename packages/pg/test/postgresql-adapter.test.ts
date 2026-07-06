@@ -22,6 +22,7 @@ import {
   CreatedAt,
   Entity,
   EntityGraph,
+  FetchType,
   Id,
   Loaded,
   ManyToMany,
@@ -203,6 +204,30 @@ class PgMember {
 
   @ManyToMany(() => PgRole, { joinTable: "member_roles" })
   roles!: PgRole[];
+}
+
+@Entity({ name: "pg_eager_teams" })
+class PgEagerTeam {
+  @Id({ name: "team_id" })
+  id!: number;
+
+  @Column()
+  label!: string;
+
+  @OneToMany(() => PgEagerMember, { mappedBy: "team", fetch: FetchType.EAGER })
+  members!: PgEagerMember[];
+}
+
+@Entity({ name: "pg_eager_members" })
+class PgEagerMember {
+  @Id({ name: "member_id" })
+  id!: number;
+
+  @Column()
+  name!: string;
+
+  @ManyToOne(() => PgEagerTeam, { joinColumn: "team_id", fetch: FetchType.EAGER })
+  team!: PgEagerTeam;
 }
 
 const memberGraph = defineEntityGraph<PgMember>({
@@ -1793,6 +1818,50 @@ describe("PostgreSQL adapter", () => {
     ]);
     expect(page.hasNextPage).toEqual(false);
     expect(calls.length).toEqual(4);
+  });
+
+  test("loads PostgreSQL eager relations without @EntityGraph", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+
+        if (text === 'SELECT * FROM "pg_eager_members" WHERE "member_id" = $1 LIMIT 1') {
+          return { rows: [{ member_id: values[0], name: "kim", team_id: 2 }] };
+        }
+
+        if (text === 'SELECT * FROM "pg_eager_teams" WHERE "team_id" IN ($1)') {
+          return { rows: [{ team_id: 2, label: "core" }] };
+        }
+
+        if (text === 'SELECT * FROM "pg_eager_members" WHERE "team_id" IN ($1)') {
+          return {
+            rows: [
+              { member_id: 10, name: "kim", team_id: 2 },
+              { member_id: 11, name: "lee", team_id: 2 },
+            ],
+          };
+        }
+
+        throw new Error(`Unexpected query: ${text}`);
+      },
+    };
+    const members = createPostgresqlDerivedQueryRepository(
+      {},
+      { entity: PgEagerMember, queryable: queryable as PostgresqlQueryable },
+    );
+
+    const member = await members.findById(10);
+
+    expect(member.team).toEqual({
+      members: [
+        { member_id: 10, name: "kim", team_id: 2 },
+        { member_id: 11, name: "lee", team_id: 2 },
+      ],
+      team_id: 2,
+      label: "core",
+    });
+    expect(calls).toHaveLength(3);
   });
 
   test("flushes dirty managed entities through a PostgreSQL repository", async () => {

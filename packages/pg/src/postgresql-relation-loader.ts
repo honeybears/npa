@@ -9,6 +9,7 @@ import {
   RelationMetadata,
   joinTableColumnNames,
   primaryColumnsOf,
+  withEagerRelations,
 } from "@node-persistence-api/core";
 import { quoteIdentifier, quoteQualifiedIdentifier } from "./postgresql-identifiers";
 import { PostgresqlQueryable } from "./types";
@@ -19,6 +20,7 @@ export async function loadPostgresqlRelations<TEntity extends object>(
     entity?: new (...args: any[]) => TEntity;
     queryable: PostgresqlQueryable;
     load?: NPALoadOptions<TEntity>;
+    eagerPath?: Array<new (...args: any[]) => object>;
   },
 ): Promise<TEntity[]> {
   if (entities.length === 0 || !options.load?.relations) {
@@ -30,7 +32,9 @@ export async function loadPostgresqlRelations<TEntity extends object>(
   }
 
   const metadata = getEntityMetadata(options.entity);
-  const relationSelections = selectRelations(metadata, options.load.relations);
+  const eagerPath = [...(options.eagerPath ?? []), options.entity];
+  const load = withEagerRelations(options.entity, options.load, options.eagerPath);
+  const relationSelections = selectRelations(metadata, load?.relations ?? []);
 
   for (const { relation, nested } of relationSelections) {
     let loaded: object[];
@@ -51,6 +55,7 @@ export async function loadPostgresqlRelations<TEntity extends object>(
       await loadPostgresqlRelations(loaded, {
         entity: relation.target() as new (...args: any[]) => object,
         load: { relations: nested },
+        eagerPath,
         queryable: options.queryable,
       });
     }

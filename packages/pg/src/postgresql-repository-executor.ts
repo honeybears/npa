@@ -28,6 +28,7 @@ import {
   RepositoryMethodInvocation,
   RepositoryRawQueryExecutor,
   stripCursorKeys,
+  withEagerRelations,
   withUpdatedAtTimestamp,
 } from "@node-persistence-api/core";
 import {
@@ -494,9 +495,11 @@ export class PostgresqlRepositoryExecutor<TEntity extends object, TId = unknown>
     entities: TEntity[],
     load: NPALoadOptions<TEntity> | undefined,
   ): Promise<TEntity[]> {
+    const entity = this.getEntityTarget();
+
     return loadPostgresqlRelations(entities, {
-      entity: this.getEntityTarget(),
-      load,
+      entity,
+      load: withEagerRelations(entity, load),
       queryable: this.options.queryable,
     });
   }

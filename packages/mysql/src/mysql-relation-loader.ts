@@ -9,6 +9,7 @@ import {
   RelationKind,
   RelationMetadata,
   joinTableColumnNames,
+  withEagerRelations,
 } from "@node-persistence-api/core";
 import { executeMysqlQuery } from "./mysql-result";
 import { MysqlQueryable } from "./types";
@@ -20,6 +21,7 @@ export async function loadMysqlRelations<TEntity extends object>(
     queryable: MysqlQueryable;
     preferExecute?: boolean;
     load?: NPALoadOptions<TEntity>;
+    eagerPath?: Array<new (...args: any[]) => object>;
   },
 ): Promise<TEntity[]> {
   if (entities.length === 0 || !options.load?.relations) {
@@ -31,7 +33,9 @@ export async function loadMysqlRelations<TEntity extends object>(
   }
 
   const metadata = getEntityMetadata(options.entity);
-  const relationSelections = selectRelations(metadata, options.load.relations);
+  const eagerPath = [...(options.eagerPath ?? []), options.entity];
+  const load = withEagerRelations(options.entity, options.load, options.eagerPath);
+  const relationSelections = selectRelations(metadata, load?.relations ?? []);
 
   for (const { relation, nested } of relationSelections) {
     let loaded: object[];
@@ -52,6 +56,7 @@ export async function loadMysqlRelations<TEntity extends object>(
       await loadMysqlRelations(loaded, {
         entity: relation.target() as new (...args: any[]) => object,
         load: { relations: nested },
+        eagerPath,
         preferExecute: options.preferExecute,
         queryable: options.queryable,
       });

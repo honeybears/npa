@@ -4,6 +4,7 @@ import {
   Column,
   CreatedAt,
   Entity,
+  FetchType,
   GenerationStrategy,
   Id,
   Index,
@@ -77,6 +78,7 @@ class User {
   @ManyToOne(() => Team, {
     joinColumn: "team_id",
     cascade: [CascadeType.PERSIST, CascadeType.REMOVE],
+    fetch: FetchType.EAGER,
   })
   team?: Team;
 
@@ -217,6 +219,7 @@ describe("entity metadata", () => {
           joinColumn: relation.joinColumn,
           joinTable: relation.joinTable,
           nullable: relation.nullable,
+          fetch: relation.fetch,
           cascade: relation.cascade,
           orphanRemoval: relation.orphanRemoval,
         })),
@@ -227,6 +230,7 @@ describe("entity metadata", () => {
           joinColumn: "team_id",
           joinTable: undefined,
           nullable: true,
+          fetch: FetchType.EAGER,
           cascade: [CascadeType.PERSIST, CascadeType.REMOVE],
           orphanRemoval: false,
         },
@@ -236,6 +240,7 @@ describe("entity metadata", () => {
           joinColumn: undefined,
           joinTable: "user_roles",
           nullable: true,
+          fetch: FetchType.LAZY,
           cascade: [],
           orphanRemoval: false,
         },

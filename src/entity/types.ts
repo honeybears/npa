@@ -40,6 +40,7 @@ export interface RelationOptions {
   joinColumns?: string[];
   joinTable?: string;
   nullable?: boolean;
+  fetch?: FetchType | `${FetchType}`;
   foreignKeyName?: string;
   onDelete?: ReferentialAction;
   onUpdate?: ReferentialAction;
@@ -57,6 +58,11 @@ export enum RelationKind {
 export enum CascadeType {
   PERSIST = "PERSIST",
   REMOVE = "REMOVE",
+}
+
+export enum FetchType {
+  LAZY = "LAZY",
+  EAGER = "EAGER",
 }
 
 export enum ReferentialAction {
@@ -96,6 +102,7 @@ export interface RelationMetadata {
   joinColumns?: string[];
   joinTable?: string;
   nullable: boolean;
+  fetch: FetchType;
   foreignKeyName?: string;
   onDelete?: ReferentialAction;
   onUpdate?: ReferentialAction;
