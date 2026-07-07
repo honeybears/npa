@@ -1,4 +1,5 @@
 import { NPAMetadataError } from "../error";
+import { toSnakeCase } from "./naming";
 import {
   CascadeType,
   ColumnMetadata,
@@ -352,10 +353,4 @@ function toPropertyName(propertyKey: string | symbol): string {
   }
 
   return propertyKey;
-}
-
-function toSnakeCase(value: string): string {
-  return value.replace(/[A-Z]/g, (match, index) =>
-    `${index === 0 ? "" : "_"}${match.toLowerCase()}`,
-  );
 }

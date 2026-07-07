@@ -3,8 +3,8 @@
 This example wires `@node-persistence-api/core` to `@node-persistence-api/connector-pg` with local
 workspace dependencies.
 
-The app imports `src/repositories.ts` before constructing `NPA`, so decorated
-repositories are registered without passing `repositories` manually.
+The app imports the repository class where it calls `npa.get(UserRepository)`;
+repositories are created lazily.
 
 ```bash
 pnpm --filter npa-example-node-pg demo

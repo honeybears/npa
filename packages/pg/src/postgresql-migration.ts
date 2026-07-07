@@ -12,12 +12,22 @@ import type {
 } from "@node-persistence-api/core";
 import {
   assertSafeMigrationStatements,
+  compareByName,
+  compareColumnNames,
+  compareMigrationEntities,
+  compareMigrationIndexes,
+  compareMigrationTables,
   createDownMigrationStatements,
+  foreignKeyName as buildForeignKeyName,
+  importDriver,
+  normalizeTypeUnion as normalizeType,
   NPADatabaseError,
   NPAMigrationError,
+  sanitizeMigrationIdentifier as sanitizeIdentifier,
+  tableKey,
+  toSnakeCase,
 } from "@node-persistence-api/core";
 import { MigrationRelationKind } from "@node-persistence-api/core";
-import { createHash } from "node:crypto";
 import { PostgresqlConnection, PostgresqlDriverConnection } from "./postgresql-connection";
 
 const MIGRATION_NAME = "schema";
@@ -498,7 +508,7 @@ function compilePostgresqlTableDiffStatements(
 
     const desiredColumnNames = new Set(table.columns.map((column) => column.columnName));
 
-    for (const column of [...currentTable.columns.values()].sort(compareCurrentColumns)) {
+    for (const column of [...currentTable.columns.values()].sort(compareColumnNames)) {
       if (!desiredColumnNames.has(column.columnName)) {
         statements.push(
           `ALTER TABLE ${qualifiedTable(table)} DROP COLUMN ${quoteQualifiedIdentifier(column.columnName)}`,
@@ -535,7 +545,7 @@ function migrationReadTables(
     }
   }
 
-  return [...tables.values()].sort(compareTables);
+  return [...tables.values()].sort(compareMigrationTables);
 }
 
 function compilePostgresqlRenameStatements(
@@ -621,7 +631,7 @@ function compilePostgresqlForeignKeyDiffStatements(
 ): string[] {
   const statements: string[] = [];
 
-  for (const foreignKey of [...table.foreignKeys].sort(compareForeignKeys)) {
+  for (const foreignKey of [...table.foreignKeys].sort(compareByName)) {
     if (currentForeignKeys.has(foreignKey.name)) {
       continue;
     }
@@ -644,7 +654,7 @@ function compilePostgresqlIndexDiffStatements(
     table.indexes.map((index) => resolveIndexName(table, index)),
   );
 
-  for (const index of [...table.indexes].sort(compareIndexes)) {
+  for (const index of [...table.indexes].sort(compareMigrationIndexes)) {
     const indexName = resolveIndexName(table, index);
     const currentIndex = currentIndexes.get(indexName);
 
@@ -663,7 +673,7 @@ function compilePostgresqlIndexDiffStatements(
     }
   }
 
-  for (const currentIndex of [...currentIndexes.values()].sort(compareCurrentIndexes)) {
+  for (const currentIndex of [...currentIndexes.values()].sort(compareByName)) {
     if (!currentIndex.primary && !desiredIndexNames.has(currentIndex.name)) {
       statements.push(`DROP INDEX IF EXISTS ${qualifiedIndex(table, currentIndex.name)}`);
     }
@@ -902,7 +912,7 @@ function postgresqlSequenceName(
 
 function buildDesiredTables(entities: MigrationEntitySchema[]): MigrationTableSchema[] {
   const tables = new Map<string, MigrationTableSchema>();
-  const sortedEntities = [...entities].sort(compareEntities);
+  const sortedEntities = [...entities].sort(compareMigrationEntities);
   const byClassName = new Map(sortedEntities.map((entity) => [entity.className, entity]));
 
   for (const entity of sortedEntities) {
@@ -914,7 +924,7 @@ function buildDesiredTables(entities: MigrationEntitySchema[]): MigrationTableSc
     tables.set(tableKey(table), table);
   }
 
-  return [...tables.values()].sort(compareTables);
+  return [...tables.values()].sort(compareMigrationTables);
 }
 
 function entityTable(
@@ -960,7 +970,8 @@ function entityTable(
       });
     }
     foreignKeys.push({
-      name: relation.foreignKeyName ?? foreignKeyName(entity.tableName, joinColumns, target.tableName),
+      name: relation.foreignKeyName ??
+        buildForeignKeyName(entity.tableName, joinColumns, target.tableName, MAX_FOREIGN_KEY_IDENTIFIER_LENGTH),
       columns: joinColumns,
       referencedSchema: target.schema,
       referencedTable: target.tableName,
@@ -1023,14 +1034,14 @@ function buildJoinTables(entities: MigrationEntitySchema[]): MigrationTableSchem
         indexes: [],
         foreignKeys: [
           {
-            name: foreignKeyName(joinTable.tableName, sourceColumnNames, entity.tableName),
+            name: buildForeignKeyName(joinTable.tableName, sourceColumnNames, entity.tableName, MAX_FOREIGN_KEY_IDENTIFIER_LENGTH),
             columns: sourceColumnNames,
             referencedSchema: entity.schema,
             referencedTable: entity.tableName,
             referencedColumns: sourcePrimaryColumns.map((column) => column.columnName),
           },
           {
-            name: foreignKeyName(joinTable.tableName, targetColumnNames, target.tableName),
+            name: buildForeignKeyName(joinTable.tableName, targetColumnNames, target.tableName, MAX_FOREIGN_KEY_IDENTIFIER_LENGTH),
             columns: targetColumnNames,
             referencedSchema: target.schema,
             referencedTable: target.tableName,
@@ -1502,81 +1513,10 @@ function qualifiedIndex(table: Pick<MigrationTableSchema, "schema">, indexName: 
   return table.schema ? `${quoteQualifiedIdentifier(table.schema)}.${index}` : index;
 }
 
-function sanitizeIdentifier(value: string): string {
-  return value.replace(/[^A-Za-z0-9_]/g, "_");
-}
-
-function foreignKeyName(
-  tableName: string,
-  columns: string[],
-  targetTableName: string,
-): string {
-  return shortenIdentifier(
-    sanitizeIdentifier(`fk_${tableName}_${columns.join("_")}_${targetTableName}`),
-    MAX_FOREIGN_KEY_IDENTIFIER_LENGTH,
-  );
-}
-
-function shortenIdentifier(identifier: string, maxLength: number): string {
-  if (identifier.length <= maxLength) {
-    return identifier;
-  }
-
-  const hash = createHash("sha256").update(identifier).digest("hex").slice(0, 12);
-  const prefixLength = maxLength - hash.length - 1;
-  return `${identifier.slice(0, prefixLength)}_${hash}`;
-}
-
-function compareCurrentIndexes(left: CurrentIndexSchema, right: CurrentIndexSchema): number {
-  return left.name.localeCompare(right.name);
-}
-
-function compareIndexes(left: MigrationIndexSchema, right: MigrationIndexSchema): number {
-  return `${left.name ?? ""}.${left.unique ? "unique" : "index"}.${left.columns.join(",")}`.localeCompare(
-    `${right.name ?? ""}.${right.unique ? "unique" : "index"}.${right.columns.join(",")}`,
-  );
-}
-
-function compareForeignKeys(
-  left: MigrationForeignKeySchema,
-  right: MigrationForeignKeySchema,
-): number {
-  return left.name.localeCompare(right.name);
-}
-
 function qualifiedTable(table: Pick<MigrationTableSchema, "schema" | "tableName">): string {
   const quotedTable = quoteQualifiedIdentifier(table.tableName);
 
   return table.schema ? `${quoteQualifiedIdentifier(table.schema)}.${quotedTable}` : quotedTable;
-}
-
-function tableKey(table: Pick<MigrationTableSchema, "schema" | "tableName">): string {
-  return `${table.schema ?? ""}.${table.tableName}`;
-}
-
-function compareEntities(
-  left: MigrationEntitySchema,
-  right: MigrationEntitySchema,
-): number {
-  return `${left.schema ?? ""}.${left.tableName}.${left.className}`.localeCompare(
-    `${right.schema ?? ""}.${right.tableName}.${right.className}`,
-  );
-}
-
-function compareTables(left: MigrationTableSchema, right: MigrationTableSchema): number {
-  return tableKey(left).localeCompare(tableKey(right));
-}
-
-function compareCurrentColumns(left: CurrentColumnSchema, right: CurrentColumnSchema): number {
-  return left.columnName.localeCompare(right.columnName);
-}
-
-function normalizeType(value: string): string {
-  return value
-    .split("|")
-    .map((part) => part.trim())
-    .filter((part) => part !== "undefined" && part !== "null")
-    .join(" | ");
 }
 
 function normalizePostgresqlTypeName(value: string): string {
@@ -1626,19 +1566,4 @@ function quoteIdentifier(identifier: string): string {
 
 function unquotePostgresqlIdentifier(identifier: string): string {
   return identifier.replace(/^"|"$/g, "").replace(/""/g, '"');
-}
-
-function toSnakeCase(value: string): string {
-  return value.replace(/[A-Z]/g, (match, index) =>
-    `${index === 0 ? "" : "_"}${match.toLowerCase()}`,
-  );
-}
-
-function importDriver<TDriver>(specifier: string): Promise<TDriver> {
-  const dynamicImport = new Function(
-    "specifier",
-    "return import(specifier)",
-  ) as (specifier: string) => Promise<TDriver>;
-
-  return dynamicImport(specifier);
 }

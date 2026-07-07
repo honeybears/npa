@@ -1,5 +1,4 @@
 import { createNPA } from "@node-persistence-api/core";
-import "./repositories";
 import { mysql } from "@node-persistence-api/connector-mysql";
 import { createConnection } from "./database";
 import { UserRepository } from "./user.repository";
@@ -7,7 +6,7 @@ import { UserRepository } from "./user.repository";
 async function main(): Promise<void> {
   const connection = await createConnection();
   const npa = createNPA({
-    adapter: mysql({ queryable: connection, preferExecute: true }),
+    adapter: mysql({ connection, preferExecute: true }),
   });
   const users = npa.get(UserRepository);
 

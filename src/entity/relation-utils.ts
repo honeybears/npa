@@ -7,6 +7,7 @@ import {
 } from "./types";
 import { NPAMetadataError } from "../error";
 import { getEntityMetadata } from "./metadata-storage";
+import { toSnakeCase } from "./naming";
 
 export interface RelationLoadTree {
   [propertyName: string]: true | RelationLoadTree;
@@ -213,12 +214,6 @@ export function removeCascadeRelationTree(
   }
 
   return Object.keys(tree).length === 0 ? undefined : tree;
-}
-
-function toSnakeCase(value: string): string {
-  return value.replace(/[A-Z]/g, (match, index) =>
-    `${index === 0 ? "" : "_"}${match.toLowerCase()}`,
-  );
 }
 
 function requirePrimaryColumns(

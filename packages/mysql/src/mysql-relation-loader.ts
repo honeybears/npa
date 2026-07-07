@@ -1,18 +1,30 @@
 import {
-  defaultJoinTableName,
+  defaultQualifiedJoinTableName,
   EntityMetadata,
+  findMappedOwningToOne,
+  flattenRelationValues,
+  flattenValueSets,
   getEntityMetadata,
   getCurrentPersistenceContext,
+  groupRows,
+  isOwningToOneRelation,
+  keyForValueSet,
   NPADatabaseError,
   NPAMetadataError,
   NPALoadOptions,
-  NPARelationLoadTree,
-  primaryColumnsOf,
+  readColumnValueSet,
+  readPrimaryValueSet,
+  readValue,
   relationJoinColumns,
   RelationKind,
   RelationMetadata,
-  joinTableColumnNames,
+  requirePrimaryColumns,
+  resolveManyToManyJoin,
+  selectRelations,
+  sourceAliasNames,
+  uniqueValues,
   withEagerRelations,
+  writeValue,
 } from "@node-persistence-api/core";
 import { executeMysqlQuery } from "./mysql-result";
 import { MysqlQueryable } from "./types";
@@ -129,59 +141,6 @@ export function attachMysqlLazyRelations<TEntity extends object>(
   }
 
   return entities;
-}
-
-function selectRelations(
-  metadata: EntityMetadata,
-  requested: NonNullable<NPALoadOptions["relations"]>,
-): Array<{ relation: RelationMetadata; nested?: NPARelationLoadTree }> {
-  if (requested === true) {
-    return metadata.relations.map((relation) => ({ relation }));
-  }
-
-  if (Array.isArray(requested)) {
-    return requested.map((propertyName) => {
-      const relation = findRelation(metadata, propertyName);
-
-      return { relation };
-    });
-  }
-
-  const relationTree = requested as Record<string, true | NPARelationLoadTree>;
-
-  return Object.entries(relationTree).map(([propertyName, nested]) => {
-    const relation = findRelation(metadata, propertyName);
-
-    return {
-      relation,
-      nested: nested === true ? undefined : nested,
-    };
-  });
-}
-
-function findRelation(
-  metadata: EntityMetadata,
-  propertyName: string,
-): RelationMetadata {
-    const relation = metadata.relations.find((candidate) =>
-      candidate.propertyName === propertyName,
-    );
-
-    if (!relation) {
-      throw new NPAMetadataError(`Entity ${metadata.target.name} has no relation ${propertyName}.`, {
-        code: "NPA_RELATION_NOT_FOUND",
-        details: { entity: metadata.target.name, relation: propertyName },
-      });
-    }
-
-    return relation;
-}
-
-function flattenRelationValues(entities: object[], relation: RelationMetadata): object[] {
-  return entities.flatMap((entity) => {
-    const value = readValue(entity, relation.propertyName);
-    return Array.isArray(value) ? value : value ? [value] : [];
-  }) as object[];
 }
 
 async function loadManyToOne<TEntity extends object>(
@@ -326,30 +285,6 @@ function attachLazyTargets<TEntity extends object>(
   });
 }
 
-function findMappedOwningToOne(
-  sourceMetadata: EntityMetadata,
-  targetMetadata: EntityMetadata,
-  relation: RelationMetadata,
-): RelationMetadata {
-  const targetRelation = targetMetadata.relations.find((candidate) =>
-    isOwningToOneRelation(candidate) && candidate.propertyName === relation.mappedBy,
-  );
-
-  if (!targetRelation) {
-    throw new NPAMetadataError(`@OneToOne ${sourceMetadata.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
-      code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
-      details: { entity: sourceMetadata.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
-    });
-  }
-
-  return targetRelation;
-}
-
-function isOwningToOneRelation(relation: RelationMetadata): boolean {
-  return relation.kind === RelationKind.MANY_TO_ONE ||
-    (relation.kind === RelationKind.ONE_TO_ONE && !relation.mappedBy);
-}
-
 async function loadManyToMany<TEntity extends object>(
   entities: TEntity[],
   metadata: EntityMetadata,
@@ -363,7 +298,7 @@ async function loadManyToMany<TEntity extends object>(
     return [];
   }
 
-  const join = manyToManyJoin(metadata, relation);
+  const join = resolveManyToManyJoin(metadata, relation, qualifiedJoinTable);
   const targetPrimaryColumns = requirePrimaryColumns(targetMetadata);
   const sourceColumns = relation.mappedBy ? join.targetColumns : join.sourceColumns;
   const targetColumns = relation.mappedBy ? join.sourceColumns : join.targetColumns;
@@ -401,45 +336,6 @@ async function loadManyToMany<TEntity extends object>(
   return flattenRelationValues(entities, relation);
 }
 
-interface ManyToManyJoin {
-  table: string;
-  sourceColumns: string[];
-  targetColumns: string[];
-}
-
-function manyToManyJoin(
-  source: EntityMetadata,
-  relation: RelationMetadata,
-): ManyToManyJoin {
-  const target = getEntityMetadata(relation.target());
-
-  if (relation.mappedBy) {
-    const owner = target.relations.find((candidate) =>
-      candidate.kind === RelationKind.MANY_TO_MANY &&
-      candidate.propertyName === relation.mappedBy,
-    );
-
-    if (!owner) {
-      throw new NPAMetadataError(`@ManyToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
-        code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
-        details: { entity: source.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
-      });
-    }
-
-    return {
-      table: qualifiedJoinTable(target, source, owner),
-      sourceColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
-      targetColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
-    };
-  }
-
-  return {
-    table: qualifiedJoinTable(source, target, relation),
-    sourceColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
-    targetColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
-  };
-}
-
 async function selectRowsByColumn<TEntity extends object>(
   options: MysqlRelationLoadOptions<TEntity>,
   metadata: EntityMetadata,
@@ -466,32 +362,6 @@ interface MysqlRelationLoadOptions<TEntity extends object> {
   load?: NPALoadOptions<TEntity>;
 }
 
-function groupRows(
-  rows: Record<string, unknown>[],
-  columnNames: string[],
-  options: { omitGroupColumns?: boolean } = {},
-): Map<string, Record<string, unknown>[]> {
-  const grouped = new Map<string, Record<string, unknown>[]>();
-
-  for (const row of rows) {
-    const key = keyForValueSet(readColumnValueSet(row, columnNames));
-    const current = grouped.get(key) ?? [];
-    current.push(options.omitGroupColumns ? omitProperties(row, columnNames) : row);
-    grouped.set(key, current);
-  }
-
-  return grouped;
-}
-
-function omitProperties(
-  row: Record<string, unknown>,
-  propertyNames: string[],
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(row).filter(([key]) => !propertyNames.includes(key)),
-  );
-}
-
 function qualifiedTable(metadata: EntityMetadata): string {
   const table = quoteQualifiedIdentifier(metadata.tableName);
   return metadata.schema ? `${quoteQualifiedIdentifier(metadata.schema)}.${table}` : table;
@@ -502,29 +372,7 @@ function qualifiedJoinTable(
   target: EntityMetadata,
   relation: RelationMetadata,
 ): string {
-  const rawName = relation.joinTable ?? defaultJoinTableName(source, target);
-  const separatorIndex = rawName.indexOf(".");
-
-  if (separatorIndex > 0) {
-    return `${quoteQualifiedIdentifier(rawName.slice(0, separatorIndex))}.${quoteQualifiedIdentifier(rawName.slice(separatorIndex + 1))}`;
-  }
-
-  const table = quoteQualifiedIdentifier(rawName);
-  const schema = source.schema ?? target.schema;
-  return schema ? `${quoteQualifiedIdentifier(schema)}.${table}` : table;
-}
-
-function requirePrimaryColumns(metadata: EntityMetadata) {
-  const primaryColumns = primaryColumnsOf(metadata);
-
-  if (primaryColumns.length === 0) {
-    throw new NPAMetadataError(`Entity ${metadata.target.name} requires an @Id column.`, {
-      code: "NPA_ENTITY_ID_REQUIRED",
-      details: { entity: metadata.target.name },
-    });
-  }
-
-  return primaryColumns;
+  return defaultQualifiedJoinTableName(source, target, relation, quoteQualifiedIdentifier);
 }
 
 function quoteQualifiedIdentifier(identifier: string): string {
@@ -541,73 +389,6 @@ function quoteIdentifier(identifier: string): string {
   return `\`${identifier.replace(/`/g, "``")}\``;
 }
 
-function uniqueValues(values: unknown[]): unknown[] {
-  const unique = new Map<string, unknown>();
-
-  for (const value of values) {
-    if (!hasCompleteValueSet(value)) {
-      continue;
-    }
-
-    unique.set(keyForValueSet(value), value);
-  }
-
-  return [...unique.values()];
-}
-
-function readValue(entity: object, propertyOrColumn: string): unknown {
-  return (entity as Record<string, unknown>)[propertyOrColumn];
-}
-
-function writeValue(entity: object, propertyName: string, value: unknown): void {
-  (entity as Record<string, unknown>)[propertyName] = value;
-}
-
-function readColumnValueSet(entity: object, columns: string[]): unknown {
-  if (columns.length === 1) {
-    return readValue(entity, columns[0]);
-  }
-
-  const record = entity as Record<string, unknown>;
-  return columns.map((column) => record[column]);
-}
-
-function readPrimaryValueSet(entity: object, metadata: EntityMetadata): unknown {
-  const columns = requirePrimaryColumns(metadata);
-
-  if (columns.length === 1) {
-    return readValue(entity, columns[0].propertyName) ??
-      readValue(entity, columns[0].columnName);
-  }
-
-  return columns.map((column) =>
-    readValue(entity, column.propertyName) ?? readValue(entity, column.columnName));
-}
-
-function hasCompleteValueSet(value: unknown): boolean {
-  if (value === null || value === undefined) {
-    return false;
-  }
-
-  if (!Array.isArray(value)) {
-    return true;
-  }
-
-  return value.every((part) => part !== null && part !== undefined);
-}
-
-function keyForValueSet(value: unknown): string {
-  if (!Array.isArray(value)) {
-    return `${typeof value}:${String(value)}`;
-  }
-
-  return JSON.stringify(value);
-}
-
-function flattenValueSets(values: unknown[]): unknown[] {
-  return values.flatMap((value) => Array.isArray(value) ? value : [value]);
-}
-
 function tupleExpression(columns: string[], alias?: string): string {
   const qualified = columns.map((column) =>
     alias ? `${alias}.${quoteIdentifier(column)}` : quoteIdentifier(column));
@@ -622,12 +403,4 @@ function tuplePlaceholders(values: unknown[]): string {
 
     return `(${value.map(() => "?").join(", ")})`;
   }).join(", ");
-}
-
-function sourceAlias(columnName: string): string {
-  return `__source_${columnName}`;
-}
-
-function sourceAliasNames(columnNames: string[]): string[] {
-  return columnNames.length === 1 ? ["__source_id"] : columnNames.map(sourceAlias);
 }

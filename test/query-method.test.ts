@@ -1,7 +1,7 @@
 import { describe, expect, test } from "@jest/globals";
+import { InMemoryRepositoryExecutor } from "./helpers/in-memory-repository-executor";
 import {
   EntityGraph,
-  InMemoryRepositoryExecutor,
   Pageable,
   Query,
   createDerivedQueryRepository,

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { toSnakeCase } from "../entity";
 import { NPAMigrationError } from "../error";
 import {
   MigrationGenerationStrategy,
@@ -1098,12 +1099,6 @@ function normalizePath(value: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[\\^$+?.()|[\]{}]/g, "\\$&");
-}
-
-function toSnakeCase(value: string): string {
-  return value.replace(/[A-Z]/g, (match, index) =>
-    `${index === 0 ? "" : "_"}${match.toLowerCase()}`,
-  );
 }
 
 function schemaParseError(message: string): NPAMigrationError {

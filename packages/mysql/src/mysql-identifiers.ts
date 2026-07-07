@@ -10,6 +10,7 @@ import {
   relationJoinColumnName,
   RelationKind,
   RelationMetadata,
+  toSnakeCase,
 } from "@node-persistence-api/core";
 import { MysqlQueryCompilerOptions } from "./types";
 
@@ -229,8 +230,4 @@ function quoteQualifiedIdentifier(identifier: string): string {
 
 function quoteIdentifier(identifier: string): string {
   return quoteMysqlIdentifier(identifier);
-}
-
-function toSnakeCase(value: string): string {
-  return value.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
 }

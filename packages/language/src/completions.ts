@@ -12,6 +12,7 @@ import {
   toMethodSegment,
 } from "./entity-schema";
 import { parseNPAQueryMethodName } from "./method-name";
+import { normalizeType } from "./type-utils";
 import {
   NPAQueryMethodCompletionKind,
   type GetNPAQueryMethodCompletionsOptions,
@@ -654,29 +655,4 @@ function toParameterName(label: string): string {
     .split(".")
     .map((part, index) => index === 0 ? part : toMethodSegment(part))
     .join("");
-}
-
-function normalizeType(type: string | undefined): string {
-  const normalized = (type ?? "")
-    .replace(/\[\]/g, "")
-    .replace(/\?/g, "")
-    .toLowerCase();
-
-  if (normalized.includes("string")) {
-    return "string";
-  }
-
-  if (normalized.includes("number")) {
-    return "number";
-  }
-
-  if (normalized.includes("boolean")) {
-    return "boolean";
-  }
-
-  if (normalized.includes("date")) {
-    return "date";
-  }
-
-  return "unknown";
 }

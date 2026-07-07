@@ -10,6 +10,7 @@ import {
   relationJoinColumnName,
   RelationKind,
   RelationMetadata,
+  toSnakeCase,
 } from "@node-persistence-api/core";
 import { PostgresqlQueryCompilerOptions } from "./types";
 
@@ -221,8 +222,4 @@ export function quoteIdentifier(identifier: string): string {
   }
 
   return `"${identifier.replace(/"/g, '""')}"`;
-}
-
-export function toSnakeCase(value: string): string {
-  return value.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
 }

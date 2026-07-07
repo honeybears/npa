@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { normalizeTypeUnion } from "./helpers";
 import { MigrationAdapterName, MigrationEntitySchema } from "./types";
 
 export const MIGRATION_FORMAT_VERSION = "npa-migration-v5";
@@ -28,7 +29,7 @@ export function createMigrationSnapshot(
           .map((column) => ({
             propertyName: column.propertyName,
             columnName: column.columnName,
-            tsType: normalizeType(column.tsType),
+          tsType: normalizeTypeUnion(column.tsType),
             dbType: column.dbType,
             defaultValue: column.defaultValue,
             defaultCurrentTimestamp: column.defaultCurrentTimestamp,
@@ -99,12 +100,4 @@ export function createMigrationSnapshot(
         ),
       ),
   };
-}
-
-function normalizeType(value: string): string {
-  return value
-    .split("|")
-    .map((part) => part.trim())
-    .filter((part) => part !== "undefined" && part !== "null")
-    .join(" | ");
 }

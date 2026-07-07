@@ -2,8 +2,8 @@ import {
   QueryCondition,
   QueryOrder,
   QueryPredicatePart,
-} from "../query-method";
-import { NPAPaginationError, NPAQueryError } from "../error";
+} from "../../src/query-method";
+import { NPAPaginationError, NPAQueryError } from "../../src/error";
 import {
   createCursorWindow,
   createPage,
@@ -11,8 +11,8 @@ import {
   isCursorPageable,
   isOffsetPageable,
   type CursorQueryMetadata,
-} from "./pagination";
-import { RepositoryMethodInvocation } from "./types";
+} from "../../src/repository/pagination";
+import { RepositoryMethodInvocation } from "../../src/repository/types";
 
 export class InMemoryRepositoryExecutor<TEntity extends object> {
   constructor(private readonly rows: TEntity[]) {}

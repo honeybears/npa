@@ -1,22 +1,21 @@
 import {
-  defaultJoinTableName,
-  ColumnMetadata,
+  compileTupleWhere,
   createCursorWindow,
   createPage,
+  defaultQualifiedJoinTableName,
   EntityMetadata,
+  findAllInvocation,
+  firstColumn,
   getCurrentPersistenceContext,
   getEntityMetadata,
-  getOptionalEntityMetadata,
+  idParts,
   type EntityTarget,
   isCursorPageable,
   isOffsetPageable,
-  joinTableColumnNames,
   needsOrmDelete,
   primaryColumnsOf,
   CursorPage,
   NPAFindOptions,
-  NPAEntityGraphMetadata,
-  NPAMetadataError,
   NPAPaginationError,
   NPAQueryError,
   NPARepositoryAdapter,
@@ -24,13 +23,16 @@ import {
   NPALoadOptions,
   Page,
   PersistenceContext,
-  RelationKind,
   RelationMetadata,
+  readExpectedVersionFromPatch,
   removeCascadeRelationTree,
   RepositoryMethodExecutor,
   RepositoryMethodInvocation,
   RepositoryRawQueryExecutor,
+  requireAdapterMetadata,
+  resolveManyToManyJoin,
   stripCursorKeys,
+  toEntityGraphLoad,
   withEagerRelations,
   withUpdatedAtTimestamp,
 } from "@node-persistence-api/core";
@@ -701,14 +703,17 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
         return result.affectedRows ?? 0;
       },
       syncManyToManyRelations: async (_targetEntity, id, relation, targetIds) => {
-        const metadata = requireAdapterMetadata(entity, "sync many-to-many relations");
-        const join = manyToManyJoin(metadata, relation);
+        const metadata = requireAdapterMetadata(entity, "MySQL", "sync many-to-many relations");
+        const join = resolveManyToManyJoin(metadata, relation, qualifiedJoinTable);
         const targetMetadata = getEntityMetadata(relation.target());
         const sourceIdColumns = primaryColumnsOf(metadata);
         const targetIdColumns = primaryColumnsOf(targetMetadata);
         const sourceColumns = relation.mappedBy ? join.targetColumns : join.sourceColumns;
         const targetColumns = relation.mappedBy ? join.sourceColumns : join.targetColumns;
-        const sourceWhere = compileTupleWhere(sourceColumns, id, sourceIdColumns);
+        const sourceWhere = compileTupleWhere(sourceColumns, id, sourceIdColumns, {
+          placeholder: () => "?",
+          quoteIdentifier: quoteMysqlIdentifier,
+        });
         await executeMysqlQuery(
           options,
           `DELETE FROM ${join.table} WHERE ${sourceWhere.sql}`,
@@ -733,11 +738,14 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
         );
       },
       deleteManyToManyRelations: async (_targetEntity, id, relation) => {
-        const metadata = requireAdapterMetadata(entity, "delete many-to-many relations");
-        const join = manyToManyJoin(metadata, relation);
+        const metadata = requireAdapterMetadata(entity, "MySQL", "delete many-to-many relations");
+        const join = resolveManyToManyJoin(metadata, relation, qualifiedJoinTable);
         const sourceIdColumns = primaryColumnsOf(metadata);
         const columns = relation.mappedBy ? join.targetColumns : join.sourceColumns;
-        const where = compileTupleWhere(columns, id, sourceIdColumns);
+        const where = compileTupleWhere(columns, id, sourceIdColumns, {
+          placeholder: () => "?",
+          quoteIdentifier: quoteMysqlIdentifier,
+        });
         await executeMysqlQuery(
           options,
           `DELETE FROM ${join.table} WHERE ${where.sql}`,
@@ -779,197 +787,10 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
   }
 }
 
-function firstColumn(row: object | null): unknown {
-  if (!row) {
-    return null;
-  }
-
-  const [value] = Object.values(row);
-  return value ?? null;
-}
-
-interface ManyToManyJoin {
-  table: string;
-  sourceColumns: string[];
-  targetColumns: string[];
-}
-
-function manyToManyJoin(
-  source: EntityMetadata,
-  relation: RelationMetadata,
-): ManyToManyJoin {
-  const target = getEntityMetadata(relation.target());
-
-  if (relation.mappedBy) {
-    const owner = target.relations.find((candidate) =>
-      candidate.kind === RelationKind.MANY_TO_MANY &&
-      candidate.propertyName === relation.mappedBy,
-    );
-
-    if (!owner) {
-      throw new NPAMetadataError(`@ManyToMany ${source.target.name}.${relation.propertyName} mappedBy relation was not found.`, {
-        code: "NPA_RELATION_MAPPED_BY_NOT_FOUND",
-        details: { entity: source.target.name, relation: relation.propertyName, mappedBy: relation.mappedBy },
-      });
-    }
-
-    return {
-      table: qualifiedJoinTable(target, source, owner),
-      sourceColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
-      targetColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
-    };
-  }
-
-  return {
-    table: qualifiedJoinTable(source, target, relation),
-    sourceColumns: joinTableColumnNames(source).map((column) => column.joinColumnName),
-    targetColumns: joinTableColumnNames(target).map((column) => column.joinColumnName),
-  };
-}
-
-function compileTupleWhere(
-  columns: string[],
-  id: unknown,
-  idColumns: ColumnMetadata[],
-): { sql: string; values: unknown[] } {
-  const values = idParts(id, idColumns);
-
-  if (columns.length !== values.length) {
-    throw new Error(
-      `Expected ${columns.length} id value(s), received ${values.length}.`,
-    );
-  }
-
-  if (columns.length === 1) {
-    return {
-      sql: `${quoteMysqlIdentifier(columns[0])} = ?`,
-      values,
-    };
-  }
-
-  return {
-    sql: `(${columns.map(quoteMysqlIdentifier).join(", ")}) = (${values.map(() => "?").join(", ")})`,
-    values,
-  };
-}
-
-function idParts(id: unknown, columns: ColumnMetadata[] = []): unknown[] {
-  if (columns.length > 0) {
-    if (columns.length === 1 && !isRecord(id)) {
-      return [id];
-    }
-
-    if (!isRecord(id)) {
-      throw new Error(
-        `Expected object id with ${columns.length} value(s), received scalar id.`,
-      );
-    }
-
-    return columns.map((column) =>
-      column.propertyName in id ? id[column.propertyName] : id[column.columnName]);
-  }
-
-  if (!isRecord(id)) {
-    return [id];
-  }
-
-  return Object.keys(id).sort().map((key) => id[key]);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function qualifiedJoinTable(
   source: EntityMetadata,
   target: EntityMetadata,
   relation: RelationMetadata,
 ): string {
-  const rawName = relation.joinTable ?? defaultJoinTableName(source, target);
-  const separatorIndex = rawName.indexOf(".");
-
-  if (separatorIndex > 0) {
-    return `${quoteMysqlQualifiedIdentifier(rawName.slice(0, separatorIndex))}.${quoteMysqlQualifiedIdentifier(rawName.slice(separatorIndex + 1))}`;
-  }
-
-  const table = quoteMysqlQualifiedIdentifier(rawName);
-  const schema = source.schema ?? target.schema;
-  return schema ? `${quoteMysqlQualifiedIdentifier(schema)}.${table}` : table;
-}
-
-function requireAdapterMetadata<TEntity extends object>(
-  entity: EntityTarget<TEntity> | undefined,
-  operation: string,
-): EntityMetadata {
-  if (!entity) {
-    throw new NPAMetadataError(`MySQL ${operation} requires entity metadata.`, {
-      code: "NPA_REPOSITORY_METADATA_REQUIRED",
-      details: { operation },
-    });
-  }
-
-  return getEntityMetadata(entity);
-}
-
-function toEntityGraphLoad<TEntity extends object>(
-  entityGraph: NPAEntityGraphMetadata<TEntity> | undefined,
-): NPALoadOptions<TEntity> | undefined {
-  return entityGraph ? { relations: entityGraph.relations } : undefined;
-}
-
-function findAllInvocation<TEntity extends object>(
-  load: NPAFindOptions<TEntity> | undefined,
-): RepositoryMethodInvocation {
-  return {
-    query: {
-      methodName: "findAll",
-      action: "find",
-      predicate: [],
-      orderBy: (load?.orderBy ?? []).map((order) => ({
-        property: order.property,
-        direction: normalizeOrderDirection(order.direction),
-      })),
-      parameterCount: 0,
-    },
-    args: [],
-    pageable: load?.pageable,
-  };
-}
-
-function normalizeOrderDirection(direction: unknown): "asc" | "desc" {
-  if (direction === undefined) {
-    return "asc";
-  }
-
-  if (direction === "asc" || direction === "desc") {
-    return direction;
-  }
-
-  throw new NPAQueryError(`Unsupported order direction "${String(direction)}".`, {
-    code: "NPA_ORDER_DIRECTION_UNSUPPORTED",
-    details: { direction },
-  });
-}
-
-function readExpectedVersionFromPatch(
-  patch: object,
-  entity: EntityTarget | undefined,
-): unknown {
-  const versionColumn = getOptionalEntityMetadata(entity)?.versionColumn;
-
-  if (!versionColumn) {
-    return undefined;
-  }
-
-  const record = patch as Record<string, unknown>;
-
-  if (versionColumn.propertyName in record) {
-    return record[versionColumn.propertyName];
-  }
-
-  if (versionColumn.columnName in record) {
-    return record[versionColumn.columnName];
-  }
-
-  return undefined;
+  return defaultQualifiedJoinTableName(source, target, relation, quoteMysqlQualifiedIdentifier);
 }
