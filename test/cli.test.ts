@@ -58,6 +58,8 @@ describe("migration CLI", () => {
       .toMatch(/class User/);
     expect(fs.readFileSync(path.join(root, "src", "user.repository.ts"), "utf8"))
       .toMatch(/extends NPARepository<User, number>/);
+    expect(fs.existsSync(path.join(root, "src", "repositories.ts")))
+      .toEqual(false);
   });
 
   test("prompts for database when init omits --db", () => {

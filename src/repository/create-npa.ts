@@ -4,7 +4,6 @@ import { registerTransactionManager } from "../transaction/transaction-manager-r
 import type { TransactionManager } from "../transaction/types";
 import type { NPAOperationsOptions } from "./operations";
 import {
-  getRegisteredRepositoryTargets,
   getRepositoryMetadata,
   getRepositoryTargetName,
   type NPARepositoryTarget,
@@ -51,41 +50,31 @@ export interface NPAApplication {
 
 export class NPA implements NPAApplication {
   private readonly repositories = new Map<NPARepositoryTarget, object>();
+  private readonly allowedRepositories?: Set<NPARepositoryTarget>;
+  private readonly adapter: NPARuntimeAdapter;
+  private readonly operations?: NPAOperationsOptions;
 
   constructor(options: NPAOptions) {
-    const repositoryTargets =
-      options.repositories ?? getRegisteredRepositoryTargets();
+    this.adapter = options.adapter;
+    this.operations = options.operations;
 
-    if (!options.repositories && repositoryTargets.length === 0) {
-      throw new NPAConfigurationError(
-        [
-          "No @Repository metadata has been loaded.",
-          'Import repository modules before creating NPA, for example: import "./repositories";',
-        ].join(" "),
-        { code: "NPA_REPOSITORY_METADATA_REQUIRED" },
-      );
-    }
+    if (options.repositories) {
+      this.allowedRepositories = new Set();
 
-    for (const repository of repositoryTargets) {
-      if (this.repositories.has(repository)) {
-        throw new NPAConfigurationError(
-          `Repository ${getRepositoryTargetName(repository)} is registered more than once.`,
-          {
-            code: "NPA_DUPLICATE_REPOSITORY",
-            details: { repository: getRepositoryTargetName(repository) },
-          },
-        );
+      for (const repository of options.repositories) {
+        if (this.allowedRepositories.has(repository)) {
+          throw new NPAConfigurationError(
+            `Repository ${getRepositoryTargetName(repository)} is registered more than once.`,
+            {
+              code: "NPA_DUPLICATE_REPOSITORY",
+              details: { repository: getRepositoryTargetName(repository) },
+            },
+          );
+        }
+
+        getRepositoryMetadata(repository);
+        this.allowedRepositories.add(repository);
       }
-
-      const metadata = getRepositoryMetadata(repository);
-      this.repositories.set(
-        repository,
-        options.adapter.createRepository({
-          entity: metadata.entity,
-          operations: options.operations,
-          repository,
-        }),
-      );
     }
 
     const transactionManager =
@@ -101,7 +90,14 @@ export class NPA implements NPAApplication {
   ): TRepository {
     const instance = this.repositories.get(repository);
 
-    if (!instance) {
+    if (instance) {
+      return instance as TRepository;
+    }
+
+    if (
+      this.allowedRepositories &&
+      !this.allowedRepositories.has(repository)
+    ) {
       throw new NPAConfigurationError(
         `Repository ${getRepositoryTargetName(repository)} was not registered in this NPA instance.`,
         {
@@ -111,7 +107,14 @@ export class NPA implements NPAApplication {
       );
     }
 
-    return instance as TRepository;
+    const metadata = getRepositoryMetadata(repository);
+    const created = this.adapter.createRepository({
+      entity: metadata.entity,
+      operations: this.operations,
+      repository,
+    });
+    this.repositories.set(repository, created);
+    return created as TRepository;
   }
 }
 

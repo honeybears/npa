@@ -167,24 +167,15 @@ Application code extends only NPA, not a database-specific repository type.
 `deleteById`, and `deleteAll`.
 
 Declare repositories as abstract classes and bind them to entities with
-`@Repository`. Imported decorated repositories are auto-registered when
-`createNPA({ adapter })` runs. Pass `repositories: [UserRepository]` only when
-you want to restrict an NPA instance to an explicit subset. NPA creates the
-concrete implementation at runtime with a `Proxy`, so only the methods you want
+`@Repository`. NPA creates repository implementations lazily when
+`npa.get(UserRepository)` is first called. Pass `repositories` only when you
+want to restrict an NPA instance to an explicit subset. NPA creates the concrete
+implementation at runtime with a `Proxy`, so only the methods you want
 autocomplete for need to be declared.
 
-Repository decorators run when their module is imported. In applications, keep a
-bootstrap barrel that imports or re-exports every repository module before
-constructing `NPA`:
-
 ```ts
-// src/repositories.ts
-export { UserRepository } from './user.repository';
-export { TeamRepository } from './team.repository';
-
 // src/main.ts
 import { createNPA } from '@node-persistence-api/core';
-import './repositories';
 import { UserRepository } from './user.repository';
 
 const npa = createNPA({ adapter });
@@ -425,7 +416,6 @@ same runtime adapter contract used by `createNPA()`.
 import { Pool } from 'pg';
 import { createNPA } from '@node-persistence-api/core';
 import { PostgresqlConnection, postgresql } from '@node-persistence-api/connector-pg';
-import './repositories';
 import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -461,7 +451,6 @@ Wire the MySQL adapter with a `mysql2` pool or connection.
 import mysql from 'mysql2/promise';
 import { createNPA } from '@node-persistence-api/core';
 import { MysqlConnection, mysql as npaMysql } from '@node-persistence-api/connector-mysql';
-import './repositories';
 import { UserRepository } from './user.repository';
 
 const pool = mysql.createPool(process.env.DATABASE_URL);
@@ -548,7 +537,6 @@ import {
 } from '@node-persistence-api/core';
 import { postgresql } from '@node-persistence-api/connector-pg';
 import { Pool } from 'pg';
-import './repositories';
 import { UserRepository } from './user.repository';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

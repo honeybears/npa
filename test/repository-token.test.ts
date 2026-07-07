@@ -34,25 +34,20 @@ abstract class AutoUserRepository extends NPARepository<AutoTokenUser, number> {
 
 Repository(AutoTokenUser)(AutoUserRepository);
 describe("repository tokens", () => {
-  test("reports missing repository bootstrap imports", () => {
+  test("creates an NPA instance without repository bootstrap imports", () => {
     ensureBuiltCore();
 
     const script = `
   (async () => {
     const { NPA } = await import("./dist/index.js");
 
-    try {
-      new NPA({
-        adapter: {
-          createRepository() {
-            throw new Error("adapter should not be called");
-          },
+    new NPA({
+      adapter: {
+        createRepository() {
+          throw new Error("adapter should not be called");
         },
-      });
-      process.exitCode = 1;
-    } catch (error) {
-      console.log(error.message);
-    }
+      },
+    });
   })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
@@ -64,11 +59,10 @@ describe("repository tokens", () => {
     });
 
     expect(result.status).toEqual(0);
-    expect(result.stdout).toMatch(/No @Repository metadata has been loaded/);
-    expect(result.stdout).toMatch(/import "\.\/repositories"/);
+    expect(result.stderr).toEqual("");
   });
 
-  test("auto-registers imported @Repository tokens when repositories are omitted", async () => {
+  test("lazily creates and caches repositories when repositories are omitted", async () => {
     const created: unknown[] = [];
     const adapter = {
       createRepository(options: NPACreateRepositoryOptions) {
@@ -84,11 +78,12 @@ describe("repository tokens", () => {
 
     const npa = new NPA({ adapter });
     const users = npa.get(AutoUserRepository);
+    const cached = npa.get(AutoUserRepository);
 
     expect(users instanceof AutoUserRepository).toEqual(true);
+    expect(cached).toEqual(users);
     expect(await users.findById(10)).toEqual({ id: 10 });
-    expect(created.includes(UserRepository)).toEqual(true);
-    expect(created.includes(AutoUserRepository)).toEqual(true);
+    expect(created).toEqual([AutoUserRepository]);
   });
 
   test("creates repositories from @Repository abstract-class tokens", async () => {
@@ -128,6 +123,20 @@ describe("repository tokens", () => {
     } as unknown as NPARuntimeAdapter;
 
     expect(() => new NPA({ adapter, repositories: [MissingRepository] })).toThrow(/MissingRepository is missing @Repository\(Entity\)/);
+  });
+
+  test("rejects lazy repositories without @Repository metadata", () => {
+    abstract class MissingRepository extends NPARepository<TokenUser, number> {}
+
+    const npa = new NPA({
+      adapter: {
+        createRepository() {
+          return {};
+        },
+      } as unknown as NPARuntimeAdapter,
+    });
+
+    expect(() => npa.get(MissingRepository)).toThrow(/MissingRepository is missing @Repository\(Entity\)/);
   });
 
   test("keeps explicit repository lists scoped to the provided tokens", () => {

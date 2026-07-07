@@ -122,7 +122,6 @@ function writeInitFiles(
   files.push(
     writeFileIfMissing(cwd, "src/user.entity.ts", entityTemplate()),
     writeFileIfMissing(cwd, "src/user.repository.ts", repositoryTemplate()),
-    writeFileIfMissing(cwd, "src/repositories.ts", repositoriesTemplate()),
   );
 
   return files;
@@ -202,11 +201,6 @@ export abstract class UserRepository extends NPARepository<User, number> {
 
   abstract existsByEmailIgnoreCase(email: string): Promise<boolean>;
 }
-`;
-}
-
-function repositoriesTemplate(): string {
-  return `export { UserRepository } from "./user.repository";
 `;
 }
 
