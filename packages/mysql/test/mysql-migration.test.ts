@@ -102,6 +102,34 @@ describe("MySQL migration compiler", () => {
       })],
     })).toThrow(/MySQL does not support GenerationStrategy\.SEQUENCE/);
   });
+
+  test("compiles BigInteger columns as BIGINT", () => {
+    const statements = compileMysqlMigrationStatements({
+      entities: [{
+        ...userSchema,
+        columns: [
+          ...userSchema.columns,
+          {
+            propertyName: "total",
+            columnName: "total",
+            tsType: "BigInteger",
+            nullable: false,
+            primary: false,
+            version: false,
+          },
+        ],
+      }],
+    });
+
+    expect(statements).toContain([
+      "CREATE TABLE IF NOT EXISTS `users` (",
+      "  `id` INT PRIMARY KEY,",
+      "  `email` VARCHAR(255) NOT NULL,",
+      "  `status` VARCHAR(255) NOT NULL,",
+      "  `total` BIGINT NOT NULL",
+      ")",
+    ].join("\n"));
+  });
 });
 
 function generatedSchema(className, tableName, column) {

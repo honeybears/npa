@@ -247,6 +247,9 @@ describe("migration metadata", () => {
 
     @Column({ type: "VARCHAR(32)", nullable: true, default: "pending" })
     code?: string | null;
+
+    @Column({ type: "bigint" })
+    total!: number;
   }
   `);
 
@@ -261,6 +264,13 @@ describe("migration metadata", () => {
       nullable: true,
       primary: false,
       version: false,
+    });
+    expect(
+      schema.columns.find((column) => column.propertyName === "total"),
+    ).toMatchObject({
+      propertyName: "total",
+      tsType: "BigInteger",
+      dbType: "bigint",
     });
   });
 

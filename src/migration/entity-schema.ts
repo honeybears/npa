@@ -133,11 +133,13 @@ function parseColumns(
       ],
     );
 
+    const dbType = options.type;
+
     columns.push({
       propertyName,
       columnName: options.name ?? toSnakeCase(propertyName),
-      tsType,
-      dbType: options.type,
+      tsType: resolveRowType(tsType, dbType),
+      dbType,
       ...(options.defaultValue !== undefined
         ? { defaultValue: options.defaultValue }
         : {}),
@@ -165,6 +167,10 @@ function parseColumns(
   );
 
   return columns;
+}
+
+function resolveRowType(tsType: string, dbType: string | undefined): string {
+  return dbType && /^bigint\b/i.test(dbType.trim()) ? "BigInteger" : tsType;
 }
 
 function parseIndexes(

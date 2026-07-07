@@ -14,6 +14,9 @@ describe("VS Code language core", () => {
         @Column()
         createdAt!: Date;
 
+        @Column({ type: "bigint" })
+        balance!: number;
+
         @ManyToOne(() => Team)
         team?: Team;
       }
@@ -25,6 +28,7 @@ describe("VS Code language core", () => {
           { name: "id", kind: "ID", type: "number" },
           { name: "name", kind: "COLUMN", type: "string" },
           { name: "createdAt", kind: "COLUMN", type: "Date" },
+          { name: "balance", kind: "COLUMN", type: "BigInteger" },
           { name: "team", kind: "RELATION", type: "Team", target: "Team", relationKind: "MANY_TO_ONE" },
         ],
       },

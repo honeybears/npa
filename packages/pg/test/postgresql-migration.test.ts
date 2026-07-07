@@ -106,6 +106,34 @@ describe("PostgreSQL migration compiler", () => {
       ")",
     ].join("\n"));
   });
+
+  test("compiles BigInteger columns as BIGINT", () => {
+    const statements = compilePostgresqlMigrationStatements({
+      entities: [{
+        ...userSchema,
+        columns: [
+          ...userSchema.columns,
+          {
+            propertyName: "total",
+            columnName: "total",
+            tsType: "BigInteger",
+            nullable: false,
+            primary: false,
+            version: false,
+          },
+        ],
+      }],
+    });
+
+    expect(statements).toContain([
+      'CREATE TABLE IF NOT EXISTS "users" (',
+      '  "id" INTEGER PRIMARY KEY,',
+      '  "email" TEXT NOT NULL,',
+      '  "status" TEXT NOT NULL,',
+      '  "total" BIGINT NOT NULL',
+      ")",
+    ].join("\n"));
+  });
 });
 
 function generatedSchema(className, tableName, column) {

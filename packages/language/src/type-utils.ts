@@ -12,12 +12,16 @@ export function normalizeType(type: string | undefined): string {
     return "number";
   }
 
+  if (normalized.includes("bigint") || normalized.includes("biginteger")) {
+    return "bigint";
+  }
+
   if (normalized.includes("boolean")) {
     return "boolean";
   }
 
   if (normalized.includes("date")) {
-    return "Date";
+    return "date";
   }
 
   return "unknown";

@@ -88,6 +88,20 @@ describe("language helpers", () => {
     expect(ordered.sortText > exact.sortText).toBeTruthy();
   });
 
+  test("preserves BigInteger parameter types for range completions", () => {
+    const workspace = createWorkspace();
+    const user = workspace.entities.find((entity) => entity.className === "User");
+    const exact = getNPAQueryMethodCompletions({
+      prefix: "findByBalanceGreaterThan",
+      entity: user,
+      workspace,
+      limit: 10,
+    }).find((completion) => completion.name === "findByBalanceGreaterThan");
+
+    expect(exact?.signature).toEqual("findByBalanceGreaterThan(balance: BigInteger): Promise<User[]>;");
+    expect(exact?.parameters).toEqual([{ name: "balance", type: "BigInteger" }]);
+  });
+
   test("adds optional Pageable signatures to non-limited find completions", () => {
     const workspace = createWorkspace();
     const user = workspace.entities.find((entity) => entity.className === "User");
@@ -128,7 +142,7 @@ describe("language helpers", () => {
       entity: user,
       workspace,
       includeOrderBy: true,
-      limit: 100,
+      limit: 200,
     });
     const andCompletion = andCompletions.find((completion) =>
       completion.name === "findByNameAndAge",
@@ -143,7 +157,7 @@ describe("language helpers", () => {
       entity: user,
       workspace,
       includeOrderBy: true,
-      limit: 100,
+      limit: 200,
     }).map((completion) => completion.name);
 
     expect(orNames.includes("findByNameOrTeamName")).toBeTruthy();
@@ -386,6 +400,7 @@ function createWorkspace() {
         column("id", "number", true),
         column("name", "string"),
         column("age", "number"),
+        column("balance", "BigInteger"),
         column("createdAt", "Date"),
       ],
       indexes: [],

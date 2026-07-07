@@ -460,7 +460,7 @@ function getOperatorsForType(type: string | undefined): CompletionOperator[] {
     return [...COMMON_OPERATORS, ...STRING_OPERATORS];
   }
 
-  if (normalized === "number" || normalized === "date") {
+  if (normalized === "number" || normalized === "bigint" || normalized === "date") {
     return [...COMMON_OPERATORS, ...RANGE_OPERATORS];
   }
 
@@ -586,6 +586,10 @@ function getParameterType(type: string | undefined): string {
 
   if (normalized === "date") {
     return "Date";
+  }
+
+  if (normalized === "bigint") {
+    return normalizeExplicitType(type) ?? "bigint";
   }
 
   if (["string", "number", "boolean"].includes(normalized)) {

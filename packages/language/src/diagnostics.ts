@@ -361,7 +361,7 @@ function isOperatorCompatible(
   }
 
   if (isRangeOperator(operator)) {
-    return normalized === "number" || normalized === "date";
+    return normalized === "number" || normalized === "bigint" || normalized === "date";
   }
 
   return true;

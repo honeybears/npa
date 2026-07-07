@@ -821,6 +821,10 @@ function defaultType(
     return "INT";
   }
 
+  if (["bigint", "biginteger"].includes(normalized.toLowerCase())) {
+    return "BIGINT";
+  }
+
   if (normalized === "boolean") {
     return "BOOLEAN";
   }

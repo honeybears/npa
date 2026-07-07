@@ -44,7 +44,7 @@ function parseEntityProperties(classBody) {
   while ((match = fieldPattern.exec(classBody)) !== null) {
     const decorators = match[1];
     const propertyName = match[3];
-    const type = match[4].trim();
+    const type = resolvePropertyType(match[4].trim(), decorators);
     const relation = parseRelationProperty(decorators, propertyName);
 
     if (relation) {
@@ -71,6 +71,14 @@ function parseEntityProperties(classBody) {
   }
 
   return properties;
+}
+
+function resolvePropertyType(type, decorators) {
+  return hasBigIntegerColumnType(decorators) ? "BigInteger" : type;
+}
+
+function hasBigIntegerColumnType(decorators) {
+  return /@(Id|Column|Version)\s*\([\s\S]*?\btype\s*:\s*(['"`])\s*bigint\b/i.test(decorators);
 }
 
 function parseRelationProperty(decorators, propertyName) {
