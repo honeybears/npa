@@ -23,6 +23,7 @@ import { PostgresqlConnection, PostgresqlDriverConnection } from "./postgresql-c
 const MIGRATION_NAME = "schema";
 const LOCK_KEY = "npa:migrations";
 const MAX_FOREIGN_KEY_IDENTIFIER_LENGTH = 63;
+const INDEX_COLUMN_SEPARATOR = "\u001f";
 
 interface MigrationTableSchema {
   tableName: string;
@@ -82,7 +83,7 @@ interface PostgresqlColumnRow {
 
 interface PostgresqlIndexRow {
   indexName: string;
-  columns: string[];
+  columns: string;
   unique: boolean;
   primary: boolean;
 }
@@ -1091,10 +1092,6 @@ function joinColumnNames(
       : `${prefix}${primary.columnName}`);
 }
 
-function primaryColumn(entity: MigrationEntitySchema): MigrationColumnSchema {
-  return primaryColumns(entity)[0];
-}
-
 function primaryColumns(entity: MigrationEntitySchema): MigrationColumnSchema[] {
   const primary = entity.columns.filter((column) => column.primary);
 
@@ -1173,7 +1170,7 @@ async function readCurrentIndexes(
     [
       "SELECT",
       "  i.relname AS \"indexName\",",
-      "  array_agg(a.attname ORDER BY keys.ordinality) AS \"columns\",",
+      "  string_agg(a.attname, E'\\x1f' ORDER BY keys.ordinality) AS \"columns\",",
       "  ix.indisunique AS \"unique\",",
       "  ix.indisprimary AS \"primary\"",
       "FROM pg_class t",
@@ -1192,13 +1189,19 @@ async function readCurrentIndexes(
   for (const row of result.rows) {
     indexes.set(row.indexName, {
       name: row.indexName,
-      columns: row.columns,
+      columns: normalizePostgresqlIndexColumns(row.columns),
       unique: row.unique,
       primary: row.primary,
     });
   }
 
   return indexes;
+}
+
+function normalizePostgresqlIndexColumns(columns: string[] | string): string[] {
+  return Array.isArray(columns)
+    ? columns
+    : columns.split(INDEX_COLUMN_SEPARATOR).filter(Boolean);
 }
 
 async function readCurrentForeignKeys(
