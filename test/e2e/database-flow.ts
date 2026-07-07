@@ -232,6 +232,29 @@ async function assertRepositoryContract(
   expect(await repository.deleteAll()).toEqual(1);
   expect(await repository.count()).toEqual(0);
 
+  const batch = await repository.saveAll([
+    {
+      name: "batch alpha",
+      price: 70,
+      active: true,
+      status: "batch",
+      createdAt: new Date("2026-01-07T00:00:00.000Z"),
+    },
+    {
+      name: "batch beta",
+      price: 90,
+      active: false,
+      status: "batch",
+      createdAt: new Date("2026-01-08T00:00:00.000Z"),
+    },
+  ]);
+
+  expect(batch.map((row) => row.product_name)).toEqual(["batch alpha", "batch beta"]);
+  expect(batch.every((row) => typeof row.product_id === "number")).toEqual(true);
+  expect(await repository.countByStatus("batch")).toEqual(2);
+  expect(await repository.deleteByStatus("batch")).toEqual(2);
+  expect(await repository.count()).toEqual(0);
+
   if (options.nullableStatus) {
     await assertNullableStatusContract(repository);
   }

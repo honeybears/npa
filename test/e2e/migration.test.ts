@@ -393,6 +393,19 @@ describe("migration E2E", () => {
           migrationDirs[0],
           "migration.sql",
         );
+        const downSql = fs.readFileSync(
+          path.join(migrationRoot, migrationDirs[0], "down.sql"),
+          "utf8",
+        );
+        expect(downSql).toContain(
+          `DROP TABLE IF EXISTS ${adapter.quoteIdentifier(joinTableName)};`,
+        );
+        expect(downSql).toContain(
+          `DROP TABLE IF EXISTS ${adapter.quoteIdentifier(categoryTableName)};`,
+        );
+        expect(downSql).toContain(
+          `DROP TABLE IF EXISTS ${adapter.quoteIdentifier(tableName)};`,
+        );
 
         const deploy = runCli(
           ["migrate", "deploy", "--config", "npa.config.mjs"],
