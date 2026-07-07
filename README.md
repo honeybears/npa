@@ -158,7 +158,7 @@ join table. Use `cascade` with
 `[CascadeType.PERSIST]` or `CascadeType.REMOVE` for loaded or lazy relation
 values that should be persisted or removed with the owning operation. For
 `@ManyToMany`, `PERSIST` can persist id-less targets and `REMOVE` deletes target
-entities when configured; remove operations also clean join rows. Loaded owner
+entities when configured; delete operations also clean join rows. Loaded owner
 or inverse `@ManyToMany` arrays flush join-table rows. Loaded `@OneToMany`
 arrays update the owning `@ManyToOne` foreign key; set `orphanRemoval: true` to
 delete children removed from the collection. Relations are lazy by default; set
@@ -174,8 +174,8 @@ without manually initializing lazy arrays.
 
 Application code extends only NPA, not a database-specific repository type.
 `NPARepository` provides familiar persistence base methods including `findById`,
-`findAll`, `existsById`, `count`, `save`, `saveAll`, `remove`, `delete`,
-`deleteById`, and `deleteAll`.
+`findAll`, `existsById`, `count`, `save`, `saveAll`, `delete`, `deleteById`,
+and `deleteAll`.
 
 Declare repositories as abstract classes and bind them to entities with
 `@Repository`. NPA creates repository implementations lazily when
@@ -537,8 +537,7 @@ reuse the active transaction. Use
 `{ propagation: TransactionPropagation.REQUIRES_NEW }` to force a separate
 transaction, or `{ propagation: TransactionPropagation.NESTED }` to use a
 savepoint inside the current transaction. `readOnly: true` starts a read-only
-database transaction and rejects dirty-checking flushes, `save`, and
-`remove`.
+database transaction and rejects dirty-checking flushes, `save`, and `delete`.
 
 ```ts
 import {
@@ -584,7 +583,7 @@ Repository results loaded inside a transaction are managed by the active
 transaction flushes changed columns before commit. If the entity has `@Version`,
 NPA updates with `WHERE id = ? AND version = ?`, increments the version column,
 and throws `OptimisticLockError` when no row matches the expected version.
-`repository.save(entity)` and `repository.remove(entity)` also use the active
+`repository.save(entity)` and `repository.delete(entity)` also use the active
 context, so saves and deletes flush with the transaction.
 `repository.saveAll(entities)` follows Spring Data JPA's shape and calls
 `save` for each entity; it does not guarantee a single batch SQL statement.
@@ -811,9 +810,9 @@ Database and driver codes:
 
 1. Service code calls a method on `UserRepository`.
 2. Familiar persistence base methods (`findById`, `findAll`, `existsById`, `count`,
-   `save`, `remove`, `deleteById`, `deleteAll`) go through the NPA adapter directly or the active persistence
+   `save`, `delete`, `deleteById`, `deleteAll`) go through the NPA adapter directly or the active persistence
    context. Deletes on entities with cascade remove or join-table cleanup load
-   matching rows and run the remove path.
+   matching rows and run the context remove path.
 3. Derived methods (`findBy...`, `existsBy...`, `countBy...`, `deleteBy...`) are
    parsed into a query AST.
 4. The selected adapter compiles the AST with entity metadata and executes it.

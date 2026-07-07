@@ -299,7 +299,6 @@ describe("derived query methods", () => {
         calls.push(entity);
         return { ...entity, saved: true };
       },
-      async remove() {},
       async delete() {
         return 0;
       },
@@ -368,7 +367,6 @@ describe("derived query methods", () => {
       async updateById() {
         return null;
       },
-      async remove() {},
       async delete() {
         return 0;
       },
@@ -469,7 +467,6 @@ describe("derived query methods", () => {
       async updateById() {
         return null;
       },
-      async remove() {},
       async delete() {
         return 0;
       },

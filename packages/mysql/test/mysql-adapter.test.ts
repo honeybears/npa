@@ -1298,7 +1298,7 @@ describe("MySQL adapter", () => {
     ]);
   });
 
-  test("runs persist and remove through a MySQL persistence context", async () => {
+  test("runs save and delete through a MySQL persistence context", async () => {
     const calls = [];
     const queryable = {
       async query(text, values) {
@@ -1329,7 +1329,7 @@ describe("MySQL adapter", () => {
 
     expect(await repository.save(product)).toBe(product);
     expect(product.id).toEqual(10);
-    await repository.remove(product);
+    await repository.delete(product);
 
     expect(calls).toEqual([
       {
@@ -1349,7 +1349,7 @@ describe("MySQL adapter", () => {
     ]);
   });
 
-  test("syncs MySQL many-to-many join rows during persist and remove", async () => {
+  test("syncs MySQL many-to-many join rows during save and delete", async () => {
     const calls = [];
     const queryable = {
       async query(text, values) {
@@ -1376,7 +1376,7 @@ describe("MySQL adapter", () => {
     } as Member;
 
     await repository.save(member);
-    await repository.remove(member);
+    await repository.delete(member);
 
     expect(calls).toEqual([
       {

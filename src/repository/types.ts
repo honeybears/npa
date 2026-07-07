@@ -89,7 +89,6 @@ export abstract class NPARepository<TEntity extends object, TId = unknown> {
   abstract save(entity: TEntity): Promise<TEntity>;
   abstract saveAll(entities: Iterable<TEntity>): Promise<TEntity[]>;
   abstract relations(entity: TEntity): NPARelationMutations<TEntity>;
-  abstract remove(entity: TEntity): Promise<void>;
   abstract delete(entityOrId: TEntity | TId): Promise<number>;
   abstract deleteById(id: TId): Promise<number>;
   abstract deleteAll(): Promise<number>;
@@ -106,7 +105,6 @@ export interface NPARepositoryAdapter<TEntity extends object, TId = unknown> {
   existsById(id: TId): Promise<boolean>;
   count(): Promise<number>;
   save(entity: TEntity): Promise<TEntity>;
-  remove(entity: TEntity): Promise<void>;
   delete(entityOrId: TEntity | TId): Promise<number>;
   deleteById(id: TId): Promise<number>;
   deleteAll(): Promise<number>;

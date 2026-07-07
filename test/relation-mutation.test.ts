@@ -35,7 +35,6 @@ function repository(): UserRepository {
     async save(entity) {
       return entity;
     },
-    async remove() {},
     async delete() {
       return 0;
     },

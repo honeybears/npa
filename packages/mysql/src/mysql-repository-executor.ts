@@ -317,31 +317,19 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     return this.manage(row ? this.attachLazy([row])[0] : null);
   };
 
-  remove = async (entity: TEntity): Promise<void> => {
-    const entityTarget = this.getEntityTarget();
-
-    if (!entityTarget) {
-      await this.delete(entity);
-      return;
-    }
-
-    const currentContext = getCurrentPersistenceContext();
-    const context = currentContext ?? new PersistenceContext();
-    await context.remove(entity, {
-      adapter: this.dirtyCheckAdapter,
-      entity: entityTarget,
-    });
-
-    if (!currentContext) {
-      await context.flush();
-    }
-  };
-
   delete = async (entityOrId: TEntity | TId): Promise<number> => {
-    const id =
-      typeof entityOrId === "object" && entityOrId !== null
-        ? getMysqlPrimaryKeyValue(entityOrId, this.options)
-        : entityOrId;
+    if (typeof entityOrId === "object" && entityOrId !== null) {
+      const entityTarget = this.getEntityTarget();
+
+      if (entityTarget) {
+        await this.removeEntity(entityOrId as TEntity);
+        return 1;
+      }
+    }
+
+    const id = typeof entityOrId === "object" && entityOrId !== null
+      ? getMysqlPrimaryKeyValue(entityOrId, this.options)
+      : entityOrId;
 
     return this.deleteById(id as TId);
   };
@@ -617,10 +605,7 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     const context = currentContext ?? new PersistenceContext();
 
     for (const entity of entities) {
-      await context.remove(entity, {
-        adapter: this.dirtyCheckAdapter,
-        entity: entityTarget,
-      });
+      await this.removeEntity(entity, context, entityTarget, false);
     }
 
     if (!currentContext) {
@@ -628,6 +613,28 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
     }
 
     return entities.length;
+  }
+
+  private async removeEntity(
+    entity: TEntity,
+    context = getCurrentPersistenceContext() ?? new PersistenceContext(),
+    entityTarget = this.getEntityTarget(),
+    flush = true,
+  ): Promise<void> {
+    if (!entityTarget) {
+      await this.deleteById(getMysqlPrimaryKeyValue(entity, this.options) as TId);
+      return;
+    }
+
+    const currentContext = getCurrentPersistenceContext();
+    await context.remove(entity, {
+      adapter: this.dirtyCheckAdapter,
+      entity: entityTarget,
+    });
+
+    if (flush && !currentContext) {
+      await context.flush();
+    }
   }
 
   private shouldUseOrmDelete(): boolean {

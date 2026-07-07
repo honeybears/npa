@@ -37,7 +37,6 @@ export function createNPARepository<
       save: adapter.save,
       saveAll: (entities: Iterable<TEntity>) => saveAll(entities, adapter),
       relations: (entity: TEntity) => createRelationMutations(entity),
-      remove: adapter.remove,
       delete: adapter.delete,
       deleteById: adapter.deleteById,
       deleteAll: adapter.deleteAll,
