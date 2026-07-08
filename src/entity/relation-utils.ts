@@ -140,20 +140,6 @@ export function defaultJoinTableName(
   return `${source.tableName}_${target.tableName}`;
 }
 
-export function joinTableColumnName(
-  entity: EntityMetadata,
-): string {
-  const joinColumns = joinTableColumnNames(entity);
-
-  if (joinColumns.length !== 1) {
-    throw new Error(
-      `Entity ${entity.target.name} has a composite @Id. Use joinTableColumnNames() instead.`,
-    );
-  }
-
-  return joinColumns[0].joinColumnName;
-}
-
 export function joinTableColumnNames(
   entity: EntityMetadata,
 ): RelationJoinColumn[] {
