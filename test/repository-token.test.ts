@@ -2,7 +2,7 @@ import { describe, expect, test } from "@jest/globals";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Column, Entity, Id, NPA, NPARepository, Repository, createNPA, type NPACreateRepositoryOptions, type NPARuntimeAdapter } from "../src";
+import { Column, Entity, Id, NPARepository, Repository, createNPA, type NPACreateRepositoryOptions, type NPARuntimeAdapter } from "../src";
 
 class TokenUser {
   id!: number;
@@ -39,9 +39,13 @@ describe("repository tokens", () => {
 
     const script = `
   (async () => {
-    const { NPA } = await import("./dist/index.js");
+    const api = await import("./dist/index.js");
 
-    new NPA({
+    if ("NPA" in api) {
+      throw new Error("NPA class should not be exported");
+    }
+
+    api.createNPA({
       adapter: {
         createRepository() {
           throw new Error("adapter should not be called");
@@ -76,7 +80,7 @@ describe("repository tokens", () => {
       },
     } as unknown as NPARuntimeAdapter;
 
-    const npa = new NPA({ adapter });
+    const npa = createNPA({ adapter });
     const users = npa.get(AutoUserRepository);
     const cached = npa.get(AutoUserRepository);
 
@@ -100,7 +104,7 @@ describe("repository tokens", () => {
       },
     } as unknown as NPARuntimeAdapter;
 
-    const npa = new NPA({
+    const npa = createNPA({
       adapter,
       repositories: [UserRepository],
     });
@@ -122,13 +126,13 @@ describe("repository tokens", () => {
       },
     } as unknown as NPARuntimeAdapter;
 
-    expect(() => new NPA({ adapter, repositories: [MissingRepository] })).toThrow(/MissingRepository is missing @Repository\(Entity\)/);
+    expect(() => createNPA({ adapter, repositories: [MissingRepository] })).toThrow(/MissingRepository is missing @Repository\(Entity\)/);
   });
 
   test("rejects lazy repositories without @Repository metadata", () => {
     abstract class MissingRepository extends NPARepository<TokenUser, number> {}
 
-    const npa = new NPA({
+    const npa = createNPA({
       adapter: {
         createRepository() {
           return {};
@@ -143,7 +147,7 @@ describe("repository tokens", () => {
     abstract class OtherRepository extends NPARepository<TokenUser, number> {}
     Repository(TokenUser)(OtherRepository);
 
-    const npa = new NPA({
+    const npa = createNPA({
       adapter: {
         createRepository(options: NPACreateRepositoryOptions) {
           return Object.create(options.repository.prototype);
@@ -155,7 +159,7 @@ describe("repository tokens", () => {
     expect(() => npa.get(OtherRepository)).toThrow(/OtherRepository was not registered in this NPA instance/);
   });
 
-  test("createNPA remains a compatibility wrapper", () => {
+  test("createNPA creates an NPA application", () => {
     const npa = createNPA({
       adapter: {
         createRepository(options: NPACreateRepositoryOptions) {

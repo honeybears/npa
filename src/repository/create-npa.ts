@@ -48,7 +48,7 @@ export interface NPAApplication {
   ): TRepository;
 }
 
-export class NPA implements NPAApplication {
+class NPA implements NPAApplication {
   private readonly repositories = new Map<NPARepositoryTarget, object>();
   private readonly allowedRepositories?: Set<NPARepositoryTarget>;
   private readonly adapter: NPARuntimeAdapter;

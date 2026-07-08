@@ -3,9 +3,9 @@ import {
   AbstractTransactionManager,
   Column,
   Entity,
+  createNPA,
   getCurrentPersistenceContext,
   Id,
-  NPA,
   RollbackOnlyError,
   Transaction,
   TransactionIsolation,
@@ -460,7 +460,7 @@ describe("transaction manager", () => {
   test("Transaction decorator resolves a manager registered by NPA", async () => {
     const manager = new RecordingTransactionManager();
 
-    new NPA({
+    createNPA({
       adapter: {
         createRepository() {
           throw new Error("unexpected repository creation");
@@ -490,7 +490,7 @@ describe("transaction manager", () => {
   test("Transaction decorator resolves a manager from the NPA adapter", async () => {
     const manager = new RecordingTransactionManager();
 
-    new NPA({
+    createNPA({
       adapter: {
         transactionManager: manager,
         createRepository() {
@@ -526,13 +526,13 @@ describe("transaction manager", () => {
       },
     };
 
-    new NPA({
+    createNPA({
       adapter,
       name: "user",
       repositories: [],
       transactionManager: userManager,
     });
-    new NPA({
+    createNPA({
       adapter,
       name: "audit",
       repositories: [],

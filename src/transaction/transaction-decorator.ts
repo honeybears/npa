@@ -103,7 +103,7 @@ function resolveTransactionManager(
   }
 
   throw new NPATransactionError(
-    `@Transaction could not find a transaction manager. Add a ${propertyName} property, pass @Transaction({ manager }), or register one with new NPA({ transactionManager }).`,
+    `@Transaction could not find a transaction manager. Add a ${propertyName} property, pass @Transaction({ manager }), or register one with createNPA({ transactionManager }).`,
     {
       code: "NPA_TRANSACTION_MANAGER_NOT_FOUND",
       details: { managerProperty: propertyName },
