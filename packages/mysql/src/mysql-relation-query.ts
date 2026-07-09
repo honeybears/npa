@@ -101,7 +101,10 @@ export class MysqlRelationQueryBuilder {
     const columns = this.columns(property);
 
     if (columns.length !== 1) {
-      throw new Error(`Property ${property} maps to multiple columns.`);
+      throw new NPAQueryError(`Property ${property} maps to multiple columns.`, {
+        code: "NPA_INVALID_QUERY_PREDICATE",
+        details: { columns, property },
+      });
     }
 
     return columns[0];

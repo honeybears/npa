@@ -5,6 +5,7 @@ import {
   normalizeColumnValue,
   NPADatabaseError,
   NPAMetadataError,
+  NPAPersistenceError,
   primaryColumnsOf,
   readRelationForeignKeyValue,
   relationJoinColumns,
@@ -145,8 +146,12 @@ export function normalizeMysqlPropertyValues(
   }
 
   if (!isRecord(normalized)) {
-    throw new Error(
+    throw new NPAPersistenceError(
       `Relation ${relation.propertyName} requires an object with composite primary key values.`,
+      {
+        code: "NPA_COMPOSITE_ID_OBJECT_REQUIRED",
+        details: { relation: relation.propertyName, value: normalized },
+      },
     );
   }
 

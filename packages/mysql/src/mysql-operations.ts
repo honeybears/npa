@@ -6,6 +6,7 @@ import {
   MysqlQueryable,
   MysqlRawQueryResult,
 } from "./types";
+import { toMysqlDatabaseError } from "./mysql-database-error";
 
 export function instrumentMysqlQueryable(
   queryable: MysqlQueryable,
@@ -23,6 +24,7 @@ export function instrumentMysqlQueryable(
             operations,
             resultMetadata: mysqlResultMetadata,
             text,
+            toDatabaseError: toMysqlDatabaseError,
             values,
           })
       : undefined,
@@ -38,6 +40,7 @@ export function instrumentMysqlQueryable(
             operations,
             resultMetadata: mysqlResultMetadata,
             text,
+            toDatabaseError: toMysqlDatabaseError,
             values,
           })
       : undefined,

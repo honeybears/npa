@@ -22,8 +22,12 @@ export function relationJoinColumnName(relation: RelationMetadata): string {
   const joinColumns = relationJoinColumns(relation);
 
   if (joinColumns.length !== 1) {
-    throw new Error(
+    throw new NPAMetadataError(
       `Relation ${relation.propertyName} targets a composite @Id. Use relationJoinColumns() instead.`,
+      {
+        code: "NPA_COMPOSITE_RELATION_KEY_UNSUPPORTED",
+        details: { relation: relation.propertyName },
+      },
     );
   }
 
@@ -38,8 +42,17 @@ export function relationJoinColumns(relation: RelationMetadata): RelationJoinCol
   );
 
   if (explicit && explicit.length !== targetPrimaryColumns.length) {
-    throw new Error(
+    throw new NPAMetadataError(
       `Relation ${relation.propertyName} defines ${explicit.length} join column(s), but ${targetMetadata.target.name} has ${targetPrimaryColumns.length} @Id column(s).`,
+      {
+        code: "NPA_INVALID_DECORATOR_OPTIONS",
+        details: {
+          actualJoinColumns: explicit.length,
+          expectedJoinColumns: targetPrimaryColumns.length,
+          relation: relation.propertyName,
+          targetName: targetMetadata.target.name,
+        },
+      },
     );
   }
 

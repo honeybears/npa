@@ -12,7 +12,7 @@ import type {
   EntityTarget,
   RelationMetadata,
 } from "../entity";
-import { NPAMetadataError, NPAQueryError } from "../error";
+import { NPAMetadataError, NPAPersistenceError, NPAQueryError } from "../error";
 import type { NPAEntityGraphMetadata } from "./entity-graph-decorator";
 import type { NPARelationLoadTree } from "./relation-load-types";
 import type {
@@ -296,8 +296,15 @@ export function compileTupleWhere(
   const startIndex = options.startIndex ?? 1;
 
   if (columns.length !== values.length) {
-    throw new Error(
+    throw new NPAPersistenceError(
       `Expected ${columns.length} id value(s), received ${values.length}.`,
+      {
+        code: "NPA_COMPOSITE_ID_OBJECT_REQUIRED",
+        details: {
+          actualValues: values.length,
+          expectedValues: columns.length,
+        },
+      },
     );
   }
 
@@ -321,8 +328,12 @@ export function idParts(id: unknown, columns: ColumnMetadata[] = []): unknown[] 
     }
 
     if (!isRecord(id)) {
-      throw new Error(
+      throw new NPAPersistenceError(
         `Expected object id with ${columns.length} value(s), received scalar id.`,
+        {
+          code: "NPA_COMPOSITE_ID_OBJECT_REQUIRED",
+          details: { expectedValues: columns.length, id },
+        },
       );
     }
 

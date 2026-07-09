@@ -1181,8 +1181,16 @@ function relationJoinColumnNames(
   );
 
   if (explicit && explicit.length !== targetPrimaryColumns.length) {
-    throw new Error(
+    throw new NPAMigrationError(
       `@${relation.kind === MigrationRelationKind.ONE_TO_ONE ? "OneToOne" : "ManyToOne"} ${relation.propertyName} defines ${explicit.length} join column(s), but target has ${targetPrimaryColumns.length} @Id column(s).`,
+      {
+        code: "NPA_MIGRATION_SCHEMA_PARSE_FAILED",
+        details: {
+          actualJoinColumns: explicit.length,
+          expectedJoinColumns: targetPrimaryColumns.length,
+          relation: relation.propertyName,
+        },
+      },
     );
   }
 

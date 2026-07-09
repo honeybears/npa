@@ -852,7 +852,9 @@ describe("PostgreSQL adapter", () => {
       },
     };
     const npa = createNPA({
-      adapter: postgresql({ connection: asPgQueryable(queryable) }),
+      adapter: postgresql({
+        connection: new PostgresqlConnection(asPgQueryable(queryable)),
+      }),
       operations: {
         logger: (event) => {
           events.push(event);
@@ -895,7 +897,9 @@ describe("PostgreSQL adapter", () => {
       },
     };
     const npa = createNPA({
-      adapter: postgresql({ connection: asPgQueryable(queryable) }),
+      adapter: postgresql({
+        connection: new PostgresqlConnection(asPgQueryable(queryable)),
+      }),
       operations: {
         logger: (event) => {
           events.push(event);
@@ -909,8 +913,11 @@ describe("PostgreSQL adapter", () => {
     await expect(products.findById(10)).rejects.toMatchObject({
       code: "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED",
       details: {
+        adapter: "postgresql",
         constraint: "products_pkey",
         driverCode: "23505",
+        text: 'SELECT * FROM "products" WHERE "product_id" = $1 LIMIT 1',
+        values: [10],
       },
       name: "NPADatabaseError",
     });
@@ -1121,6 +1128,12 @@ describe("PostgreSQL adapter", () => {
       text: 'DELETE FROM "tenant_users" WHERE "tenant_id" = $1 AND "user_id" = $2',
       values: ["t1", "u1"],
     });
+    expect(() => compilePostgresqlFindById("t1", options)).toThrow(
+      expect.objectContaining({
+        code: "NPA_COMPOSITE_ID_OBJECT_REQUIRED",
+        name: "NPAPersistenceError",
+      }),
+    );
   });
 
   test("compiles PostgreSQL composite relation key SQL", () => {

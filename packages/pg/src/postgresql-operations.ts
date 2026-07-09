@@ -6,6 +6,7 @@ import {
   PostgresqlQueryable,
   PostgresqlQueryResult,
 } from "./types";
+import { toPostgresqlDatabaseError } from "./postgresql-database-error";
 
 export function instrumentPostgresqlQueryable(
   queryable: PostgresqlQueryable,
@@ -22,6 +23,7 @@ export function instrumentPostgresqlQueryable(
         operations,
         resultMetadata: postgresqlResultMetadata,
         text,
+        toDatabaseError: toPostgresqlDatabaseError,
         values,
       });
     },

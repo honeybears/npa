@@ -378,8 +378,15 @@ class MysqlQueryCompiler {
       case "isNotNull":
         return `(${columns.map((column) => `${column} IS NOT NULL`).join(" OR ")})`;
       default:
-        throw new Error(
+        throw new NPAQueryError(
           `Query operator "${condition.operator}" does not support composite property "${condition.property}".`,
+          {
+            code: "NPA_INVALID_QUERY_PREDICATE",
+            details: {
+              operator: condition.operator,
+              property: condition.property,
+            },
+          },
         );
     }
   }
@@ -411,14 +418,22 @@ class MysqlQueryCompiler {
     const value = this.arg(condition, requireParameterIndex(condition));
 
     if (!Array.isArray(value)) {
-      throw new Error(
+      throw new NPAQueryError(
         `Query operator "${condition.operator}" expects an array parameter.`,
+        {
+          code: "NPA_INVALID_QUERY_PREDICATE",
+          details: { operator: condition.operator, value },
+        },
       );
     }
 
     if (value.length === 0) {
-      throw new Error(
+      throw new NPAQueryError(
         `Query operator "${condition.operator}" expects a non-empty array parameter.`,
+        {
+          code: "NPA_INVALID_QUERY_PREDICATE",
+          details: { operator: condition.operator },
+        },
       );
     }
 

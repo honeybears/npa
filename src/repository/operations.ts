@@ -1,4 +1,4 @@
-import { NPADatabaseError, type NPAErrorCode } from "../error";
+import { NPADatabaseError } from "../error";
 
 export type NPAQueryAdapter = "postgresql" | "mysql" | (string & {});
 
@@ -22,17 +22,16 @@ export interface NPAOperationsOptions {
   onSlowQuery?: NPAQueryHook;
 }
 
-export interface NPADatabaseErrorDetails {
+export interface NPADatabaseErrorContext {
   adapter: NPAQueryAdapter;
   text: string;
   values: readonly unknown[];
-  cause: unknown;
-  code?: string;
-  constraint?: string;
-  detail?: string;
-  errno?: number | string;
-  sqlState?: string;
 }
+
+export type NPADatabaseErrorMapper = (
+  error: unknown,
+  context: NPADatabaseErrorContext,
+) => NPADatabaseError;
 
 export interface NPAQueryOperationOptions<TResult> {
   adapter: NPAQueryAdapter;
@@ -41,6 +40,7 @@ export interface NPAQueryOperationOptions<TResult> {
   operations?: NPAOperationsOptions;
   execute: () => Promise<TResult> | TResult;
   resultMetadata?: (result: TResult) => Partial<NPAQueryEvent>;
+  toDatabaseError?: NPADatabaseErrorMapper;
 }
 
 export async function executeNPAQueryOperation<TResult>(
@@ -62,11 +62,14 @@ export async function executeNPAQueryOperation<TResult>(
 
     return result;
   } catch (error) {
-    const databaseError = normalizeDatabaseError(error, {
+    const context = {
       adapter: options.adapter,
       text: options.text,
       values,
-    });
+    };
+    const databaseError = options.toDatabaseError
+      ? options.toDatabaseError(error, context)
+      : toDatabaseError(error, context);
 
     emitQueryEvent(options.operations, {
       adapter: options.adapter,
@@ -111,90 +114,20 @@ function callHook(
   }
 }
 
-function normalizeDatabaseError(
+function toDatabaseError(
   error: unknown,
-  context: Pick<NPADatabaseErrorDetails, "adapter" | "text" | "values">,
+  context: NPADatabaseErrorContext,
 ): NPADatabaseError {
   if (error instanceof NPADatabaseError) {
     return error;
   }
 
-  const record = isRecord(error) ? error : {};
-  const details: NPADatabaseErrorDetails = {
-    ...context,
+  const message = error instanceof Error ? error.message : String(error);
+  return new NPADatabaseError(`${context.adapter} query failed: ${message}`, {
     cause: error,
-    code: readString(record.code),
-    constraint: readString(record.constraint),
-    detail: readString(record.detail),
-    errno: readNumberOrString(record.errno),
-    sqlState: readString(record.sqlState) ?? readString(record.sqlstate),
-  };
-
-  return new NPADatabaseError(formatDatabaseErrorMessage(details), {
-    cause: error,
-    code: databaseErrorCode(details),
-    details: {
-      adapter: details.adapter,
-      text: details.text,
-      values: details.values,
-      driverCode: details.code,
-      constraint: details.constraint,
-      detail: details.detail,
-      errno: details.errno,
-      sqlState: details.sqlState,
-    },
+    code: "NPA_DATABASE_QUERY_FAILED",
+    details: { ...context },
   });
-}
-
-function formatDatabaseErrorMessage(details: NPADatabaseErrorDetails): string {
-  const message = details.cause instanceof Error
-    ? details.cause.message
-    : String(details.cause);
-  return `${details.adapter} query failed: ${message}`;
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function readNumberOrString(value: unknown): number | string | undefined {
-  return typeof value === "number" || typeof value === "string"
-    ? value
-    : undefined;
-}
-
-function databaseErrorCode(details: NPADatabaseErrorDetails): NPAErrorCode {
-  if (
-    details.code === "23505" ||
-    details.code === "ER_DUP_ENTRY" ||
-    details.errno === 1062
-  ) {
-    return "NPA_DATABASE_UNIQUE_CONSTRAINT_FAILED";
-  }
-
-  if (
-    details.code === "23503" ||
-    details.code === "ER_NO_REFERENCED_ROW_2" ||
-    details.code === "ER_ROW_IS_REFERENCED_2" ||
-    details.errno === 1451 ||
-    details.errno === 1452
-  ) {
-    return "NPA_DATABASE_FOREIGN_KEY_CONSTRAINT_FAILED";
-  }
-
-  if (
-    details.code === "23502" ||
-    details.code === "ER_BAD_NULL_ERROR" ||
-    details.errno === 1048
-  ) {
-    return "NPA_DATABASE_NOT_NULL_CONSTRAINT_FAILED";
-  }
-
-  return "NPA_DATABASE_QUERY_FAILED";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
 }
 
 function now(): number {

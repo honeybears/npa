@@ -1,12 +1,16 @@
 import {
   NPADatabaseError,
   NPAError,
+  type NPADatabaseErrorContext,
   type NPAErrorCode,
 } from "@node-persistence-api/core/adapter";
 
-export function toMysqlDatabaseError(error: unknown): NPADatabaseError {
+export function toMysqlDatabaseError(
+  error: unknown,
+  context?: NPADatabaseErrorContext,
+): NPADatabaseError {
   if (error instanceof NPADatabaseError) {
-    return error;
+    return context ? withContext(error, context) : error;
   }
 
   const code = mysqlDatabaseErrorCode(error);
@@ -14,7 +18,24 @@ export function toMysqlDatabaseError(error: unknown): NPADatabaseError {
   return new NPADatabaseError(databaseErrorMessage(error), {
     code,
     cause: error,
-    details: databaseErrorDetails(error),
+    details: {
+      ...context,
+      ...databaseErrorDetails(error),
+    },
+  });
+}
+
+function withContext(
+  error: NPADatabaseError,
+  context: NPADatabaseErrorContext,
+): NPADatabaseError {
+  return new NPADatabaseError(error.message, {
+    cause: error.cause,
+    code: error.code,
+    details: {
+      ...context,
+      ...error.details,
+    },
   });
 }
 

@@ -801,6 +801,12 @@ describe("MySQL adapter", () => {
         "DELETE FROM `tenant_users` WHERE `tenant_id` = ? AND `user_id` = ?",
       values: ["t1", "u1"],
     });
+    expect(() => compileMysqlFindById("t1", options)).toThrow(
+      expect.objectContaining({
+        code: "NPA_COMPOSITE_ID_OBJECT_REQUIRED",
+        name: "NPAPersistenceError",
+      }),
+    );
   });
 
   test("compiles MySQL composite relation key SQL", () => {
@@ -911,7 +917,9 @@ describe("MySQL adapter", () => {
       },
     };
     const npa = createNPA({
-      adapter: mysql({ connection: asMysqlQueryable(queryable) }),
+      adapter: mysql({
+        connection: new MysqlConnection(asMysqlQueryable(queryable)),
+      }),
       operations: {
         logger: (event) => {
           events.push(event);
@@ -954,7 +962,9 @@ describe("MySQL adapter", () => {
       },
     };
     const npa = createNPA({
-      adapter: mysql({ connection: asMysqlQueryable(queryable) }),
+      adapter: mysql({
+        connection: new MysqlConnection(asMysqlQueryable(queryable)),
+      }),
       operations: {
         logger: (event) => {
           events.push(event);

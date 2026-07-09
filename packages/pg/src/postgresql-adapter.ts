@@ -4,9 +4,7 @@ import type {
   NPARepository,
   NPARuntimeAdapter,
 } from "@node-persistence-api/core/adapter";
-import { toPostgresqlDatabaseError } from "./postgresql-database-error";
 import { PostgresqlRepositoryExecutor } from "./postgresql-repository-executor";
-import { PostgresqlQueryable, PostgresqlQueryResult } from "./types";
 import {
   PostgresqlTransactionConnection,
   PostgresqlTransactionManager,
@@ -26,7 +24,7 @@ export function postgresql(
   }
 
   const transactionManager = new PostgresqlTransactionManager(options.connection);
-  const queryable = wrapPostgresqlQueryable(transactionManager.queryable);
+  const queryable = transactionManager.queryable;
 
   return {
     transactionManager,
@@ -52,23 +50,6 @@ export function postgresql(
       ) as TRepository;
 
       return createNPARepository(target, executor);
-    },
-  };
-}
-
-function wrapPostgresqlQueryable(
-  queryable: PostgresqlQueryable,
-): PostgresqlQueryable {
-  return {
-    query: async <TRow = Record<string, unknown>>(
-      text: string,
-      values?: unknown[],
-    ): Promise<PostgresqlQueryResult<TRow>> => {
-      try {
-        return await queryable.query<TRow>(text, values);
-      } catch (error) {
-        throw toPostgresqlDatabaseError(error);
-      }
     },
   };
 }
