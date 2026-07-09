@@ -1,12 +1,19 @@
-export * from "./create-postgresql-derived-query-repository";
-export * from "./postgresql-adapter";
-export * from "./postgresql-connection";
-export * from "./postgresql-crud-compiler";
-export * from "./postgresql-query-compiler";
-export * from "./postgresql-raw-query";
-export * from "./postgresql-relation-loader";
-export * from "./postgresql-migration";
-export * from "./postgresql-operations";
-export * from "./postgresql-repository-executor";
-export * from "./postgresql-transaction-manager";
-export * from "./types";
+export { postgresql } from "./postgresql-adapter";
+export type { PostgresqlAdapterOptions } from "./postgresql-adapter";
+export { PostgresqlConnection } from "./postgresql-connection";
+export type { PostgresqlDriverConnection } from "./postgresql-connection";
+export {
+  deployPostgresqlMigrations,
+  migratePostgresql,
+  planPostgresqlMigration,
+} from "./postgresql-migration";
+export {
+  PostgresqlTransactionManager,
+} from "./postgresql-transaction-manager";
+export type {
+  PostgresqlTransactionConnection,
+} from "./postgresql-transaction-manager";
+export type {
+  PostgresqlQueryable,
+  PostgresqlQueryResult,
+} from "./types";

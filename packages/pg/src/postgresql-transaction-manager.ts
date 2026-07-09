@@ -2,7 +2,7 @@ import {
   AbstractTransactionManager,
   TransactionIsolation,
   TransactionOptions,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import { PostgresqlDriverConnection } from "./postgresql-connection";
 import { PostgresqlQueryable, PostgresqlQueryResult } from "./types";
 

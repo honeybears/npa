@@ -113,7 +113,7 @@ function createNpaSuites(options) {
   }
 
   if (options.include.has("postgresql")) {
-    const pg = require("../packages/pg/dist");
+    const pg = require("../packages/pg/dist/postgresql-query-compiler.js");
     const query = npa.parseQueryMethod(
       "findTop10ByNameContainingAndAgeGreaterThanOrderByCreatedAtDesc",
     );
@@ -137,7 +137,7 @@ function createNpaSuites(options) {
   }
 
   if (options.include.has("mysql")) {
-    const mysql = require("../packages/mysql/dist");
+    const mysql = require("../packages/mysql/dist/mysql-query-compiler.js");
     const query = npa.parseQueryMethod("findByEmailOrNameContaining");
 
     suites.push({
@@ -177,7 +177,7 @@ async function addLivePostgresqlSuites(suites, skipped, options) {
     return;
   }
 
-  const npaPg = require("../packages/pg/dist");
+  const npaPg = require("../packages/pg/dist/create-postgresql-derived-query-repository.js");
   const tableName = uniqueTableName("pg");
   const table = quotePostgresqlIdentifier(tableName);
   const pool = new Pool({ connectionString: target.url, max: options.poolSize });
@@ -243,7 +243,7 @@ async function addLiveMysqlSuites(suites, skipped, options) {
     return;
   }
 
-  const npaMysql = require("../packages/mysql/dist");
+  const npaMysql = require("../packages/mysql/dist/create-mysql-derived-query-repository.js");
   const tableName = uniqueTableName("mysql");
   const table = quoteMysqlIdentifier(tableName);
   const pool = createMysqlPool(target.url, mysql, options.poolSize);

@@ -4,17 +4,19 @@ import {
   EntityGraph,
   Pageable,
   Query,
-  createDerivedQueryRepository,
-  createNPARepository,
-  createQueryMethodProxy,
   defineEntityGraph,
   parseQueryMethod,
   type Loaded,
-  type NPARepositoryAdapter,
   type Relation,
-  type RepositoryMethodInvocation,
-  type RepositoryRawQueryInvocation,
 } from "../src";
+import { createDerivedQueryRepository } from "../src/repository/create-derived-query-repository";
+import { createNPARepository } from "../src/repository/create-npa-repository";
+import { createQueryMethodProxy } from "../src/query-method/proxy";
+import type {
+  NPARepositoryAdapter,
+  RepositoryMethodInvocation,
+  RepositoryRawQueryInvocation,
+} from "../src/repository/types";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;
 

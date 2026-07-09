@@ -1,4 +1,4 @@
-import { NPAQueryError } from "@node-persistence-api/core";
+import { NPAQueryError } from "@node-persistence-api/core/adapter";
 import { PostgresqlCompiledQuery } from "./types";
 
 export function compilePostgresqlRawQuery(

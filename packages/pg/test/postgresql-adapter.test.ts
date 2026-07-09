@@ -6,19 +6,17 @@ import {
   compilePostgresqlFindById,
   compilePostgresqlInsert,
   compilePostgresqlCount,
-  compilePostgresqlQuery,
-  compilePostgresqlRawQuery,
   compilePostgresqlUpdate,
   compilePostgresqlVersionedUpdate,
-  createPostgresqlDerivedQueryRepository,
   getPrimaryKeyValue,
-  PostgresqlConnection,
-  postgresql,
-  type PostgresqlDriverConnection,
-  type PostgresqlQueryable,
-} from "../src";
+} from "../src/postgresql-crud-compiler";
+import { compilePostgresqlQuery } from "../src/postgresql-query-compiler";
+import { compilePostgresqlRawQuery } from "../src/postgresql-raw-query";
+import { createPostgresqlDerivedQueryRepository } from "../src/create-postgresql-derived-query-repository";
+import { PostgresqlConnection, type PostgresqlDriverConnection } from "../src/postgresql-connection";
+import { postgresql } from "../src/postgresql-adapter";
+import type { PostgresqlQueryable } from "../src/types";
 import {
-  AbstractTransactionManager,
   Column,
   CreatedAt,
   CursorPage,
@@ -43,6 +41,7 @@ import {
   defineEntityGraph,
   parseQueryMethod,
 } from "../../../src";
+import { AbstractTransactionManager } from "../../../src/transaction/transaction-manager";
 import { describe, expect, test } from "@jest/globals";
 
 type DynamicRepository = Record<string, (...args: unknown[]) => unknown>;

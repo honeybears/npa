@@ -24,7 +24,7 @@ import {
   uniqueValues,
   withEagerRelations,
   writeValue,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import { quoteIdentifier, quoteQualifiedIdentifier } from "./postgresql-identifiers";
 import { PostgresqlQueryable } from "./types";
 

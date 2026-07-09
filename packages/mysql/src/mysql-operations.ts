@@ -1,7 +1,7 @@
 import {
   executeNPAQueryOperation,
   NPAOperationsOptions,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import {
   MysqlQueryable,
   MysqlRawQueryResult,

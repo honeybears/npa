@@ -3,7 +3,7 @@ import {
   NPADatabaseError,
   TransactionIsolation,
   TransactionOptions,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import { MysqlDriverConnection } from "./mysql-connection";
 import { MysqlQueryable, MysqlRawQueryResult } from "./types";
 

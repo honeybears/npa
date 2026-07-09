@@ -4,6 +4,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   MigrationRelationKind,
+  loadMigrationConfig,
+} from "../src";
+import {
   assertSafeMigrationStatements,
   createMigrationChecksum,
   createMigrationChecksumFromSql,
@@ -12,10 +15,9 @@ import {
   findDestructiveMigrationStatements,
   formatMigrationSql,
   loadMigrationFiles,
-  loadMigrationConfig,
   parseEntitySchemas,
   writeMigrationFile,
-} from "../src";
+} from "../src/migration";
 import { compilePostgresqlMigrationStatements } from "../packages/pg/src/postgresql-migration";
 import { compileMysqlMigrationStatements } from "../packages/mysql/src/mysql-migration";
 

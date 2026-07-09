@@ -2,7 +2,7 @@ import {
   NPADatabaseError,
   NPAError,
   type NPAErrorCode,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 
 export function toPostgresqlDatabaseError(error: unknown): NPADatabaseError {
   if (error instanceof NPADatabaseError) {

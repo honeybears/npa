@@ -1,4 +1,4 @@
-import { createNPARepository, NPARepository } from "@node-persistence-api/core";
+import { createNPARepository, NPARepository } from "@node-persistence-api/core/adapter";
 import { MysqlRepositoryExecutor } from "./mysql-repository-executor";
 import { MysqlRepositoryOptions } from "./types";
 

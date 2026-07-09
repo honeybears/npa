@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, test } from "@jest/globals";
 import {
-  AbstractTransactionManager,
   Column,
   Entity,
   createNPA,
-  getCurrentPersistenceContext,
   Id,
   RollbackOnlyError,
   Transactional,
@@ -12,6 +10,8 @@ import {
   TransactionOptions,
   TransactionPropagation,
 } from "../src";
+import { getCurrentPersistenceContext } from "../src/persistence/persistence-context-storage";
+import { AbstractTransactionManager } from "../src/transaction/transaction-manager";
 import { clearTransactionManagers } from "../src/transaction/transaction-manager-registry";
 
 interface RecordingResource {

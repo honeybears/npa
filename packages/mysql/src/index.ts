@@ -1,13 +1,19 @@
-export * from "./create-mysql-derived-query-repository";
-export * from "./mysql-adapter";
-export * from "./mysql-connection";
-export * from "./mysql-crud-compiler";
-export * from "./mysql-query-compiler";
-export * from "./mysql-raw-query";
-export * from "./mysql-relation-loader";
-export * from "./mysql-migration";
-export * from "./mysql-operations";
-export * from "./mysql-repository-executor";
-export * from "./mysql-transaction-manager";
-export * from "./mysql-result";
-export * from "./types";
+export { mysql } from "./mysql-adapter";
+export type { MysqlAdapterOptions } from "./mysql-adapter";
+export { MysqlConnection } from "./mysql-connection";
+export type { MysqlDriverConnection } from "./mysql-connection";
+export {
+  deployMysqlMigrations,
+  migrateMysql,
+  planMysqlMigration,
+} from "./mysql-migration";
+export { MysqlTransactionManager } from "./mysql-transaction-manager";
+export type {
+  MysqlTransactionConnection,
+} from "./mysql-transaction-manager";
+export type {
+  MysqlOkPacket,
+  MysqlQueryable,
+  MysqlQueryResult,
+  MysqlRawQueryResult,
+} from "./types";

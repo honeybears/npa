@@ -12,7 +12,7 @@ import {
   RelationKind,
   RelationMetadata,
   toSnakeCase,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import { MysqlQueryCompilerOptions } from "./types";
 
 export function quoteMysqlTable(options: MysqlQueryCompilerOptions): string {

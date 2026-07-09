@@ -10,8 +10,8 @@ import {
   NPAQueryError,
   RelationKind,
   RelationMetadata,
-} from "@node-persistence-api/core";
-import { ParsedQueryMethod } from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
+import { ParsedQueryMethod } from "@node-persistence-api/core/adapter";
 import {
   mysqlPrimaryKeyProperty,
   mysqlPropertyToColumn,

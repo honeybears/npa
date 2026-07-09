@@ -1,7 +1,7 @@
 import {
   getOptionalEntityMetadata,
   NPAPersistenceError,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import {
   PostgresqlCompiledQuery,
   PostgresqlQueryCompilerOptions,

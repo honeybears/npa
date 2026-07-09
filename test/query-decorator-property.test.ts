@@ -57,7 +57,7 @@ describe("query decorator property", () => {
           "-e",
           `
   const assert = require("node:assert/strict");
-  const { createPostgresqlDerivedQueryRepository } = require(${JSON.stringify(path.join(repoRoot, "packages/pg/dist/index.js"))});
+  const { createPostgresqlDerivedQueryRepository } = require(${JSON.stringify(path.join(repoRoot, "packages/pg/dist/create-postgresql-derived-query-repository.js"))});
   const { User, UserRepository } = require(${JSON.stringify(path.join(tempDir, "query-property.js"))});
   const calls = [];
   const queryable = {

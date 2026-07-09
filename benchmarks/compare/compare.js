@@ -94,7 +94,10 @@ async function createOrmClient(orm, url, options) {
 
 function createNpaClient(url, options) {
   const { Pool } = require("pg");
-  const npaPg = require(path.join(ROOT_DIR, "packages/pg/dist"));
+  const npaPg = require(path.join(
+    ROOT_DIR,
+    "packages/pg/dist/create-postgresql-derived-query-repository.js",
+  ));
   const pool = new Pool({ connectionString: url, max: options.poolSize });
   const repository = npaPg.createPostgresqlDerivedQueryRepository({}, {
     queryable: pool,

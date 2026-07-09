@@ -1,9 +1,9 @@
-import { createNPARepository, NPAConfigurationError } from "@node-persistence-api/core";
+import { createNPARepository, NPAConfigurationError } from "@node-persistence-api/core/adapter";
 import type {
   NPACreateRepositoryOptions,
   NPARepository,
   NPARuntimeAdapter,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import { MysqlRepositoryExecutor } from "./mysql-repository-executor";
 import {
   MysqlTransactionConnection,

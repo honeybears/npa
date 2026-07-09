@@ -1,4 +1,4 @@
-import { NPAQueryError } from "@node-persistence-api/core";
+import { NPAQueryError } from "@node-persistence-api/core/adapter";
 import { MysqlCompiledQuery } from "./types";
 
 export function compileMysqlRawQuery(

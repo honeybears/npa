@@ -8,10 +8,10 @@ import {
   ManyToOne,
   OneToMany,
   OptimisticLockError,
-  PersistenceContext,
   UpdatedAt,
   Version,
 } from "../src";
+import { PersistenceContext } from "../src/persistence/persistence-context";
 
 interface Profile {
   city: string;

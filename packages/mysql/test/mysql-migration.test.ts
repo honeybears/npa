@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
-import { compileMysqlMigrationStatements } from "../src";
+import { compileMysqlMigrationStatements } from "../src/mysql-migration";
 
 const userSchema = {
   className: "User",

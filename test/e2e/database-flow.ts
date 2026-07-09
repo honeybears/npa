@@ -3,8 +3,12 @@ import { Pool } from "pg";
 import { MySqlContainer } from "@testcontainers/mysql";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { Column, Entity, Id, Version } from "../../src";
-import { PostgresqlConnection, PostgresqlTransactionManager, createPostgresqlDerivedQueryRepository } from "../../packages/pg/src";
-import { MysqlConnection, MysqlTransactionManager, createMysqlDerivedQueryRepository, type MysqlTransactionConnection } from "../../packages/mysql/src";
+import { PostgresqlConnection } from "../../packages/pg/src/postgresql-connection";
+import { PostgresqlTransactionManager } from "../../packages/pg/src/postgresql-transaction-manager";
+import { createPostgresqlDerivedQueryRepository } from "../../packages/pg/src/create-postgresql-derived-query-repository";
+import { MysqlConnection } from "../../packages/mysql/src/mysql-connection";
+import { MysqlTransactionManager, type MysqlTransactionConnection } from "../../packages/mysql/src/mysql-transaction-manager";
+import { createMysqlDerivedQueryRepository } from "../../packages/mysql/src/create-mysql-derived-query-repository";
 import { expect } from "@jest/globals";
 
 const POSTGRESQL_IMAGE =

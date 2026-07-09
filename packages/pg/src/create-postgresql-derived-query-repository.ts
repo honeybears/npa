@@ -1,4 +1,4 @@
-import { createNPARepository, NPARepository } from "@node-persistence-api/core";
+import { createNPARepository, NPARepository } from "@node-persistence-api/core/adapter";
 import { PostgresqlRepositoryExecutor } from "./postgresql-repository-executor";
 import { PostgresqlRepositoryOptions } from "./types";
 

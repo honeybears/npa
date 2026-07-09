@@ -1,4 +1,4 @@
-import { NPADatabaseError } from "@node-persistence-api/core";
+import { NPADatabaseError } from "@node-persistence-api/core/adapter";
 import {
   MysqlQueryable,
   MysqlRawQueryResult,

@@ -9,7 +9,7 @@ import type {
   MigrationRelationSchema,
   MigrationResult,
   MigrationRunOptions,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import {
   assertSafeMigrationStatements,
   compareByName,
@@ -28,8 +28,8 @@ import {
   shortenIdentifier,
   tableKey,
   toSnakeCase,
-} from "@node-persistence-api/core";
-import { MigrationRelationKind } from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
+import { MigrationRelationKind } from "@node-persistence-api/core/adapter";
 import { PostgresqlConnection, PostgresqlDriverConnection } from "./postgresql-connection";
 
 const MIGRATION_NAME = "schema";

@@ -13,6 +13,10 @@
       "types": "./dist/query-method/index.d.ts",
       "require": "./dist/query-method/index.js"
     },
+    "./adapter": {
+      "types": "./dist/adapter/index.d.ts",
+      "require": "./dist/adapter/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

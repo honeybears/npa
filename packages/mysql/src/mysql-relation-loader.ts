@@ -25,7 +25,7 @@ import {
   uniqueValues,
   withEagerRelations,
   writeValue,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import { executeMysqlQuery } from "./mysql-result";
 import { MysqlQueryable } from "./types";
 

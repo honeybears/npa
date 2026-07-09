@@ -1,6 +1,6 @@
 import { CascadeType, Column, CursorPage, Entity, EntityGraph, Id, ManyToOne, ManyToMany, NPARepository, OneToOne, Page, Pageable, Query, RawQueryResult, TransactionIsolation, TransactionPropagation, OneToMany, OptimisticLockError, RollbackOnlyError, Transactional } from "../../src";
-import { createPostgresqlDerivedQueryRepository } from "../../packages/pg/src";
-import { createMysqlDerivedQueryRepository } from "../../packages/mysql/src";
+import { createPostgresqlDerivedQueryRepository } from "../../packages/pg/src/create-postgresql-derived-query-repository";
+import { createMysqlDerivedQueryRepository } from "../../packages/mysql/src/create-mysql-derived-query-repository";
 import { assertRepositoryContract, createProductEntity, databaseAdapters, runDatabaseFlow, startContainerOrSkip, uniqueTableName } from "./database-flow";
 import { describe, expect, test } from "@jest/globals";
 

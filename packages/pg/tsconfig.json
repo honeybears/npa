@@ -6,6 +6,9 @@
     "paths": {
       "@node-persistence-api/core": [
         "../../dist/index.d.ts"
+      ],
+      "@node-persistence-api/core/adapter": [
+        "../../dist/adapter/index.d.ts"
       ]
     }
   },

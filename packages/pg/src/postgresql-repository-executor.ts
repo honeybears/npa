@@ -36,7 +36,7 @@ import {
   toEntityGraphLoad,
   withEagerRelations,
   withUpdatedAtTimestamp,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import {
   compilePostgresqlCount,
   compilePostgresqlDeleteAll,

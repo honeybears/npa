@@ -17,15 +17,15 @@ import {
   RelationKind,
   UpdatedAt,
   Version,
-  getEntityMetadata,
   parseQueryMethod,
 } from "../src";
+import { getEntityMetadata } from "../src/entity/metadata-storage";
 import {
   compilePostgresqlInsert,
-  compilePostgresqlQuery,
-  createPostgresqlDerivedQueryRepository,
-  type PostgresqlQueryable,
-} from "../packages/pg/src";
+} from "../packages/pg/src/postgresql-crud-compiler";
+import { compilePostgresqlQuery } from "../packages/pg/src/postgresql-query-compiler";
+import { createPostgresqlDerivedQueryRepository } from "../packages/pg/src/create-postgresql-derived-query-repository";
+import type { PostgresqlQueryable } from "../packages/pg/src/types";
 
 type DynamicUserRepository = NPARepository<Record<string, unknown>, unknown> & {
   findByName(name: string): Promise<Record<string, unknown>[]>;

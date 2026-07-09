@@ -1,7 +1,5 @@
 import { describe, expect, test } from "@jest/globals";
 import {
-  decodeCursorValues,
-  getEntityMetadata,
   NPAConfigurationError,
   NPADatabaseError,
   NPAError,
@@ -15,6 +13,8 @@ import {
   parseQueryMethod,
   RollbackOnlyError,
 } from "../src";
+import { getEntityMetadata } from "../src/entity/metadata-storage";
+import { decodeCursorValues } from "../src/repository/pagination";
 
 describe("NPA error taxonomy", () => {
   test("domain errors share the NPAError base and expose stable codes", () => {

@@ -2,7 +2,6 @@ import {
   CascadeType,
   ColumnMetadata,
   EntityMetadata,
-  EntityTarget,
   getEntityMetadata,
   readEntityPrimaryValue,
   readRelationForeignKeyValue,

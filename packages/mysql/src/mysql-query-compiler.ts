@@ -18,8 +18,8 @@ import {
   reverseOrders,
   shouldUseIgnoreCase,
   tupleExpression,
-} from "@node-persistence-api/core";
-import { RepositoryMethodInvocation } from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
+import { RepositoryMethodInvocation } from "@node-persistence-api/core/adapter";
 import {
   mysqlPrimaryKeyProperty,
   normalizeMysqlPropertyValue,

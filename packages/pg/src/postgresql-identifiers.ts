@@ -12,7 +12,7 @@ import {
   RelationKind,
   RelationMetadata,
   toSnakeCase,
-} from "@node-persistence-api/core";
+} from "@node-persistence-api/core/adapter";
 import { PostgresqlQueryCompilerOptions } from "./types";
 
 export function quoteTable(options: PostgresqlQueryCompilerOptions): string {
