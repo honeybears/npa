@@ -21,6 +21,7 @@ import {
   AbstractTransactionManager,
   Column,
   CreatedAt,
+  CursorPage,
   Entity,
   EntityGraph,
   EnumType,
@@ -278,10 +279,9 @@ abstract class PgMemberByIdGraphRepository extends NPARepository<PgMember, numbe
   abstract findById: (id: number) => Promise<Loaded<PgMember, typeof memberGraph> | null>;
 }
 
-abstract class PgTeamMembersGraphRepository extends NPARepository<PgTeam, number> {
-  @EntityGraph(["members"])
-  abstract findAll: () => Promise<Array<Loaded<PgTeam, ["members"]>>>;
-}
+abstract class PgTeamMembersGraphRepository extends NPARepository<PgTeam, number> {}
+
+EntityGraph(["members"])(PgTeamMembersGraphRepository.prototype, "findAll");
 
 @Entity({ name: "broken_teams" })
 class PgBrokenTeam {
@@ -855,8 +855,12 @@ describe("PostgreSQL adapter", () => {
     const npa = createNPA({
       adapter: postgresql({ connection: asPgQueryable(queryable) }),
       operations: {
-        logger: (event) => events.push(event),
-        onSlowQuery: (event) => slowQueries.push(event),
+        logger: (event) => {
+          events.push(event);
+        },
+        onSlowQuery: (event) => {
+          slowQueries.push(event);
+        },
         slowQueryThresholdMs: 0,
       },
       repositories: [PgProductRepository],
@@ -894,7 +898,9 @@ describe("PostgreSQL adapter", () => {
     const npa = createNPA({
       adapter: postgresql({ connection: asPgQueryable(queryable) }),
       operations: {
-        logger: (event) => events.push(event),
+        logger: (event) => {
+          events.push(event);
+        },
       },
       repositories: [PgProductRepository],
     });
@@ -925,7 +931,7 @@ describe("PostgreSQL adapter", () => {
   test("creates a transaction manager when PostgreSQL adapter receives a connection", async () => {
     const calls = [];
     const adapter = postgresql({
-      connection: {
+      connection: asPgQueryable({
         query(text, values) {
           calls.push({ text, values });
 
@@ -936,7 +942,7 @@ describe("PostgreSQL adapter", () => {
             rowCount: 1,
           };
         },
-      },
+      }),
     });
     const products = adapter.createRepository({
       entity: PgProduct,
@@ -1954,7 +1960,7 @@ describe("PostgreSQL adapter", () => {
     const page = await (repository as DynamicRepository).findByName(
       "kim",
       Pageable.cursor({ size: 1 }),
-    ) as any;
+    ) as CursorPage<PgMember>;
     expect(page.content[0].team).toEqual({
       organization: { organization_id: 3, name: "platform" },
       organization_id: 3,

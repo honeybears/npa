@@ -30,9 +30,7 @@ export interface NPADirtyCheckAdapter<TEntity extends object = object> {
     id: unknown,
     relation: RelationMetadata,
   ): Promise<void> | void;
-  forEntity?<TTarget extends object>(
-    entity: EntityTarget<TTarget>,
-  ): NPADirtyCheckAdapter<TTarget>;
+  forEntity?(entity: EntityTarget): NPADirtyCheckAdapter;
 }
 
 export interface NPAManageEntityOptions<TEntity extends object = object> {

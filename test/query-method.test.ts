@@ -55,7 +55,7 @@ describe("derived query methods", () => {
       roles: [{ name: "admin" }],
     } satisfies Loaded<GraphMember, typeof memberGraph>;
 
-    expect(memberGraph.roles).toEqual(true);
+    expect(memberGraph).toMatchObject({ roles: true });
     expect(member.team.organization.name).toEqual("platform");
     expect(member.roles[0].name).toEqual("admin");
   });

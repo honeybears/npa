@@ -1,4 +1,4 @@
-import { AbstractTransactionManager, Column, CreatedAt, Entity, EntityGraph, EnumType, FetchType, Id, Loaded, ManyToMany, ManyToOne, NPADatabaseError, NPARepository, OneToOne, OneToMany, Pageable, Query, Repository, UpdatedAt, Version, createNPA, defineEntityGraph, parseQueryMethod } from "../../../src";
+import { AbstractTransactionManager, Column, CreatedAt, CursorPage, Entity, EntityGraph, EnumType, FetchType, Id, Loaded, ManyToMany, ManyToOne, NPADatabaseError, NPARepository, OneToOne, OneToMany, Pageable, Query, Repository, UpdatedAt, Version, createNPA, defineEntityGraph, parseQueryMethod } from "../../../src";
 import { compileMysqlCount, compileMysqlDeleteAll, compileMysqlDeleteById, compileMysqlExistsById, compileMysqlFindAll, compileMysqlInsert, compileMysqlQuery, compileMysqlRawQuery, compileMysqlUpdate, compileMysqlVersionedUpdate, compileMysqlFindById, createMysqlDerivedQueryRepository, getMysqlPrimaryKeyValue, MysqlConnection, mysql, type MysqlDriverConnection, type MysqlQueryable } from "../src";
 import { describe, expect, test } from "@jest/globals";
 
@@ -216,10 +216,9 @@ abstract class MemberByIdGraphRepository extends NPARepository<Member, number> {
   abstract findById: (id: number) => Promise<Loaded<Member, typeof memberGraph> | null>;
 }
 
-abstract class TeamMembersGraphRepository extends NPARepository<Team, number> {
-  @EntityGraph(["members"])
-  abstract findAll: () => Promise<Array<Loaded<Team, ["members"]>>>;
-}
+abstract class TeamMembersGraphRepository extends NPARepository<Team, number> {}
+
+EntityGraph(["members"])(TeamMembersGraphRepository.prototype, "findAll");
 
 @Entity({ name: "broken_teams" })
 class BrokenTeam {
@@ -907,8 +906,12 @@ describe("MySQL adapter", () => {
     const npa = createNPA({
       adapter: mysql({ connection: asMysqlQueryable(queryable) }),
       operations: {
-        logger: (event) => events.push(event),
-        onSlowQuery: (event) => slowQueries.push(event),
+        logger: (event) => {
+          events.push(event);
+        },
+        onSlowQuery: (event) => {
+          slowQueries.push(event);
+        },
         slowQueryThresholdMs: 0,
       },
       repositories: [ProductRepository],
@@ -946,7 +949,9 @@ describe("MySQL adapter", () => {
     const npa = createNPA({
       adapter: mysql({ connection: asMysqlQueryable(queryable) }),
       operations: {
-        logger: (event) => events.push(event),
+        logger: (event) => {
+          events.push(event);
+        },
       },
       repositories: [ProductRepository],
     });
@@ -982,7 +987,7 @@ describe("MySQL adapter", () => {
   test("creates a transaction manager when MySQL adapter receives a connection", async () => {
     const calls = [];
     const adapter = mysql({
-      connection: {
+      connection: asMysqlQueryable({
         query(text, values) {
           calls.push({ text, values });
 
@@ -992,7 +997,7 @@ describe("MySQL adapter", () => {
 
           return [[], []];
         },
-      },
+      }),
     });
     const products = adapter.createRepository({
       entity: Product,
@@ -1784,7 +1789,7 @@ describe("MySQL adapter", () => {
     const page = await (repository as DynamicRepository).findByName(
       "kim",
       Pageable.cursor({ size: 1 }),
-    ) as any;
+    ) as CursorPage<Member>;
     expect(page.content[0].team).toEqual({
       organization: { organization_id: 3, name: "platform" },
       organization_id: 3,

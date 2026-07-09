@@ -810,12 +810,12 @@ function hasCascade(
   return relation.cascade.includes(cascade);
 }
 
-function adapterForRelation<TEntity extends object>(
+function adapterForRelation(
   adapter: NPADirtyCheckAdapter,
   relation: RelationMetadata,
   cascade: CascadeType,
-): NPADirtyCheckAdapter<TEntity> {
-  const target = relation.target() as EntityTarget<TEntity>;
+): NPADirtyCheckAdapter {
+  const target = relation.target();
   const relatedAdapter = adapter.forEntity?.(target);
 
   if (!relatedAdapter) {

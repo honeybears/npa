@@ -359,6 +359,9 @@ describe("transaction manager", () => {
   test("rejects persist and remove in read-only transactions", async () => {
     const manager = new RecordingTransactionManager();
     const adapter = {
+      async updateDirty(entity) {
+        return entity;
+      },
       async insertManaged(entity) {
         return entity;
       },

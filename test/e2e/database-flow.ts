@@ -63,7 +63,7 @@ const databaseAdapters = [
         version INTEGER NOT NULL
       )
     `,
-    createRepository: ({ entity, operations, queryable }) =>
+    createRepository: ({ entity, operations = undefined, queryable }) =>
       createPostgresqlDerivedQueryRepository(
         {},
         {
@@ -96,7 +96,7 @@ const databaseAdapters = [
         version INT NOT NULL
       )
     `,
-    createRepository: ({ entity, operations, queryable }) =>
+    createRepository: ({ entity, operations = undefined, queryable }) =>
       createMysqlDerivedQueryRepository(
         {},
         {
