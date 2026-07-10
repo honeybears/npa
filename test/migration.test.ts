@@ -22,6 +22,32 @@ import { compilePostgresqlMigrationStatements } from "../packages/pg/src/postgre
 import { compileMysqlMigrationStatements } from "../packages/mysql/src/mysql-migration";
 
 describe("migration metadata", () => {
+  test("parses default-exported entity classes", () => {
+    const [schema] = parseEntitySource(`
+      @Entity({ name: "users" })
+      export default class User {
+        @Id({ name: "user_id" })
+        id!: number;
+      }
+    `);
+
+    expect(schema).toMatchObject({
+      className: "User",
+      tableName: "users",
+    });
+  });
+
+  test("rejects recognized entities without persistent columns", () => {
+    expect(() =>
+      parseEntitySource(`
+        @Entity({ name: "users" })
+        class User {
+          transientValue!: string;
+        }
+      `)
+    ).toThrow(/@Entity User must declare at least one persistent column/);
+  });
+
   test("parses entity source files into migration schemas", () => {
     const root = makeMigrationFixture();
     const schemas = discoverEntitySchemas(root, ["src/**/*.entity.ts"]);

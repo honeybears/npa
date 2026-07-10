@@ -63,7 +63,7 @@ export function parseEntitySchemasFromSource(
 ): MigrationEntitySchema[] {
   const entities: MigrationEntitySchema[] = [];
   const enumValuesByName = readEnumDeclarations(source);
-  const entityPattern = /@Entity(?:\(([\s\S]*?)\))?\s*(?:export\s+)?class\s+([A-Za-z_]\w*)/g;
+  const entityPattern = /@Entity(?:\(([\s\S]*?)\))?\s*(?:export\s+(?:default\s+)?)?class\s+([A-Za-z_]\w*)/g;
   let match: RegExpExecArray | null;
 
   while ((match = entityPattern.exec(source)) !== null) {
@@ -77,14 +77,16 @@ export function parseEntitySchemasFromSource(
     const bodyEnd = bodyStart < 0 ? -1 : findMatching(source, bodyStart, "{", "}");
 
     if (bodyStart < 0 || bodyEnd < 0) {
-      continue;
+      throw schemaParseError(`@Entity ${className} has an invalid class body.`);
     }
 
     const classBody = source.slice(bodyStart + 1, bodyEnd);
     const columns = parseColumns(classBody, className, enumValuesByName);
 
     if (columns.length === 0) {
-      continue;
+      throw schemaParseError(
+        `@Entity ${className} must declare at least one persistent column.`,
+      );
     }
 
     entities.push({
