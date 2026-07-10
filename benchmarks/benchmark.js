@@ -65,6 +65,10 @@ function createNpaSuites(options) {
   const suites = [];
 
   if (options.include.has("npa")) {
+    const queryMethod = require("../dist/query-method");
+    const { createDerivedQueryRepository } = require(
+      "../dist/repository/create-derived-query-repository.js",
+    );
     const methods = [
       "findByEmail",
       "findByEmailOrNameContaining",
@@ -73,16 +77,7 @@ function createNpaSuites(options) {
       "deleteByStatusIn",
     ];
     const parsed = methods.map((method) => npa.parseQueryMethod(method));
-    const rows = Array.from({ length: 100 }, (_, index) => ({
-      id: index + 1,
-      email: `user${index}@example.com`,
-      name: index % 2 === 0 ? `kim ${index}` : `lee ${index}`,
-      age: 20 + (index % 50),
-      status: index % 3 === 0 ? "blocked" : "active",
-      createdAt: index,
-    }));
-    const executor = new npa.InMemoryRepositoryExecutor(rows);
-    const repository = npa.createDerivedQueryRepository({}, executor.execute);
+    const repository = createDerivedQueryRepository({}, (invocation) => invocation);
 
     suites.push(
       {
@@ -96,11 +91,13 @@ function createNpaSuites(options) {
         name: "npa.assertNoDuplicateQueryPredicates",
         group: "npa-core",
         fn(index) {
-          return npa.assertNoDuplicateQueryPredicates(parsed[index % parsed.length]);
+          return queryMethod.assertNoDuplicateQueryPredicates(
+            parsed[index % parsed.length],
+          );
         },
       },
       {
-        name: "npa.proxy + in-memory find",
+        name: "npa.proxy + query dispatch",
         group: "npa-repository",
         fn(index) {
           return repository.findByEmailOrNameContaining(

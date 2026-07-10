@@ -55,6 +55,8 @@ interface CurrentForeignKeySchema {
   referencedTable: string;
   referencedSchema?: string;
   referencedColumns: string[];
+  onDelete?: string;
+  onUpdate?: string;
 }
 
 interface CurrentCheckConstraintSchema {
@@ -91,6 +93,8 @@ interface PostgresqlForeignKeyRow {
   referencedSchema: string;
   referencedTable: string;
   referencedColumns: string[];
+  onDelete: string;
+  onUpdate: string;
 }
 
 interface PostgresqlCheckConstraintRow {
@@ -632,8 +636,16 @@ function compilePostgresqlForeignKeyDiffStatements(
   const statements: string[] = [];
 
   for (const foreignKey of [...table.foreignKeys].sort(compareByName)) {
-    if (currentForeignKeys.has(foreignKey.name)) {
+    const currentForeignKey = currentForeignKeys.get(foreignKey.name);
+
+    if (currentForeignKey && isSamePostgresqlForeignKey(foreignKey, currentForeignKey)) {
       continue;
+    }
+
+    if (currentForeignKey) {
+      statements.push(
+        `ALTER TABLE ${qualifiedTable(table)} DROP CONSTRAINT ${quoteQualifiedIdentifier(foreignKey.name)}`,
+      );
     }
 
     statements.push(
@@ -642,6 +654,20 @@ function compilePostgresqlForeignKeyDiffStatements(
   }
 
   return statements;
+}
+
+function isSamePostgresqlForeignKey(
+  desired: MigrationForeignKeySchema,
+  current: CurrentForeignKeySchema,
+): boolean {
+  return arraysEqual(desired.columns, current.columns) &&
+    desired.referencedTable === current.referencedTable &&
+    (!desired.referencedSchema || desired.referencedSchema === current.referencedSchema) &&
+    arraysEqual(desired.referencedColumns, current.referencedColumns) &&
+    normalizeReferentialAction(desired.onDelete, "NO ACTION") ===
+      normalizeReferentialAction(current.onDelete, "NO ACTION") &&
+    normalizeReferentialAction(desired.onUpdate, "NO ACTION") ===
+      normalizeReferentialAction(current.onUpdate, "NO ACTION");
 }
 
 function compilePostgresqlIndexDiffStatements(
@@ -1032,12 +1058,12 @@ function defaultType(
     return `${postgresqlArrayElementType(column, arrayElementType)}[]`;
   }
 
-  if (normalized === "string") {
-    return "TEXT";
-  }
-
   if (column.enumValues?.length) {
     return isOrdinalEnumColumn(column) ? "INTEGER" : "TEXT";
+  }
+
+  if (normalized === "string") {
+    return "TEXT";
   }
 
   if (normalized === "number") {
@@ -1249,21 +1275,27 @@ async function readCurrentForeignKeys(
     [
       "SELECT",
       "  tc.constraint_name AS \"constraintName\",",
-      "  array_agg(kcu.column_name ORDER BY kcu.ordinal_position) AS \"columns\",",
+      "  array_agg(kcu.column_name::text ORDER BY kcu.ordinal_position) AS \"columns\",",
       "  ccu.table_schema AS \"referencedSchema\",",
       "  ccu.table_name AS \"referencedTable\",",
-      "  array_agg(ccu.column_name ORDER BY kcu.ordinal_position) AS \"referencedColumns\"",
+      "  array_agg(ccu.column_name::text ORDER BY kcu.ordinal_position) AS \"referencedColumns\",",
+      "  rc.delete_rule AS \"onDelete\",",
+      "  rc.update_rule AS \"onUpdate\"",
       "FROM information_schema.table_constraints tc",
       "JOIN information_schema.key_column_usage kcu",
       "  ON tc.constraint_schema = kcu.constraint_schema",
       " AND tc.constraint_name = kcu.constraint_name",
-      "JOIN information_schema.constraint_column_usage ccu",
-      "  ON tc.constraint_schema = ccu.constraint_schema",
-      " AND tc.constraint_name = ccu.constraint_name",
+      "JOIN information_schema.referential_constraints rc",
+      "  ON tc.constraint_schema = rc.constraint_schema",
+      " AND tc.constraint_name = rc.constraint_name",
+      "JOIN information_schema.key_column_usage ccu",
+      "  ON ccu.constraint_schema = rc.unique_constraint_schema",
+      " AND ccu.constraint_name = rc.unique_constraint_name",
+      " AND ccu.ordinal_position = kcu.position_in_unique_constraint",
       "WHERE tc.constraint_type = 'FOREIGN KEY'",
       "  AND tc.table_schema = $1",
       "  AND tc.table_name = $2",
-      "GROUP BY tc.constraint_name, ccu.table_schema, ccu.table_name",
+      "GROUP BY tc.constraint_name, ccu.table_schema, ccu.table_name, rc.delete_rule, rc.update_rule",
     ].join("\n"),
     [table.schema ?? "public", table.tableName],
   );
@@ -1276,6 +1308,8 @@ async function readCurrentForeignKeys(
       referencedSchema: row.referencedSchema,
       referencedTable: row.referencedTable,
       referencedColumns: row.referencedColumns,
+      onDelete: row.onDelete,
+      onUpdate: row.onUpdate,
     });
   }
 
@@ -1606,4 +1640,16 @@ function quoteIdentifier(identifier: string): string {
 
 function unquotePostgresqlIdentifier(identifier: string): string {
   return identifier.replace(/^"|"$/g, "").replace(/""/g, '"');
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length &&
+    left.every((value, index) => value === right[index]);
+}
+
+function normalizeReferentialAction(
+  value: string | undefined,
+  fallback: string,
+): string {
+  return (value ?? fallback).replace(/_/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
 }

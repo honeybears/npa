@@ -16,7 +16,7 @@ const POSTGRESQL_IMAGE =
 const MYSQL_IMAGE = process.env.NPA_E2E_MYSQL_IMAGE ?? "mysql:8.0";
 
 type StartedDatabaseContainer = {
-  getConnectionUri(): string;
+  getConnectionUri(root?: boolean): string;
   stop(): Promise<unknown> | unknown;
 };
 
@@ -253,8 +253,8 @@ async function assertRepositoryContract(
     },
   ]);
 
-  expect(batch.map((row) => row.product_name)).toEqual(["batch alpha", "batch beta"]);
-  expect(batch.every((row) => typeof row.product_id === "number")).toEqual(true);
+  expect(batch.map((row) => row.name)).toEqual(["batch alpha", "batch beta"]);
+  expect(batch.every((row) => typeof row.id === "number")).toEqual(true);
   expect(await repository.countByStatus("batch")).toEqual(2);
   expect(await repository.deleteByStatus("batch")).toEqual(2);
   expect(await repository.count()).toEqual(0);

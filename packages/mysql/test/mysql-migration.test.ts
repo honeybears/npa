@@ -198,7 +198,7 @@ describe("MySQL migration compiler", () => {
           {
             propertyName: "priority",
             columnName: "priority",
-            tsType: "UserPriority",
+            tsType: "string",
             nullable: false,
             primary: false,
             version: false,

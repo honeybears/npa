@@ -30,6 +30,7 @@ import {
   ManyToOne,
   NPADatabaseError,
   NPARepository,
+  OptimisticLockError,
   OneToOne,
   OneToMany,
   Pageable,
@@ -820,13 +821,20 @@ describe("PostgreSQL adapter", () => {
 
     expect(products instanceof PgProductRepository).toEqual(true);
     expect(products.repositoryName()).toEqual("pg-products");
-    expect(await products.findById(10)).toEqual({
+    const product = await products.findById(10);
+    expect(product).toEqual({
       product_id: 10,
       product_name: "desk",
     });
-    expect(await products.findByName("desk")).toEqual([
+    expect(product?.id).toEqual(10);
+    expect(product?.name).toEqual("desk");
+
+    const namedProducts = await products.findByName("desk");
+    expect(namedProducts).toEqual([
       { product_id: "desk", product_name: "desk" },
     ]);
+    expect(namedProducts[0]?.id).toEqual("desk");
+    expect(namedProducts[0]?.name).toEqual("desk");
 
     expect(calls).toEqual([
       {
@@ -1794,6 +1802,29 @@ describe("PostgreSQL adapter", () => {
         values: ["desk", 2],
       },
     ]);
+  });
+
+  test("throws on stale PostgreSQL versioned saves without inserting", async () => {
+    const calls = [];
+    const queryable = {
+      async query(text, values) {
+        calls.push({ text, values });
+        return text.startsWith("SELECT EXISTS")
+          ? { rows: [{ exists: true }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      },
+    };
+    const repository = createPostgresqlDerivedQueryRepository(
+      {},
+      { entity: PgProduct, queryable: asPgQueryable(queryable) },
+    );
+
+    await expect(
+      repository.save({ id: 1, name: "stale", version: 0 }),
+    ).rejects.toThrow(OptimisticLockError);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].text).toMatch(/^UPDATE /);
+    expect(calls[1].text).toMatch(/^SELECT EXISTS/);
   });
 
   test("loads PostgreSQL many-to-one, one-to-many, and many-to-many relations", async () => {

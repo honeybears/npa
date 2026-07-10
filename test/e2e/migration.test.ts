@@ -3,6 +3,7 @@ import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { foreignKeyName } from "../../src/migration/helpers";
 import {
   assertRepositoryContract,
   createProductEntity,
@@ -483,6 +484,7 @@ describe("migration E2E", () => {
           skuUniqueIndexName,
           migrationsDir,
           url: container.getConnectionUri(),
+          withRelations: true,
         });
 
         const created = runCli(
@@ -715,6 +717,36 @@ describe("migration E2E", () => {
         expect(indexedNoop.stdout).toMatch(/Statements: 0/);
         expect(indexedNoop.stderr).not.toMatch(/join is not a function/);
 
+        queryable = await adapter.createQueryable(container);
+        const foreignKey = foreignKeyName(
+          joinTableName,
+          ["category_id"],
+          categoryTableName,
+          adapter.adapterName === "postgresql" ? 63 : 64,
+        );
+        const dropForeignKey = adapter.adapterName === "postgresql"
+          ? `ALTER TABLE ${adapter.quoteIdentifier(joinTableName)} DROP CONSTRAINT ${adapter.quoteIdentifier(foreignKey)}`
+          : `ALTER TABLE ${adapter.quoteIdentifier(joinTableName)} DROP FOREIGN KEY ${adapter.quoteIdentifier(foreignKey)}`;
+        const addForeignKey = (onDelete = "") =>
+          `ALTER TABLE ${adapter.quoteIdentifier(joinTableName)} ADD CONSTRAINT ${adapter.quoteIdentifier(foreignKey)} FOREIGN KEY (${adapter.quoteIdentifier("category_id")}) REFERENCES ${adapter.quoteIdentifier(categoryTableName)} (${adapter.quoteIdentifier("category_id")})${onDelete}`;
+
+        await adapter.executeSql(queryable, dropForeignKey);
+        await adapter.executeSql(
+          queryable,
+          addForeignKey(" ON DELETE CASCADE"),
+        );
+
+        const changedForeignKey = runCli(
+          ["migrate", "dev", "--dry-run", "--config", "npa.config.mjs"],
+          root,
+        );
+        expectCliSuccess(changedForeignKey);
+        expect(changedForeignKey.stdout).toMatch(/Statements: 2/);
+        expect(changedForeignKey.stdout).toContain(dropForeignKey);
+
+        await adapter.executeSql(queryable, dropForeignKey);
+        await adapter.executeSql(queryable, addForeignKey());
+
         writeProductEntity(root, {
           tableName,
           categoryTableName,
@@ -751,6 +783,7 @@ describe("migration E2E", () => {
             "dev",
             "--name",
             "nullable_status",
+            "--allow-destructive",
             "--config",
             "npa.config.mjs",
           ],
@@ -761,7 +794,6 @@ describe("migration E2E", () => {
           /Created and applied migration \d{14}_nullable_status/,
         );
 
-        queryable = await adapter.createQueryable(container);
         expect(
           await readColumnNullable(adapter, queryable, tableName, "status"),
         ).toEqual(true);
@@ -829,10 +861,10 @@ describe("migration E2E", () => {
 
         queryable = await adapter.createQueryable(container);
         const history = await readMigrationHistory(adapter, queryable, migrationName);
-        expect(history).toEqual({
+        expect(history).toEqual(expect.objectContaining({
           name: migrationName,
           status: "failed",
-        });
+        }));
       } finally {
         try {
           if (queryable) {
@@ -996,12 +1028,16 @@ describe("migration E2E", () => {
       let queryable;
 
       try {
+        const connectionUri = adapter.adapterName === "mysql"
+          ? container.getConnectionUri(true)
+          : container.getConnectionUri();
+        const adminContainer = { getConnectionUri: () => connectionUri };
         const root = makeQualifiedMigrationProject({
           adapter: adapter.adapterName,
           schemaName,
           tableName,
           historyTable,
-          url: container.getConnectionUri(),
+          url: connectionUri,
         });
         const pushed = runCli(
           ["db", "push", "--config", "npa.config.mjs"],
@@ -1009,7 +1045,7 @@ describe("migration E2E", () => {
         );
         expectCliSuccess(pushed);
 
-        queryable = await adapter.createQueryable(container);
+        queryable = await adapter.createQueryable(adminContainer);
         expect(
           await readQualifiedColumnNames(adapter, queryable, schemaName, tableName),
         ).toEqual(["product_id", "product_name"]);

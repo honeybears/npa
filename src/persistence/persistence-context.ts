@@ -2,6 +2,7 @@ import {
   CascadeType,
   ColumnMetadata,
   EntityMetadata,
+  type EntityTarget,
   getEntityMetadata,
   readEntityPrimaryValue,
   readRelationForeignKeyValue,
@@ -1448,6 +1449,14 @@ function installColumnAliases(
       },
     });
   }
+}
+
+export function installEntityColumnAliases<TEntity extends object>(
+  entity: TEntity,
+  target: EntityTarget<TEntity>,
+): TEntity {
+  installColumnAliases(entity, getEntityMetadata(target));
+  return entity;
 }
 
 function requirePrimaryColumns(metadata: EntityMetadata): ColumnMetadata[] {

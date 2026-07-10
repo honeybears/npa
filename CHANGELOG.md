@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.0 - 2026-07-10
+
+### Changed
+
+- Promoted the core, language, PostgreSQL, and MySQL runtime packages to the
+  first stable release.
+- Updated editor completions to include optional offset and cursor pagination.
+
+### Fixed
+
+- Added ESM import conditions for every public runtime package and core
+  subpath.
+- Mapped database column names to entity property aliases consistently inside
+  and outside transactions.
+- Fixed ordinal enum migrations to use integer columns for string-backed
+  TypeScript enums.
+- Preserved MySQL indexes required by foreign keys during schema diffing.
+- Replaced changed foreign-key definitions when columns, targets, or
+  referential actions differ.
+- Repaired release, benchmark, VS Code Extension Host, and real-database E2E
+  verification paths.
+
+### Validation
+
+- Added packed-tarball CommonJS and ESM runtime smoke tests to
+  `release:inspect`.
+- Added CI coverage for lint, unit tests, real PostgreSQL/MySQL E2E tests,
+  benchmarks, package inspection, and VS Code Extension Host tests.
+
 ## 0.1.0-beta.2 - 2026-07-06
 
 ### Added

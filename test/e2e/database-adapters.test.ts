@@ -394,7 +394,7 @@ describe("database adapter E2E", () => {
               .sort()).toEqual(["raw alpha", "raw beta"]);
           expect(await repository.countRawByStatus("raw")).toEqual(2);
           expect(await repository.renameRawByStatus("renamed", "raw")).toEqual(2);
-          expect((await repository.findRawByStatus("renamed"))
+          expect((await repository.findRawByStatus("raw"))
               .map((row) => row.product_name)
               .sort()).toEqual(["renamed", "renamed"]);
         } finally {
@@ -683,7 +683,7 @@ function createRawProductRepository(adapter, tableName) {
     `SELECT * FROM ${table} WHERE ${statusColumn} = :status`,
   )(RawProductRepository.prototype, "findRawByStatus");
   Query(
-    `SELECT COUNT(*) FROM ${table} WHERE ${statusColumn} = :status`,
+    `SELECT ${adapter.adapterName === "postgresql" ? "COUNT(*)::int" : "COUNT(*)"} FROM ${table} WHERE ${statusColumn} = :status`,
     { result: RawQueryResult.SCALAR },
   )(RawProductRepository.prototype, "countRawByStatus");
   Query(

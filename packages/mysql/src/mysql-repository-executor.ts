@@ -9,6 +9,7 @@ import {
   getCurrentPersistenceContext,
   getEntityMetadata,
   idParts,
+  installEntityColumnAliases,
   type EntityTarget,
   isCursorPageable,
   isOffsetPageable,
@@ -16,6 +17,7 @@ import {
   primaryColumnsOf,
   CursorPage,
   NPAFindOptions,
+  OptimisticLockError,
   NPAPaginationError,
   NPAQueryError,
   NPARepositoryAdapter,
@@ -241,7 +243,26 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
       return this.persistEntity(entity);
     }
 
-    return (await this.updateEntity(entity)) ?? this.persistEntity(entity);
+    const updated = await this.updateEntity(entity);
+
+    if (updated) {
+      return updated;
+    }
+
+    const expectedVersion = readExpectedVersionFromPatch(
+      entity,
+      this.options.entity,
+    );
+
+    if (expectedVersion !== undefined && await this.existsById(id as TId)) {
+      throw new OptimisticLockError(
+        this.getEntityTarget()?.name ?? "Entity",
+        id,
+        expectedVersion,
+      );
+    }
+
+    return this.persistEntity(entity);
   };
 
   private persistEntity = async (entity: TEntity): Promise<TEntity> => {
@@ -476,7 +497,13 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
 
     const entityTarget = this.getEntityTarget();
 
-    if (!context || !entityTarget || !entity) {
+    if (!entityTarget || !entity) {
+      return entity;
+    }
+
+    installEntityColumnAliases(entity, entityTarget);
+
+    if (!context) {
       return entity;
     }
 
@@ -491,7 +518,13 @@ export class MysqlRepositoryExecutor<TEntity extends object, TId = unknown>
 
     const entityTarget = this.getEntityTarget();
 
-    if (!context || !entityTarget) {
+    if (!entityTarget) {
+      return entities;
+    }
+
+    entities.forEach((entity) => installEntityColumnAliases(entity, entityTarget));
+
+    if (!context) {
       return entities;
     }
 

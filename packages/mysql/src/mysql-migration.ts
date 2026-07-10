@@ -55,6 +55,8 @@ interface CurrentForeignKeySchema {
   referencedTable: string;
   referencedSchema?: string;
   referencedColumns: string[];
+  onDelete?: string;
+  onUpdate?: string;
 }
 
 interface CurrentCheckConstraintSchema {
@@ -90,6 +92,8 @@ interface MysqlForeignKeyRow {
   referencedTable: string;
   referencedColumn: string;
   position: number;
+  deleteRule: string;
+  updateRule: string;
 }
 
 interface MysqlCheckConstraintRow {
@@ -494,7 +498,13 @@ function compileMysqlTableDiffStatements(
       }
     }
 
-    statements.push(...compileMysqlIndexDiffStatements(table, currentTable.indexes));
+    statements.push(
+      ...compileMysqlIndexDiffStatements(
+        table,
+        currentTable.indexes,
+        currentTable.foreignKeys,
+      ),
+    );
     statements.push(
       ...compileMysqlCheckConstraintDiffStatements(
         table,
@@ -594,8 +604,16 @@ function compileMysqlForeignKeyDiffStatements(
   const statements: string[] = [];
 
   for (const foreignKey of [...table.foreignKeys].sort(compareByName)) {
-    if (currentForeignKeys.has(foreignKey.name)) {
+    const currentForeignKey = currentForeignKeys.get(foreignKey.name);
+
+    if (currentForeignKey && isSameMysqlForeignKey(foreignKey, currentForeignKey)) {
       continue;
+    }
+
+    if (currentForeignKey) {
+      statements.push(
+        `ALTER TABLE ${qualifiedTable(table)} DROP FOREIGN KEY ${quoteQualifiedIdentifier(foreignKey.name)}`,
+      );
     }
 
     statements.push(
@@ -606,9 +624,24 @@ function compileMysqlForeignKeyDiffStatements(
   return statements;
 }
 
+function isSameMysqlForeignKey(
+  desired: MigrationForeignKeySchema,
+  current: CurrentForeignKeySchema,
+): boolean {
+  return arraysEqual(desired.columns, current.columns) &&
+    desired.referencedTable === current.referencedTable &&
+    (!desired.referencedSchema || desired.referencedSchema === current.referencedSchema) &&
+    arraysEqual(desired.referencedColumns, current.referencedColumns) &&
+    normalizeMysqlReferentialAction(desired.onDelete) ===
+      normalizeMysqlReferentialAction(current.onDelete) &&
+    normalizeMysqlReferentialAction(desired.onUpdate) ===
+      normalizeMysqlReferentialAction(current.onUpdate);
+}
+
 function compileMysqlIndexDiffStatements(
   table: MigrationTableSchema,
   currentIndexes: Map<string, CurrentIndexSchema>,
+  currentForeignKeys: Map<string, CurrentForeignKeySchema>,
 ): string[] {
   const statements: string[] = [];
 
@@ -636,12 +669,25 @@ function compileMysqlIndexDiffStatements(
   }
 
   for (const currentIndex of [...currentIndexes.values()].sort(compareByName)) {
-    if (!currentIndex.primary && !desiredIndexNames.has(currentIndex.name)) {
+    if (
+      !currentIndex.primary &&
+      !desiredIndexNames.has(currentIndex.name) &&
+      !isForeignKeySupportingIndex(currentIndex, currentForeignKeys)
+    ) {
       statements.push(`ALTER TABLE ${qualifiedTable(table)} DROP INDEX ${quoteQualifiedIdentifier(currentIndex.name)}`);
     }
   }
 
   return statements;
+}
+
+function isForeignKeySupportingIndex(
+  index: CurrentIndexSchema,
+  foreignKeys: Map<string, CurrentForeignKeySchema>,
+): boolean {
+  return [...foreignKeys.values()].some((foreignKey) =>
+    foreignKey.columns.every((column, position) => index.columns[position] === column),
+  );
 }
 
 function compileMysqlCheckConstraintDiffStatements(
@@ -935,12 +981,12 @@ function defaultType(
     return "JSON";
   }
 
-  if (normalized === "string") {
-    return "VARCHAR(255)";
-  }
-
   if (column.enumValues?.length) {
     return isOrdinalEnumColumn(column) ? "INT" : "VARCHAR(255)";
+  }
+
+  if (normalized === "string") {
+    return "VARCHAR(255)";
   }
 
   if (normalized === "number") {
@@ -1074,16 +1120,21 @@ async function readCurrentForeignKeys(
     await connection.query(
       [
         "SELECT",
-        "  CONSTRAINT_NAME AS constraintName,",
-        "  COLUMN_NAME AS columnName,",
-        "  REFERENCED_TABLE_SCHEMA AS referencedSchema,",
-        "  REFERENCED_TABLE_NAME AS referencedTable,",
-        "  REFERENCED_COLUMN_NAME AS referencedColumn,",
-        "  ORDINAL_POSITION AS position",
-        "FROM information_schema.KEY_COLUMN_USAGE",
-        `WHERE table_schema = ${table.schema ? "?" : "DATABASE()"} AND table_name = ?`,
-        "  AND REFERENCED_TABLE_NAME IS NOT NULL",
-        "ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION",
+        "  kcu.CONSTRAINT_NAME AS constraintName,",
+        "  kcu.COLUMN_NAME AS columnName,",
+        "  kcu.REFERENCED_TABLE_SCHEMA AS referencedSchema,",
+        "  kcu.REFERENCED_TABLE_NAME AS referencedTable,",
+        "  kcu.REFERENCED_COLUMN_NAME AS referencedColumn,",
+        "  kcu.ORDINAL_POSITION AS position,",
+        "  rc.DELETE_RULE AS deleteRule,",
+        "  rc.UPDATE_RULE AS updateRule",
+        "FROM information_schema.KEY_COLUMN_USAGE kcu",
+        "JOIN information_schema.REFERENTIAL_CONSTRAINTS rc",
+        "  ON kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA",
+        " AND kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME",
+        `WHERE kcu.table_schema = ${table.schema ? "?" : "DATABASE()"} AND kcu.table_name = ?`,
+        "  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL",
+        "ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION",
       ].join("\n"),
       table.schema ? [table.schema, table.tableName] : [table.tableName],
     ),
@@ -1097,6 +1148,8 @@ async function readCurrentForeignKeys(
       referencedSchema: row.referencedSchema,
       referencedTable: row.referencedTable,
       referencedColumns: [],
+      onDelete: row.deleteRule,
+      onUpdate: row.updateRule,
     };
 
     current.columns[row.position - 1] = row.columnName;
@@ -1465,4 +1518,21 @@ function normalizeMysqlTypeName(value: string): string {
   }
 
   return normalized.replace(/^int\(\d+\)$/, "int");
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length &&
+    left.every((value, index) => value === right[index]);
+}
+
+function normalizeReferentialAction(
+  value: string | undefined,
+  fallback: string,
+): string {
+  return (value ?? fallback).replace(/_/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+}
+
+function normalizeMysqlReferentialAction(value: string | undefined): string {
+  const normalized = normalizeReferentialAction(value, "RESTRICT");
+  return normalized === "NO ACTION" ? "RESTRICT" : normalized;
 }

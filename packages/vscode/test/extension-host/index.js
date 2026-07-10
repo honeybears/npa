@@ -44,19 +44,22 @@ async function assertCompletion(repositoryDocument) {
   const baseCompletion = await getCompletion(repositoryDocument, "findByNa", "findByName");
   assert.equal(
     baseCompletion.insertText.value,
-    "findByName(${1:name}: string): Promise<User[]>;",
+    "findByName(${1:name}: string, ${2:pageable}?: PageRequest): Promise<User[] | Page<User> | CursorPage<User>>;",
   );
-  assert.equal(baseCompletion.detail, "findByName(name: string): Promise<User[]>;");
+  assert.equal(
+    baseCompletion.detail,
+    "findByName(name: string, pageable?: PageRequest): Promise<User[] | Page<User> | CursorPage<User>>;",
+  );
   assert.ok(baseCompletion.documentation.value.includes("Runs a find query on name"));
 
   const relationCompletion = await getCompletion(repositoryDocument, "findByTe", "findByTeam");
   assert.equal(
     relationCompletion.insertText.value,
-    "findByTeam(${1:team}: Team): Promise<User[]>;",
+    "findByTeam(${1:team}: Team, ${2:pageable}?: PageRequest): Promise<User[] | Page<User> | CursorPage<User>>;",
   );
   assert.equal(
     relationCompletion.detail,
-    "findByTeam(team: Team): Promise<User[]>;",
+    "findByTeam(team: Team, pageable?: PageRequest): Promise<User[] | Page<User> | CursorPage<User>>;",
   );
 
   const compoundCompletion = await getCompletion(
@@ -66,11 +69,11 @@ async function assertCompletion(repositoryDocument) {
   );
   assert.equal(
     compoundCompletion.insertText.value,
-    "findByNameAndAge(${1:name}: string, ${2:age}: number): Promise<User[]>;",
+    "findByNameAndAge(${1:name}: string, ${2:age}: number, ${3:pageable}?: PageRequest): Promise<User[] | Page<User> | CursorPage<User>>;",
   );
   assert.equal(
     compoundCompletion.detail,
-    "findByNameAndAge(name: string, age: number): Promise<User[]>;",
+    "findByNameAndAge(name: string, age: number, pageable?: PageRequest): Promise<User[] | Page<User> | CursorPage<User>>;",
   );
 
   const queryParameterCompletion = await getCompletion(repositoryDocument, ":em", "email");

@@ -1,20 +1,23 @@
 {
   "name": "@node-persistence-api/core",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0",
   "description": "Core Node and TypeScript persistence API with JPA-style repositories",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "require": "./dist/index.js"
     },
     "./query-method": {
       "types": "./dist/query-method/index.d.ts",
+      "import": "./dist/query-method/index.js",
       "require": "./dist/query-method/index.js"
     },
     "./adapter": {
       "types": "./dist/adapter/index.d.ts",
+      "import": "./dist/adapter/index.js",
       "require": "./dist/adapter/index.js"
     },
     "./package.json": "./package.json"
