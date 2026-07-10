@@ -11,10 +11,20 @@ import {
   primaryColumnsOf,
 } from "../entity";
 import { NPAMetadataError, NPAPersistenceError } from "../error";
+import {
+  EntityIdentityMap,
+  entityIdKey,
+  hasCompletePrimaryValue,
+  isSameEntityId,
+} from "./entity-identity-map";
+import {
+  createEntitySnapshot,
+  EntitySnapshot,
+  isSameSnapshotValue,
+  snapshotValue,
+} from "./entity-snapshot";
 import { OptimisticLockError } from "./optimistic-lock-error";
 import { NPADirtyCheckAdapter, NPAManageEntityOptions } from "./types";
-
-type EntitySnapshot = Map<string, unknown>;
 
 interface ToManySnapshot {
   ids: unknown[];
@@ -36,10 +46,7 @@ export class PersistenceContext {
   private readonly managed = new Map<object, ManagedEntity>();
   private readonly newEntities = new Set<object>();
   private readonly removedEntities = new Set<object>();
-  private identityMap = new WeakMap<
-    NPADirtyCheckAdapter,
-    WeakMap<object, Map<string, ManagedEntity>>
-  >();
+  private readonly identityMap = new EntityIdentityMap<ManagedEntity>();
 
   constructor(private readonly options: PersistenceContextOptions = {}) {}
 
@@ -67,9 +74,11 @@ export class PersistenceContext {
     requirePrimaryColumns(metadata);
     installColumnAliases(entity, metadata);
     const id = readEntityPrimaryValue(entity, metadata);
-    const existing = !hasCompletePrimaryValue(id)
-      ? undefined
-      : this.findByIdentity(options.adapter, metadata.target, id);
+    const existing = this.identityMap.find(
+      options.adapter,
+      metadata.target,
+      id,
+    );
 
     if (existing) {
       mergeManagedEntity(existing, entity);
@@ -83,7 +92,7 @@ export class PersistenceContext {
       snapshot: snapshotEntity(entity, metadata),
     };
     this.managed.set(entity, managed);
-    this.rememberIdentity(options.adapter, metadata.target, id, managed);
+    this.identityMap.remember(options.adapter, metadata.target, id, managed);
 
     return entity;
   }
@@ -109,7 +118,7 @@ export class PersistenceContext {
     options: NPAManageEntityOptions<TEntity>,
   ): TEntity | undefined {
     const metadata = getEntityMetadata(options.entity);
-    return this.findByIdentity(options.adapter, metadata.target, id)?.entity as
+    return this.identityMap.find(options.adapter, metadata.target, id)?.entity as
       | TEntity
       | undefined;
   }
@@ -176,7 +185,7 @@ export class PersistenceContext {
         continue;
       }
 
-      if (isSameId(readEntityPrimaryValue(managed.entity, metadata), id)) {
+      if (isSameEntityId(readEntityPrimaryValue(managed.entity, metadata), id)) {
         this.detachManagedEntity(entity);
       }
     }
@@ -203,7 +212,7 @@ export class PersistenceContext {
     this.managed.clear();
     this.newEntities.clear();
     this.removedEntities.clear();
-    this.identityMap = new WeakMap();
+    this.identityMap.clear();
   }
 
   async flush(): Promise<void> {
@@ -526,7 +535,7 @@ export class PersistenceContext {
     mergeDatabaseValues(managed.entity, inserted, managed.metadata);
     installColumnAliases(managed.entity, managed.metadata);
 
-    this.rememberIdentity(
+    this.identityMap.remember(
       managed.adapter,
       managed.metadata.target,
       readEntityPrimaryValue(managed.entity, managed.metadata),
@@ -663,11 +672,11 @@ export class PersistenceContext {
 
       const targetRelation = findMappedByManyToOneRelation(managed.metadata, relation);
       const targetAdapter = adapterForRelation(managed.adapter, relation, CascadeType.PERSIST);
-      const currentSet = new Set(currentIds.map(idKey));
+      const currentSet = new Set(currentIds.map(entityIdKey));
       const previousSet = previousIds ?? [];
 
       for (const targetId of currentIds) {
-        if (!options.force && previousSet.some((value) => isSameId(value, targetId))) {
+        if (!options.force && previousSet.some((value) => isSameEntityId(value, targetId))) {
           continue;
         }
 
@@ -679,7 +688,7 @@ export class PersistenceContext {
       }
 
       for (const targetId of previousSet) {
-        if (currentSet.has(idKey(targetId))) {
+        if (currentSet.has(entityIdKey(targetId))) {
           continue;
         }
 
@@ -749,42 +758,7 @@ export class PersistenceContext {
 
     return !hasCompletePrimaryValue(id)
       ? undefined
-      : this.findByIdentity(options.adapter, metadata.target, id);
-  }
-
-  private findByIdentity(
-    adapter: NPADirtyCheckAdapter,
-    entity: object,
-    id: unknown,
-  ): ManagedEntity | undefined {
-    return this.identityMap.get(adapter)?.get(entity)?.get(idKey(id));
-  }
-
-  private rememberIdentity(
-    adapter: NPADirtyCheckAdapter,
-    entity: object,
-    id: unknown,
-    managed: ManagedEntity,
-  ): void {
-    if (!hasCompletePrimaryValue(id)) {
-      return;
-    }
-
-    let entityMap = this.identityMap.get(adapter);
-
-    if (!entityMap) {
-      entityMap = new WeakMap();
-      this.identityMap.set(adapter, entityMap);
-    }
-
-    let idMap = entityMap.get(entity);
-
-    if (!idMap) {
-      idMap = new Map();
-      entityMap.set(entity, idMap);
-    }
-
-    idMap.set(idKey(id), managed);
+      : this.identityMap.find(options.adapter, metadata.target, id);
   }
 
   private detachManagedEntity(entity: object): void {
@@ -795,7 +769,11 @@ export class PersistenceContext {
     }
 
     const id = readEntityPrimaryValue(managed.entity, managed.metadata);
-    this.identityMap.get(managed.adapter)?.get(managed.metadata.target)?.delete(idKey(id));
+    this.identityMap.forget(
+      managed.adapter,
+      managed.metadata.target,
+      id,
+    );
     this.newEntities.delete(entity);
     this.removedEntities.delete(entity);
     this.managed.delete(entity);
@@ -927,7 +905,7 @@ function diffEntity<TEntity extends object>(
       continue;
     }
 
-    if (!isSameValue(currentValue, snapshot.get(column.propertyName))) {
+    if (!isSameSnapshotValue(currentValue, snapshot.get(column.propertyName))) {
       patchRecord[column.propertyName] = currentValue;
     }
   }
@@ -943,7 +921,7 @@ function diffEntity<TEntity extends object>(
       continue;
     }
 
-    if (!isSameId(currentValue, snapshot.get(relation.propertyName))) {
+    if (!isSameEntityId(currentValue, snapshot.get(relation.propertyName))) {
       patchRecord[relation.propertyName] = currentValue;
     }
   }
@@ -955,16 +933,16 @@ function snapshotEntity(
   entity: object,
   metadata: EntityMetadata,
 ): EntitySnapshot {
-  return new Map([
+  return createEntitySnapshot([
     ...metadata.columns.map((column) => [
       column.propertyName,
-      snapshotValue(readColumnValue(entity, column)),
+      readColumnValue(entity, column),
     ] as const),
     ...metadata.relations
       .filter(isOwningToOneRelation)
       .map((relation) => [
         relation.propertyName,
-        snapshotValue(readRelationForeignKeyForSnapshot(entity, relation)),
+        readRelationForeignKeyForSnapshot(entity, relation),
       ] as const),
     ...metadata.relations
       .filter((relation) => relation.kind === RelationKind.ONE_TO_MANY)
@@ -1212,7 +1190,7 @@ function readSnapshotEntity(
   const targetMetadata = getEntityMetadata(relation.target());
   const entity = isToManySnapshot(snapshot)
     ? snapshot.entities.find((candidate) =>
-      isSameId(readEntityPrimaryValue(candidate, targetMetadata), id),
+      isSameEntityId(readEntityPrimaryValue(candidate, targetMetadata), id),
     )
     : undefined;
 
@@ -1302,7 +1280,9 @@ function isSameIdSet(
   }
 
   return current.every((value) =>
-    snapshotIds.some((snapshotValue) => isSameId(value, snapshotValue)),
+    snapshotIds.some((snapshotValue) =>
+      isSameEntityId(value, snapshotValue),
+    ),
   );
 }
 
@@ -1310,7 +1290,7 @@ function uniqueValues(values: unknown[]): unknown[] {
   const unique: unknown[] = [];
 
   for (const value of values) {
-    if (!unique.some((current) => isSameId(current, value))) {
+    if (!unique.some((current) => isSameEntityId(current, value))) {
       unique.push(value);
     }
   }
@@ -1440,64 +1420,4 @@ function isSameManagedEntity(
   adapter: NPADirtyCheckAdapter,
 ): boolean {
   return managed.metadata.target === metadata.target && managed.adapter === adapter;
-}
-
-function snapshotValue(value: unknown): unknown {
-  if (value instanceof Date) {
-    return new Date(value.getTime());
-  }
-
-  return value;
-}
-
-function isSameValue(currentValue: unknown, snapshotValue: unknown): boolean {
-  if (currentValue instanceof Date && snapshotValue instanceof Date) {
-    return currentValue.getTime() === snapshotValue.getTime();
-  }
-
-  return Object.is(currentValue, snapshotValue);
-}
-
-function hasCompletePrimaryValue(id: unknown): boolean {
-  if (id === null || id === undefined) {
-    return false;
-  }
-
-  if (!isCompositeIdValue(id)) {
-    return true;
-  }
-
-  return Object.values(id).every((value) => value !== null && value !== undefined);
-}
-
-function isSameId(left: unknown, right: unknown): boolean {
-  return idKey(left) === idKey(right);
-}
-
-function idKey(id: unknown): string {
-  if (id instanceof Date) {
-    return `date:${id.getTime()}`;
-  }
-
-  if (!isCompositeIdValue(id)) {
-    return `${typeof id}:${String(id)}`;
-  }
-
-  return `object:${JSON.stringify(sortRecord(id))}`;
-}
-
-function isCompositeIdValue(value: unknown): value is Record<string, unknown> {
-  return isObject(value) && !(value instanceof Date) && !Array.isArray(value);
-}
-
-function sortRecord(record: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.keys(record)
-      .sort()
-      .map((key) => [key, normalizeIdPart(record[key])]),
-  );
-}
-
-function normalizeIdPart(value: unknown): unknown {
-  return value instanceof Date ? value.getTime() : value;
 }
