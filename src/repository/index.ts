@@ -7,5 +7,6 @@ export * from "./entity-graph-decorator";
 export * from "./operations";
 export * from "./pagination";
 export * from "./query-decorator";
+export * from "./raw-query";
 export * from "./repository-decorator";
 export * from "./types";
