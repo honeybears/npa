@@ -113,12 +113,53 @@ class VersionedUser {
   version!: number;
 }
 
+@Entity({ name: "generated_users" })
+class GeneratedUser {
+  @Id({ name: "user_id", generationStrategy: "AUTO_INCREMENT" })
+  id: number = 0;
+
+  @Column({ name: "full_name" })
+  name!: string;
+}
+
 interface DirtyUpdate<TEntity extends object> {
   id: unknown;
   patch: Partial<TEntity>;
 }
 
 describe("persistence context", () => {
+  test("keeps generated entities with falsy ids distinct until insert", async () => {
+    const context = new PersistenceContext();
+    const inserted: string[] = [];
+    let nextId = 1;
+    const adapter = {
+      async updateDirty(entity: GeneratedUser) {
+        return entity;
+      },
+      async insertManaged(entity: GeneratedUser) {
+        inserted.push(entity.name);
+        return { user_id: nextId++, full_name: entity.name } as unknown as GeneratedUser;
+      },
+    };
+    const first = Object.assign(new GeneratedUser(), { name: "kim" });
+    const second = Object.assign(new GeneratedUser(), { name: "lee" });
+
+    const managedFirst = await context.persist(first, {
+      entity: GeneratedUser,
+      adapter,
+    });
+    const managedSecond = await context.persist(second, {
+      entity: GeneratedUser,
+      adapter,
+    });
+    await context.flush();
+
+    expect(managedSecond).not.toBe(managedFirst);
+    expect(inserted).toEqual(["kim", "lee"]);
+    expect(first.id).toEqual(1);
+    expect(second.id).toEqual(2);
+  });
+
   test("persists cascaded many-to-one relations before the owning entity", async () => {
     const context = new PersistenceContext();
     const calls: string[] = [];

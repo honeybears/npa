@@ -73,7 +73,7 @@ export class PersistenceContext {
     const metadata = getEntityMetadata(options.entity);
     requirePrimaryColumns(metadata);
     installColumnAliases(entity, metadata);
-    const id = readEntityPrimaryValue(entity, metadata);
+    const id = readManagedIdentityValue(entity, metadata);
     const existing = this.identityMap.find(
       options.adapter,
       metadata.target,
@@ -754,7 +754,7 @@ export class PersistenceContext {
     }
 
     const metadata = getEntityMetadata(options.entity);
-    const id = readEntityPrimaryValue(entity, metadata);
+    const id = readManagedIdentityValue(entity, metadata);
 
     return !hasCompletePrimaryValue(id)
       ? undefined
@@ -957,6 +957,30 @@ function snapshotEntity(
         readManyToManyRelationIdsForSnapshot(entity, relation),
       ] as const),
   ]);
+}
+
+function readManagedIdentityValue(
+  entity: object,
+  metadata: EntityMetadata,
+): unknown {
+  const primaryColumns = primaryColumnsOf(metadata);
+  const values = primaryColumns.map((column) => [
+    column.propertyName,
+    normalizeManagedIdentityPart(column, readColumnValue(entity, column)),
+  ] as const);
+
+  return values.length === 1 ? values[0][1] : Object.fromEntries(values);
+}
+
+function normalizeManagedIdentityPart(
+  column: ColumnMetadata,
+  value: unknown,
+): unknown {
+  return column.generationStrategy &&
+    column.generationStrategy !== "NONE" &&
+    !value
+    ? undefined
+    : value;
 }
 
 function mergeManagedEntity<TEntity extends object>(
